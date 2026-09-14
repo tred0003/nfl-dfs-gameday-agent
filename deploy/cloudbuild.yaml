@@ -1,0 +1,13 @@
+# Cloud Build config. Used instead of a bare `gcloud builds submit --tag`
+# because the Dockerfile lives in deploy/ rather than the repo root, and
+# because a checked-in build config is the thing CI would call later.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args: ['build', '-f', 'deploy/Dockerfile', '-t', '${_IMAGE}', '.']
+
+images:
+  - '${_IMAGE}'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

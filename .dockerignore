@@ -1,0 +1,9 @@
+data/
+models/
+notebooks/
+research/
+.git/
+.env
+__pycache__/
+*.parquet
+*.csv

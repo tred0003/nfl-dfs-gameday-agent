@@ -1,0 +1,13 @@
+# data is pulled, never committed (DK ToS: no redistribution)
+data/
+models/
+*.parquet
+*.csv
+*.joblib
+*.pkl
+
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.env
+.venv/

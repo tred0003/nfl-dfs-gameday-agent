@@ -1,0 +1,4 @@
+pandas>=2.0
+numpy>=1.24
+requests>=2.31
+tzdata>=2024.1     # slim images ship no /usr/share/zoneinfo; ET formatting needs it
