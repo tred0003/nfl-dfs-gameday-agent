@@ -74,9 +74,38 @@ def team_game_context() -> pd.DataFrame:
 
     # Inexperienced starting QB. FEATURES.md 9.2 found WR1s score 22% LESS
     # with one -- the user's rule, inverted.
+    # TWO BUGS LIVED HERE, both found in the 2026-09-16 audit.
+    #
+    # 1. The counter starts at zero in the first season of the data, so every
+    #    established veteran was flagged "inexperienced" early in 2016. Measured
+    #    rate: 48% in 2016 against a ~10% steady state -- all 32 week-1 starters,
+    #    Brees and Ryan and Wilson included. About 11% of training rows were
+    #    being told the opposite of the truth.
+    #
+    #    The counter is a LOWER BOUND on true career starts, which is enough to
+    #    resolve most rows: if a QB has already been observed starting more than
+    #    five times he is definitely not green, whatever happened before 2016.
+    #    Only a QB who is still under the threshold AND debuted in the first
+    #    season of the data is genuinely unknown, and that is NaN, not 0.
+    #
+    # 2. qb_id comes from schedules and is populated AFTER the game (2026 is
+    #    88% null: filled for played weeks, empty for every future one). So at
+    #    real prediction time the groupby dropped the NaN and (NaN <= 5) yielded
+    #    a confident green_qb=0 for every player on the slate. Unknown must stay
+    #    unknown -- NaN routes down the model's missing branch; 0 asserts
+    #    "experienced starter" and is a lie.
     g = g.sort_values(["season", "week"])
     g["qb_prior_starts"] = g.groupby("qb_id").cumcount()
-    g["green_qb"] = (g["qb_prior_starts"] <= 5).astype(int)
+
+    first_season = g["season"].min()
+    debut = g.groupby("qb_id")["season"].transform("min")
+    unknown_history = debut.eq(first_season) & g["qb_prior_starts"].le(5)
+
+    g["green_qb"] = np.where(
+        g["qb_id"].isna() | unknown_history,          # no starter known, or no history
+        np.nan,
+        (g["qb_prior_starts"] <= 5).astype(float),
+    )
 
     return g
 

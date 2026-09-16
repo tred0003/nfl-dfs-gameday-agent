@@ -64,6 +64,36 @@ def _as_of_previous_game(state: pd.DataFrame, rows: pd.DataFrame, cols: list[str
     return out.sort_values("_order").set_index(rows.index)[cols]
 
 
+def _prior_roster(t: pd.DataFrame, inj: pd.DataFrame, state: pd.DataFrame) -> pd.DataFrame:
+    """Each team's PRE-KICKOFF roster per week, with each player's as-of target share.
+
+    "On the roster" means he has already played for this team earlier this
+    season -- knowable on Saturday. "Recorded a stat this week" is not knowable
+    until the game is over, and using it is what made healthy_tgt_rank leak.
+
+    A player's first game for a team is deliberately absent here, so his rank
+    that week is NaN. Unknown is the honest answer: there is no pre-kickoff
+    basis for ranking a player who has never played for this team.
+    """
+    app = t[["player_id", "team", "season", "week", "_grp"]].dropna(subset=["team"])
+    first = (app.groupby(["player_id", "team", "season", "_grp"], as_index=False)["week"]
+                .min().rename(columns={"week": "_first"}))
+    weeks = app[["team", "season", "week"]].drop_duplicates()
+
+    r = first.merge(weeks, on=["team", "season"])
+    r = r[r["week"] > r["_first"]].drop(columns="_first")
+
+    # anyone already ruled out is not a competitor for targets, and the report
+    # is published before kickoff -- verified median 1.43 days ahead of gameday
+    out = inj[inj["report_status"].isin(["Out", "Doubtful"])][KEYS].drop_duplicates()
+    r = r.merge(out.assign(_out=1), on=KEYS, how="left")
+    r = r[r["_out"].isna()].drop(columns="_out")
+
+    r = r.drop_duplicates(KEYS)          # a mid-season trade would otherwise fan out
+    r["tgt_sh_ewm"] = _as_of_previous_game(state, r, ["tgt_sh_ewm"])["tgt_sh_ewm"].values
+    return r
+
+
 def _rolling_state(df: pd.DataFrame, col: str, name: str) -> pd.DataFrame:
     """Running averages of `col` through each game (within player-season)."""
     g = df.groupby(["player_id", "season"], sort=False)[col]
@@ -172,11 +202,33 @@ def injury_features(table: pd.DataFrame, weekly: pd.DataFrame,
     t["own_questionable"] = t["report_status"].eq("Questionable").astype(int)
     t["own_limited_practice"] = t["practice_status"].fillna("").str.contains("Limited|Did Not").astype(int)
 
-    # rank among healthy teammates at the same position group, by recent target share
+    # Rank among healthy teammates at the same position group, by recent target
+    # share. The VALUES are correctly shifted. The DENOMINATOR was not, and that
+    # was a leak.
+    #
+    # Ranking over the rows of `t` ranks a player against teammates who RECORDED
+    # A STAT that week -- which is only knowable after kickoff. The column is
+    # named "healthy"; what it actually encoded was "active". Measured: on 8.2%
+    # of rows a teammate ahead of the player was a surprise scratch, and those
+    # rows beat their own prior form by 17-43%. That is the model learning
+    # post-lock opportunity.
+    #
+    # It also skewed at serve: group sizes are much larger on a DK slate (every
+    # listed player) than in training (only stat-recorders), so the NaN rate went
+    # from 10% in training to 49% in production.
+    #
+    # The fix ranks over a PRE-KICKOFF roster instead: everyone who has played
+    # for this team earlier in the season, minus anyone on this week's
+    # Out/Doubtful report. Same set whether or not the game has happened.
     t["tgt_sh_ewm"] = _as_of_previous_game(state, t, ["tgt_sh_ewm"])["tgt_sh_ewm"].values
     grp = t["position"].map({"WR": "rec", "TE": "rec", "RB": "rb", "QB": "qb"})
-    t["healthy_tgt_rank"] = t.groupby(["team", "season", "week", grp])["tgt_sh_ewm"].rank(
-        ascending=False, method="min")
+    t["_grp"] = grp
+
+    roster = _prior_roster(t, inj, state)
+    roster["healthy_tgt_rank"] = (roster.groupby(["team", "season", "week", "_grp"])
+                                        ["tgt_sh_ewm"].rank(ascending=False, method="min"))
+    t = t.merge(roster[KEYS + ["healthy_tgt_rank"]].drop_duplicates(KEYS),
+                on=KEYS, how="left")
 
     cols = ["vacated_tgt_share", "vacated_carry_share", "new_vacated_tgt_share", "n_out",
             "vacated_same_group", "starting_qb_out", "own_questionable",

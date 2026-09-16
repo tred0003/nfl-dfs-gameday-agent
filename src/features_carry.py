@@ -224,8 +224,41 @@ def profile_features(table: pd.DataFrame) -> pd.DataFrame:
                         .groupby(KEYS)["pos_rank"].min().rename("depth_rank").reset_index())
     daily_depth[["season", "week"]] = daily_depth[["season", "week"]].astype("int64")
 
+    # THE TWO SOURCES ARE NOT ON THE SAME SCALE. `depth_team` (2016-2024) is the
+    # rank within a slot, so a team's three receivers are all 1 if they start at
+    # WR1/WR2/WR3. `pos_rank` (2025+) ranks within the whole position group, so
+    # the same three are 1/2/3. Concatenating them left one column with two
+    # meanings: measured mean depth_rank for WR jumped 1.42 -> 2.85 across the
+    # boundary. Walk-forward then trains on the old convention and is graded --
+    # and in predict_week, deployed -- against the new one.
+    #
+    # Re-rank BOTH sources the same way: dense rank within (team, season, week,
+    # position), ties kept. That is the pos_rank convention, and it is the one
+    # that survives a source change because it depends only on ordering.
+    # THE TWO SOURCES ARE NOT ON THE SAME SCALE, and it is not a rename.
+    # `depth_team` (2016-2024) ranks within a SLOT, so a team's several starting
+    # receivers are all 1. `pos_rank` (2025+) ranks within the whole position
+    # group, so the same receivers are 1/2/3/4/5. Measured: mean depth_rank for
+    # WR moved 1.40 (2024) -> 2.52 (2025). Walk-forward then trains on the old
+    # convention and predict_week serves against the new one.
+    #
+    # The old format cannot be converted to the new: `pos_rank` is 100% null
+    # before 2025 and `depth_position` carries no slot detail to rebuild it from.
+    # So normalise both to a within-group PERCENTILE, which removes the
+    # group-size difference and bounds the feature to (0, 1].
+    #
+    # This reduces the break; it does not remove it. The old source genuinely
+    # cannot distinguish WR1 from WR2, so its percentiles stay compressed toward
+    # the top. Treat depth_rank as a weak signal before 2025 and prefer the
+    # usage features (snap share, route share, target share) which measure the
+    # same thing from what actually happened.
     depth = pd.concat([weekly_depth, daily_depth]).drop_duplicates(KEYS)
-    f = f.merge(depth, on=KEYS, how="left")
+    who = table[KEYS + ["recent_team", "position"]].drop_duplicates(KEYS)
+    depth = depth.merge(who, on=KEYS, how="left")
+    grp = depth.groupby(["recent_team", "season", "week", "position"])["depth_rank"]
+    depth["depth_rank"] = grp.rank(method="dense") / grp.transform(
+        lambda s: s.rank(method="dense").max())
+    f = f.merge(depth[KEYS + ["depth_rank"]], on=KEYS, how="left")
 
     cols = ["draft_round", "draft_pick", "years_pro", "is_rookie", "age", "depth_rank"]
     return f.set_index(table.index)[cols]
