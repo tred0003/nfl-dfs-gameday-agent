@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import platform
 import subprocess
+import tempfile
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,6 +44,52 @@ import pandas as pd
 import xgboost as xgb
 
 CARD_NAME = "model_card.json"
+
+
+# --------------------------------------------------------------- gs:// paths
+# A custom training job on Agent Platform gets its output location as the
+# AIP_MODEL_DIR environment variable, and that value is always a Cloud Storage
+# URI -- the job's local disk is destroyed when the container exits, so an
+# artifact written locally does not survive the run that produced it.
+#
+# xgboost's save_model/load_model only take local filesystem paths, so the
+# pattern here is write-local-then-copy rather than streaming. That is also
+# what the prebuilt training containers do.
+
+def _is_gcs(path) -> bool:
+    return str(path).startswith("gs://")
+
+
+def _split_uri(uri: str) -> tuple[str, str]:
+    bucket, _, prefix = str(uri)[len("gs://"):].partition("/")
+    return bucket, prefix.strip("/")
+
+
+def _upload_dir(local: Path, uri: str) -> None:
+    from google.cloud import storage
+
+    bucket_name, prefix = _split_uri(uri)
+    bucket = storage.Client().bucket(bucket_name)
+    for f in sorted(local.iterdir()):
+        if f.is_file():
+            bucket.blob(f"{prefix}/{f.name}" if prefix else f.name).upload_from_filename(f)
+
+
+def _download_dir(uri: str, local: Path) -> None:
+    from google.cloud import storage
+
+    bucket_name, prefix = _split_uri(uri)
+    client = storage.Client()
+    local.mkdir(parents=True, exist_ok=True)
+    found = False
+    for blob in client.list_blobs(bucket_name, prefix=prefix):
+        name = blob.name.rsplit("/", 1)[-1]
+        if not name:
+            continue
+        blob.download_to_filename(local / name)
+        found = True
+    if not found:
+        raise FileNotFoundError(f"nothing under {uri}")
 
 
 def _git_sha(root: Path) -> str | None:
@@ -58,7 +105,7 @@ def _git_sha(root: Path) -> str | None:
 
 
 def save(
-    out_dir: Path | str,
+    out_dir: Path | str,  # local path, or gs://bucket/prefix
     models: dict[str, xgb.XGBRegressor],
     features: list[str],
     params: dict,
@@ -73,13 +120,14 @@ def save(
     two models answer different questions (expected points vs. ceiling) and
     downstream code selects by role, not by filename.
     """
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    remote = str(out_dir) if _is_gcs(out_dir) else None
+    local = Path(tempfile.mkdtemp(prefix="artifact_")) if remote else Path(out_dir)
+    local.mkdir(parents=True, exist_ok=True)
 
     artifacts = {}
     for role, model in models.items():
         fname = f"model_{role}.ubj"
-        model.save_model(out_dir / fname)
+        model.save_model(local / fname)
         artifacts[role] = fname
 
     card = {
@@ -100,12 +148,20 @@ def save(
             "pandas": pd.__version__,
         },
     }
-    (out_dir / CARD_NAME).write_text(json.dumps(card, indent=2))
-    return out_dir
+    (local / CARD_NAME).write_text(json.dumps(card, indent=2))
+
+    if remote:
+        _upload_dir(local, remote)
+        return remote
+    return local
 
 
 def load(model_dir: Path | str) -> tuple[dict[str, xgb.XGBRegressor], dict]:
     """Read the artifacts back. Returns ({role: model}, card)."""
+    if _is_gcs(model_dir):
+        staged = Path(tempfile.mkdtemp(prefix="artifact_"))
+        _download_dir(str(model_dir), staged)
+        model_dir = staged
     model_dir = Path(model_dir)
     card_path = model_dir / CARD_NAME
     if not card_path.exists():

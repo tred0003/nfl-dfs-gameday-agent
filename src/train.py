@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import os
 import time
 import warnings
 from pathlib import Path
@@ -37,6 +38,8 @@ import pandas as pd
 import xgboost as xgb
 from scipy.stats import spearmanr
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+import model_io
 
 warnings.filterwarnings("ignore")
 
@@ -146,6 +149,45 @@ def walk_forward(
         print(f"  season {season}: trained on {len(tr):,}, predicted {len(te):,}")
 
     return pd.concat(preds, ignore_index=True), importances
+
+
+def fit_final(
+    df: pd.DataFrame, features: list[str], params: dict = PARAMS
+) -> tuple[dict, dict]:
+    """Refit on EVERY row -- this is the model that actually ships.
+
+    Be precise about what this is and is not. `walk_forward()` produces the
+    honest skill estimate, because each prediction it makes is on a season the
+    model had never seen. But a model deliberately blinded to 2025 is a worse
+    model to carry into 2026, so the shipping artifact is refit on everything
+    available and the walk-forward numbers ride along in the model card as its
+    *estimated* skill.
+
+    The model you measure and the model you ship are not the same object. That
+    is normal and correct. What would not be correct is quoting 0.6442 as this
+    artifact's score -- it has never been scored on anything it did not train
+    on, and it never can be.
+    """
+    X, y = df[features], df[TARGET]
+    print(f"\nfinal fit on all {len(df):,} rows ({len(features)} features)")
+
+    models = {
+        "mean": xgb.XGBRegressor(objective="reg:squarederror", **params),
+        "ceiling": xgb.XGBRegressor(
+            objective="reg:quantileerror", quantile_alpha=0.85, **params
+        ),
+    }
+    for role, m in models.items():
+        m.fit(X, y, verbose=False)
+        print(f"  fit {role}")
+
+    last = int(df["season"].max())
+    coverage = {
+        "seasons": [int(df["season"].min()), last],
+        "through": [last, int(df[df["season"].eq(last)]["week"].max())],
+        "rows": int(len(df)),
+    }
+    return models, coverage
 
 
 def add_baselines(df: pd.DataFrame) -> pd.DataFrame:
@@ -268,8 +310,8 @@ def load_table(name: str = "model_table") -> tuple[pd.DataFrame, list[str]]:
     return df, features
 
 
-def main(save: bool) -> None:
-    df, features = load_table()
+def main(save: bool, export: bool, table: str, model_dir: str) -> None:
+    df, features = load_table(table)
 
     print(f"model table {df.shape[0]:,} rows, {len(features)} features")
     print(f"walk-forward over seasons {TEST_SEASONS}\n")
@@ -310,9 +352,29 @@ def main(save: bool) -> None:
         (MODELS / "metrics.json").write_text(json.dumps(rows, indent=2))
         print(f"\nsaved predictions + metrics to {MODELS}")
 
+    if export:
+        models, coverage = fit_final(df, features)
+        out = model_io.save(
+            model_dir, models,
+            features=features, params=PARAMS, target=TARGET,
+            train_rows=len(df), coverage=coverage, metrics=rows,
+        )
+        print(f"\nexported artifact -> {out}")
+        print(f"  {len(models)} models, {len(features)} features, "
+              f"seasons {coverage['seasons'][0]}-{coverage['seasons'][1]}")
+        print("  this is the thing that gets registered and served.")
+
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--no-save", action="store_true")
+    p.add_argument("--export", action="store_true",
+                   help="also refit on all data and write a servable artifact")
+    p.add_argument("--table", default="model_table",
+                   help="model table stem under data/processed (e.g. model_table_v3)")
+    p.add_argument("--model-dir", default=os.environ.get("AIP_MODEL_DIR") or str(MODELS / "current"),
+                   help="where to write the artifact; accepts a gs:// path. "
+                        "Defaults to AIP_MODEL_DIR when set, which is how Agent "
+                        "Platform tells a custom training job where its output goes.")
     a = p.parse_args()
-    main(save=not a.no_save)
+    main(save=not a.no_save, export=a.export, table=a.table, model_dir=a.model_dir)
