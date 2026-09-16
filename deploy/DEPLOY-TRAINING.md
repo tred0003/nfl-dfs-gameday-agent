@@ -226,8 +226,34 @@ $PROJECT_NUMBER = gcloud projects describe $PROJECT --format='value(projectNumbe
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" --role="roles/storage.objectAdmin"
 ```
 
+**`could not resolve source ... 403 ... does not have storage.objects.get
+access` on the build.** Hit on the first build, 2026-09-16. The upload succeeds
+(that runs as *you*, and you are owner) and then the build cannot read its own
+source back, because a build does not run with your permissions — it runs as its
+own service account.
+
+Since 2024 Cloud Build runs as the **Compute Engine default** account,
+`PROJECT_NUMBER-compute@developer.gserviceaccount.com`, not the legacy
+`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`. Projects that predate the change
+often have roles on the legacy account and none on the new one. Confirm with:
+
+```powershell
+gcloud projects get-iam-policy $PROJECT --flatten="bindings[].members" --filter="bindings.members:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" --format="value(bindings.role)"
+```
+
+Empty output means no roles at all. Grant the bundled builder role — it covers
+reading the source bucket, writing logs, and pushing to Artifact Registry:
+
+```powershell
+$PROJECT_NUMBER = gcloud projects describe $PROJECT --format='value(projectNumber)'
+$SA = "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:$SA" --role="roles/cloudbuild.builds.builder"
+```
+
+Wait ~30 seconds for IAM to propagate, then re-run the build unchanged.
+
 **`ModuleNotFoundError: model_io`.** `PYTHONPATH=/app/src` is missing from the
-image, or `model_io.py` was not copied in.
+image, or `model_io.py` was not copied in. Step 5a catches this before the build.
 
 **The job succeeds but writes nothing.** You left `--export` off. Without it
 `train.py` validates and prints and saves no artifact — which is the correct
