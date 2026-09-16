@@ -7,15 +7,36 @@ The scoreboard that matters in the end. For every week 2021-2024:
 
 Sources:  FantasyData projection | XGBoost v3 | XGBoost base | salary line
 Rules:    "current" -- src/optimize.py as it stands (forced QB stack, $49k floor)
-          "loose"   -- no forced stack, no salary floor (hindsight-optimal
-                       lineups stacked only 53% and 31% spent under $49k)
+          "loose"   -- no forced stack, no salary floor
+          Both rules were once doubted on the strength of "hindsight-optimal
+          lineups stacked only 53%". That reasoning is a base-rate error: a
+          position-legal lineup built with no stacking rule still stacks ~20%
+          of the time by chance, so 53% (62% on 2021-24) is roughly 3x chance
+          and is evidence FOR the rule. The floor, separately, never binds.
 Plus the hindsight-perfect lineup each week, for scale.
 
-FAIRNESS: the model only has predictions for players who recorded a stat that
-week, so every source picks from that SAME pool. This leaks a little -- nobody
-can pick a player who was a surprise scratch -- which makes every source's
-absolute points slightly too high, but equally so. Compare sources to each
-other, not to real contest scores.
+FAIRNESS -- READ THIS BEFORE QUOTING ANY NUMBER BELOW. The pool contains only
+players who recorded a stat that week. This was described here as a leak that
+affects every source "equally". Measured on 2026-09-16, that is wrong, and the
+bias runs in the model's favour:
+
+  - 39% of DK-priced main-slate skill players never record a stat and are
+    silently removed.
+  - About 13.6 players per week averaged 12+ DK points over their previous five
+    games and did not play. FantasyData projects those at a MEDIAN OF 0.00 --
+    its process knows who is inactive.
+  - The model keys on prior form (dkp_blended, dkp_ewm, dkp_r5 are its top
+    features) and has no equivalent mechanism, so it would project them high and
+    roster them.
+
+So the filter shields this model from exactly the failure mode the commercial
+feed is best at avoiding, and the real gap to FantasyData is wider than the
+numbers here show. The root cause is upstream: features.py builds a training row
+only for players who recorded a stat, so the model has never seen a single
+non-playing player and cannot have learned to recognise one.
+
+Compare sources to each other with that caveat in mind, and never to real
+contest scores.
 
 Defenses have no model: every source uses FantasyData's DST projection, and DST
 actual points are scored from play-by-play (approximate DK scoring).
@@ -222,6 +243,8 @@ def main() -> None:
 
 
 def report(r: pd.DataFrame) -> None:
+    # grabbed before the PERFECT rows are filtered out below
+    perfect_stack = r[r["source"].str.startswith("PERFECT")]["stacked"].mean() * 100
     perfect = r[r["source"].str.startswith("PERFECT")][["season", "week", "actual"]]
     r = r[~r["source"].str.startswith("PERFECT")].merge(
         perfect.rename(columns={"actual": "perfect"}), on=["season", "week"])
@@ -247,13 +270,34 @@ def report(r: pd.DataFrame) -> None:
     print(f"\nv3 vs FantasyData, week by week (current rules): v3 higher in {(diff > 0).mean() * 100:.0f}% "
           f"of weeks | avg margin {diff.mean():+.1f} | median {diff.median():+.1f}")
 
-    print("\nDoes forcing the QB stack help? (loose minus current, actual points)")
+    # Printed as CURRENT MINUS LOOSE, so a positive number means the rules help.
+    # The old orientation was loose-minus-current, which reads as "the stack cost
+    # you points" to anyone who does not check the direction -- and it did fool a
+    # reader on 2026-09-16 into proposing the rule be dropped. It gains points.
+    print("\nDoes forcing the QB stack help? (POSITIVE = forcing the stack scored MORE)")
     both = r.pivot_table(index=["season", "week", "source"], columns="rules", values="actual")
-    effect = (both["loose"] - both["current"]).groupby("source").agg(["mean", lambda s: (s > 0).mean() * 100])
-    effect.columns = ["avg change", "% weeks loose better"]
+    effect = (both["current"] - both["loose"]).groupby("source").agg(
+        ["mean", lambda s: (s > 0).mean() * 100])
+    effect.columns = ["avg gain from stacking", "% weeks stacking better"]
     print(effect.round(1).to_string())
-    print(f"\nloose lineups stacked anyway: "
-          f"{r[r['rules'].eq('loose')].groupby('source')['stacked'].mean().mul(100).round(0).to_dict()}")
+
+    # BASE-RATE WARNING, because the raw percentage below invites the wrong read.
+    # A position-legal lineup built with no stacking rule at all still stacks
+    # about 20% of the time by accident (measured: 19.7% over 72,000 simulated
+    # random legal lineups). So "optimal lineups stacked 53%" is not evidence
+    # that stacking is optional -- it is 2.7x the rate you would get from chance.
+    stacked = r[r["rules"].eq("loose")].groupby("source")["stacked"].mean().mul(100).round(0)
+    print(f"\nloose lineups that stacked anyway: {stacked.to_dict()}")
+    print(f"hindsight-perfect lineups that stacked: {perfect_stack:.0f}%  "
+          f"(vs ~20% base rate for a random legal lineup -- so ~{perfect_stack/19.7:.1f}x chance)")
+
+    # Same trap, same direction: the salary floor looks like a constraint that
+    # costs points. Measured, it never binds -- with the floor removed, v3 and
+    # FantasyData still spend over $49,000 in 100% of weeks.
+    under = (r[r["rules"].eq("loose")].assign(u=lambda d: d["salary"] < 49_000)
+              .groupby("source")["u"].mean().mul(100).round(1))
+    print(f"\nwith the salary floor OFF, % of lineups under $49,000: {under.to_dict()}")
+    print("  (0% means the floor never binds -- it is a no-op, not a cost)")
 
 
 if __name__ == "__main__":
