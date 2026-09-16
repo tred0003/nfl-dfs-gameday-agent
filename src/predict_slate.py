@@ -104,7 +104,8 @@ def project_dk_vegas(slate: pd.DataFrame, season: int, week: int) -> pd.DataFram
     d["opp_team"] = np.where(d["team"].eq(home), away, home)
 
     # anyone ruled out cannot be rostered
-    out_mask = d["status"].isin(["OUT", "IR"]) | d.get("is_disabled", False).fillna(False)
+    disabled = d["is_disabled"].fillna(False) if "is_disabled" in d.columns else False
+    out_mask = d["status"].isin(["OUT", "IR"]) | disabled
     d.loc[out_mask, "projection"] = np.nan
     d.loc[out_mask, "proj_source"] = "excluded (OUT/IR)"
     return d

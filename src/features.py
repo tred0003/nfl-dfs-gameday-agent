@@ -99,10 +99,23 @@ def defense_allowed(w: pd.DataFrame) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------ main build
-def build() -> pd.DataFrame:
-    w = pd.read_parquet(RAW / "weekly.parquet")
+def build(weekly: pd.DataFrame | None = None) -> pd.DataFrame:
+    """`weekly` lets src/predict_week.py pass in extra rows for games not yet
+    played (flagged `_future`, stats blank). Every feature is shifted one game,
+    so those rows get features from completed games only."""
+    w = pd.read_parquet(RAW / "weekly.parquet") if weekly is None else weekly.copy()
+    if "_future" not in w.columns:
+        w["_future"] = False
+    w["_future"] = w["_future"].fillna(False).astype(bool)
     w = w[w["season_type"].eq("REG") & w["position"].isin(SKILL)].copy()
+    # The stats_player source also lists games where a player's only stat was
+    # on special teams or defense (a coverage tackle). Keep games where he did
+    # something on offense -- the same population the old weekly file had.
+    offense = ["attempts", "carries", "targets", "receptions",
+               "passing_yards", "rushing_yards", "receiving_yards", "sacks"]
+    w = w[(w[offense].fillna(0).abs().sum(axis=1) > 0) | w["_future"]]
     w = add_dk_points(w)
+    w.loc[w["_future"], "dk_points"] = np.nan  # not played yet: no answer
 
     # snap share -- joined on name+team because snaps use PFR ids, not GSIS
     try:

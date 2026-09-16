@@ -20,12 +20,15 @@ data plumbing:
    nothing.
 
 Run: python src/train.py
+Tune: set TUNE = True below, then run the same way.
 """
 
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
+import time
 import warnings
 from pathlib import Path
 
@@ -57,6 +60,14 @@ PARAMS = dict(
     random_state=42,
 )
 
+# ------------------------------------------------------------------- tuning
+# True  = try every combination below and write models/tuning_results.xlsx.
+# False = the normal single training run using PARAMS above.
+# Tuning never touches metrics.json, so the saved results stay safe.
+TUNE = False 
+TREE_GRID = [100, 300, 600, 1000]
+LEARNING_RATE_GRID = [0.01, 0.03, 0.1]
+
 
 # ------------------------------------------------------------------- metrics
 def slate_spearman(df: pd.DataFrame, pred_col: str) -> float:
@@ -87,11 +98,21 @@ def evaluate(df: pd.DataFrame, pred_col: str, label: str) -> dict:
 
 
 # ----------------------------------------------------------------- training
-def walk_forward(df: pd.DataFrame, features: list[str]) -> tuple[pd.DataFrame, dict]:
-    """Train on everything before season S, predict S. Repeat."""
+def walk_forward(
+    df: pd.DataFrame,
+    features: list[str],
+    params: dict = PARAMS,
+    with_ceiling: bool = True,
+    seasons: list[int] | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    """Train on everything before season S, predict S. Repeat.
+
+    `seasons` overrides TEST_SEASONS so a caller can validate over a different
+    window -- src/backtest.py relies on this to score 2025 on its own.
+    """
     preds, importances = [], {}
 
-    for season in TEST_SEASONS:
+    for season in seasons or TEST_SEASONS:
         tr = df[df["season"] < season]
         te = df[df["season"] == season]
         if tr.empty or te.empty:
@@ -100,20 +121,23 @@ def walk_forward(df: pd.DataFrame, features: list[str]) -> tuple[pd.DataFrame, d
         Xtr, ytr = tr[features], tr[TARGET]
         Xte = te[features]
 
-        mean_model = xgb.XGBRegressor(objective="reg:squarederror", **PARAMS)
+        mean_model = xgb.XGBRegressor(objective="reg:squarederror", **params)
         mean_model.fit(Xtr, ytr, verbose=False)
+
+        out = te.copy()
+        out["pred_mean"] = mean_model.predict(Xte)
 
         # Tournaments pay the tail, not the average. An 85th-percentile model
         # answers "how high can this player go", which is the actual GPP
         # question -- a different target, not just a different threshold.
-        ceil_model = xgb.XGBRegressor(
-            objective="reg:quantileerror", quantile_alpha=0.85, **PARAMS
-        )
-        ceil_model.fit(Xtr, ytr, verbose=False)
+        # Skipped while tuning: it doubles the run time and isn't being tuned.
+        if with_ceiling:
+            ceil_model = xgb.XGBRegressor(
+                objective="reg:quantileerror", quantile_alpha=0.85, **params
+            )
+            ceil_model.fit(Xtr, ytr, verbose=False)
+            out["pred_ceiling"] = ceil_model.predict(Xte)
 
-        out = te.copy()
-        out["pred_mean"] = mean_model.predict(Xte)
-        out["pred_ceiling"] = ceil_model.predict(Xte)
         preds.append(out)
 
         importances[season] = dict(
@@ -136,8 +160,104 @@ def add_baselines(df: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
-def main(save: bool) -> None:
-    df = pd.read_parquet(PROC / "model_table.parquet")
+# ------------------------------------------------------------------- tuning
+def tune(df: pd.DataFrame, features: list[str]) -> None:
+    """Score every tree-count x learning-rate combination, write to Excel."""
+    combos = list(itertools.product(TREE_GRID, LEARNING_RATE_GRID))
+    print(f"TUNING: {len(combos)} combinations, mean model only\n")
+
+    rows, baseline = [], None
+    for i, (trees, lr) in enumerate(combos, 1):
+        print(f"[{i}/{len(combos)}] trees={trees}, learning_rate={lr}", flush=True)
+        params = {**PARAMS, "n_estimators": trees, "learning_rate": lr}
+
+        start = time.time()
+        preds, _ = walk_forward(df, features, params, with_ceiling=False)
+        res = evaluate(preds, "pred_mean", "XGBoost")
+
+        row = {
+            "model": "XGBoost",
+            "trees": trees,
+            "learning_rate": lr,
+            "slate_spearman": res["slate_spearman"],
+            "rmse": res["rmse"],
+            "mae": res["mae"],
+        }
+        # one score per test season -- shows whether a winner wins every year
+        for season in TEST_SEASONS:
+            row[f"spearman_{season}"] = round(
+                slate_spearman(preds[preds["season"].eq(season)], "pred_mean"), 4
+            )
+        row["seconds"] = round(time.time() - start, 1)
+        rows.append(row)
+        print(f"    -> slate_spearman {row['slate_spearman']}, rmse {row['rmse']}, "
+              f"{row['seconds']}s\n", flush=True)
+
+        # the baseline doesn't depend on the model, so score it once
+        if baseline is None:
+            preds = add_baselines(preds)
+            b = evaluate(preds, "base_rolling", "baseline: rolling avg")
+            baseline = {"model": b["model"], "slate_spearman": b["slate_spearman"],
+                        "rmse": b["rmse"], "mae": b["mae"]}
+            for season in TEST_SEASONS:
+                sub = preds[preds["season"].eq(season)].dropna(subset=["base_rolling"])
+                baseline[f"spearman_{season}"] = round(slate_spearman(sub, "base_rolling"), 4)
+
+    results = pd.DataFrame(rows).sort_values("slate_spearman", ascending=False)
+    results.insert(0, "rank", range(1, len(results) + 1))
+    results = pd.concat([results, pd.DataFrame([baseline])], ignore_index=True)
+
+    # the same scores as a grid: trees down the side, learning rate across
+    grid = (pd.DataFrame(rows)
+              .pivot(index="trees", columns="learning_rate", values="slate_spearman"))
+    grid.columns = [f"lr {c}" for c in grid.columns]
+
+    write_tuning_excel(results, grid)
+
+
+def write_tuning_excel(results: pd.DataFrame, grid: pd.DataFrame) -> None:
+    from openpyxl.formatting.rule import ColorScaleRule
+    from openpyxl.utils import get_column_letter
+
+    MODELS.mkdir(parents=True, exist_ok=True)
+    path = MODELS / "tuning_results.xlsx"
+    try:
+        writer = pd.ExcelWriter(path, engine="openpyxl")
+    except PermissionError:
+        # the file is open in Excel -- write a new one instead of crashing
+        path = MODELS / f"tuning_results_{time.strftime('%H%M%S')}.xlsx"
+        writer = pd.ExcelWriter(path, engine="openpyxl")
+
+    with writer:
+        results.to_excel(writer, sheet_name="results", index=False)
+        grid.to_excel(writer, sheet_name="spearman grid", index_label="trees")
+
+        for ws in writer.sheets.values():
+            ws.freeze_panes = "B2"
+            for col in ws.columns:
+                width = max(len(str(c.value)) for c in col if c.value is not None)
+                ws.column_dimensions[get_column_letter(col[0].column)].width = width + 3
+
+        # green = best ranking score, red = worst
+        g = writer.sheets["spearman grid"]
+        cells = f"B2:{get_column_letter(g.max_column)}{g.max_row}"
+        g.conditional_formatting.add(cells, ColorScaleRule(
+            start_type="min", start_color="F8696B",
+            mid_type="percentile", mid_value=50, mid_color="FFEB84",
+            end_type="max", end_color="63BE7B",
+        ))
+
+    print(f"saved tuning results to {path}")
+
+
+def load_table(name: str = "model_table") -> tuple[pd.DataFrame, list[str]]:
+    """Read a model table; every column that isn't an ID or the answer is a feature.
+
+    Kept as a function rather than inlined in main() because src/backtest.py
+    imports it to build the same feature set main() trains on. Two copies of
+    this logic is how training and backtesting quietly drift apart.
+    """
+    df = pd.read_parquet(PROC / f"{name}.parquet")
     features = [c for c in df.columns if c not in {
         "player_id", "player_display_name", "position", "recent_team",
         "opponent_team", "season", "week", TARGET,
@@ -145,9 +265,18 @@ def main(save: bool) -> None:
     # position is categorical and genuinely predictive -- one-hot it
     df = pd.concat([df, pd.get_dummies(df["position"], prefix="pos")], axis=1)
     features += [c for c in df.columns if c.startswith("pos_")]
+    return df, features
+
+
+def main(save: bool) -> None:
+    df, features = load_table()
 
     print(f"model table {df.shape[0]:,} rows, {len(features)} features")
     print(f"walk-forward over seasons {TEST_SEASONS}\n")
+
+    if TUNE:
+        tune(df, features)
+        return
 
     preds, importances = walk_forward(df, features)
     preds = add_baselines(preds)

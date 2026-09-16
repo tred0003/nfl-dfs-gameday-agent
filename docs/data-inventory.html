@@ -1,0 +1,387 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<title>NFL DFS Data Inventory</title>
+<style>
+@page { size: Letter; margin: 0.6in 0.6in 0.7in 0.6in;
+  @bottom-center { content: "Page " counter(page) " of " counter(pages); font: 9pt system-ui, sans-serif; color: #666; }
+  @bottom-left { content: "NFL DFS Data Inventory · 2026-09-15"; font: 8pt system-ui, sans-serif; color: #999; } }
+:root { --ink:#1d1d1f; --mute:#5f6368; --line:#d9dce1; --used:#1a7f37; --disk:#0b5cad; --free:#8a5a00; --miss:#b3261e; --bg:#f6f7f9; }
+* { box-sizing: border-box; }
+body { font: 10pt/1.42 "Segoe UI", system-ui, sans-serif; color: var(--ink); margin: 0; }
+h1 { font-size: 24pt; margin: 0 0 4pt; letter-spacing: -0.3pt; }
+h2 { font-size: 15pt; margin: 0 0 8pt; padding-bottom: 4pt; border-bottom: 2px solid var(--ink); break-after: avoid; }
+h3 { font-size: 11.5pt; margin: 14pt 0 4pt; break-after: avoid; }
+p { margin: 0 0 6pt; }
+.sub { color: var(--mute); font-size: 11pt; margin-bottom: 8pt; }
+.section { break-before: page; }
+table { width: 100%; border-collapse: collapse; margin: 4pt 0 8pt; font-size: 8.8pt; break-inside: auto; }
+th, td { text-align: left; vertical-align: top; padding: 3pt 5pt; border-bottom: 1px solid var(--line); }
+th { background: var(--bg); font-weight: 600; border-bottom: 1px solid #b9bec6; }
+tr { break-inside: avoid; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+code { font-family: Consolas, monospace; font-size: 8.6pt; background: var(--bg); padding: 0 2pt; border-radius: 2pt; }
+.tag { display: inline-block; font-size: 7.5pt; font-weight: 700; letter-spacing: .3pt; padding: 1pt 5pt; border-radius: 8pt; color: #fff; white-space: nowrap; }
+.used { background: var(--used); } .disk { background: var(--disk); } .free { background: var(--free); } .miss { background: var(--miss); }
+.card { border: 1px solid var(--line); border-left: 4px solid var(--disk); border-radius: 4pt; padding: 7pt 10pt 4pt; margin: 0 0 10pt; break-inside: auto; }
+.card.u { border-left-color: var(--used); } .card.f { border-left-color: var(--free); } .card.m { border-left-color: var(--miss); }
+.card h3 { margin-top: 0; }
+.meta { color: var(--mute); font-size: 8.8pt; margin-bottom: 4pt; }
+.note { background: #fff8e6; border: 1px solid #f0d9a0; border-radius: 4pt; padding: 6pt 9pt; margin: 6pt 0 10pt; font-size: 9.2pt; break-inside: avoid; }
+.warn { background: #fdecea; border-color: #f2b8b5; }
+ul { margin: 2pt 0 6pt 16pt; padding: 0; } li { margin-bottom: 2pt; }
+.q { color: var(--mute); }
+.tight td, .tight th { padding: 1.6pt 5pt; }
+.write { border-bottom: 1px solid #c8ccd2; height: 22pt; }
+.notes { break-before: page; }
+</style></head><body>
+
+<h1>NFL DFS Data Inventory</h1>
+<div class="sub">Everything the project has, what it could get for free, and what does not exist anywhere.<br>
+Project: <code>C:\new_career2026\nfl-dfs</code> · Built from the files on disk, 2026-09-15.</div>
+
+<h3>How to read this</h3>
+<p>Every dataset carries one of four labels:</p>
+<table>
+<tr><th style="width:18%">Label</th><th>Meaning</th></tr>
+<tr><td><span class="tag used">IN MODEL</span></td><td>On disk and already feeding the points model (<code>src/features.py</code>).</td></tr>
+<tr><td><span class="tag disk">ON DISK</span></td><td>Downloaded, but the model has never used it. <b>This is where most of the untapped value is.</b></td></tr>
+<tr><td><span class="tag free">NEW, UNUSED</span></td><td>Free data downloaded 2026-09-15 with <code>python src/fetch_nflverse.py --extras-only --end 2026</code>. Not in the model yet.</td></tr>
+<tr><td><span class="tag miss">MISSING</span></td><td>Could not be found free or in the FantasyData subscription.</td></tr>
+</table>
+
+<h3>The whole picture</h3>
+<table class="tight">
+<tr><th>Dataset</th><th>Grain</th><th>Seasons</th><th class="num">Rows</th><th>Status</th></tr>
+<tr><td>Weekly player stats (nflverse)</td><td>player-week</td><td>2016–2024</td><td class="num">49,161</td><td><span class="tag used">IN MODEL</span></td></tr>
+<tr><td>Schedules + Vegas lines + weather</td><td>game</td><td>2016–2025</td><td class="num">2,761</td><td><span class="tag used">IN MODEL</span></td></tr>
+<tr><td>Snap counts</td><td>player-week</td><td>2016–2025</td><td class="num">253,106</td><td><span class="tag used">IN MODEL</span></td></tr>
+<tr><td>Model table (the features)</td><td>player-week</td><td>2016–2024</td><td class="num">45,715</td><td><span class="tag used">IN MODEL</span></td></tr>
+<tr><td>Injury reports</td><td>player-week</td><td>2016–2025</td><td class="num">55,556</td><td><span class="tag disk">ON DISK</span></td></tr>
+<tr><td>Depth charts</td><td>team-week / daily</td><td>2016–2025</td><td class="num">886,389</td><td><span class="tag disk">ON DISK</span></td></tr>
+<tr><td>Player ID crosswalk + age, draft, size</td><td>player</td><td>current</td><td class="num">12,492</td><td><span class="tag disk">ON DISK</span></td></tr>
+<tr><td>DK salaries (RotoGuru)</td><td>player-week</td><td>2016–2021</td><td class="num">41,201</td><td><span class="tag disk">ON DISK</span></td></tr>
+<tr><td>DK salaries + projection (FantasyData)</td><td>player-week</td><td>2022–2025</td><td class="num">72 files</td><td><span class="tag disk">ON DISK</span></td></tr>
+<tr><td>DFS projections export (FantasyData)</td><td>player-week</td><td>scattered 2017–2026</td><td class="num">73 files</td><td><span class="tag disk">ON DISK</span></td></tr>
+<tr><td>Advanced metrics (FantasyData)</td><td>season total</td><td>2021–2025</td><td class="num">20 files</td><td><span class="tag disk">ON DISK</span></td></tr>
+<tr><td>Efficiency metrics (FantasyData)</td><td>season total</td><td>2021–2025</td><td class="num">20 files</td><td><span class="tag disk">ON DISK</span></td></tr>
+<tr><td>Live DK slate snapshots</td><td>player-snapshot</td><td>2026 Wk 1</td><td class="num">4 files</td><td><span class="tag disk">ON DISK</span></td></tr>
+<tr><td>Play-by-play</td><td>play</td><td>1999–2026</td><td class="num">~48k plays/yr</td><td><span class="tag free">NEW, UNUSED</span></td></tr>
+<tr><td>Participation (who was on the field)</td><td>play</td><td>2016–2025</td><td class="num">~48k plays/yr</td><td><span class="tag free">NEW, UNUSED</span></td></tr>
+<tr><td>FTN film charting</td><td>play</td><td>2022–2026</td><td class="num">~47k plays/yr</td><td><span class="tag free">NEW, UNUSED</span></td></tr>
+<tr><td>Next Gen Stats (separation, cushion)</td><td>player-week</td><td>2016–2026</td><td class="num">14,877 (rec.)</td><td><span class="tag free">NEW, UNUSED</span></td></tr>
+<tr><td>Pro Football Reference advanced</td><td>player-week</td><td>2018–2026</td><td class="num">—</td><td><span class="tag free">NEW, UNUSED</span></td></tr>
+<tr><td>Draft picks · Combine · Contracts</td><td>player</td><td>historical</td><td class="num">—</td><td><span class="tag free">NEW, UNUSED</span></td></tr>
+<tr><td>Historical ownership, line movement, player props…</td><td>—</td><td>—</td><td class="num">—</td><td><span class="tag miss">MISSING</span></td></tr>
+</table>
+
+<h3>Three words used throughout</h3>
+<table>
+<tr><th style="width:18%">Term</th><th>Plain English</th></tr>
+<tr><td><b>Grain</b></td><td>What one row means. "Player-week" = one row per player per game. "Season total" = one row per player per season. The model needs player-week.</td></tr>
+<tr><td><b>Known before kickoff</b></td><td>The one rule for any feature: could you have known it before the game started? If not, the model is peeking at the answer (<i>leakage</i>). A season total used for a game <i>inside</i> that season breaks this rule; last season's total does not.</td></tr>
+<tr><td><b>Fill %</b></td><td>The share of rows where a column actually has a value. 65% means 35% are blank.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<div class="section">
+<h2>1 · In the model today</h2>
+<p>Four sources feed the model. It ranks each week's players with a score of <b>0.5958</b> (slate-rank Spearman, 2021–2024) against <b>0.5791</b> for a plain rolling average. An honest caveat: those two numbers were measured on different row counts (21,071 vs 16,751), so the true gap is not settled yet.</p>
+
+<div class="card u">
+<h3>Weekly player stats <span class="tag used">IN MODEL</span></h3>
+<div class="meta"><code>data/raw/weekly.parquet</code> · 49,161 rows · 53 columns · 2016–2024 · QB/RB/WR/TE · source: nflverse</div>
+<p>The box score for every player in every game. The model's target (DraftKings points) is computed from it.</p>
+<table>
+<tr><th style="width:32%">Column group</th><th>What it holds</th><th class="num">Fill</th></tr>
+<tr><td>Passing</td><td>completions, attempts, yards, TDs, INTs, sacks, air yards, yards after catch, first downs</td><td class="num">100%</td></tr>
+<tr><td>Rushing</td><td>carries, yards, TDs, fumbles, first downs</td><td class="num">100%</td></tr>
+<tr><td>Receiving</td><td>receptions, targets, yards, TDs, air yards, yards after catch, first downs</td><td class="num">100%</td></tr>
+<tr><td>Shares</td><td><code>target_share</code> (his share of team targets), <code>air_yards_share</code>, <code>wopr</code> (a blend of the two)</td><td class="num">81%</td></tr>
+<tr><td>Efficiency (EPA)</td><td><code>passing_epa</code>, <code>rushing_epa</code>, <code>receiving_epa</code>: expected points added (how much a player's plays moved the team's scoring odds)</td><td class="num">12–81%</td></tr>
+</table>
+<div class="note warn"><b>Gap:</b> stops at 2024. The 2025 season has to be rebuilt from play-by-play (free) before 2025 can be trained on.</div>
+</div>
+
+<div class="card u">
+<h3>Schedules, Vegas lines, weather <span class="tag used">IN MODEL</span></h3>
+<div class="meta"><code>data/raw/schedules.parquet</code> · 2,761 games · 46 columns · 2016–2025 · source: nflverse</div>
+<table>
+<tr><th style="width:32%">Columns</th><th>Plain English</th><th class="num">Fill</th></tr>
+<tr><td><code>spread_line</code>, <code>total_line</code>, moneylines, odds</td><td>One Vegas line per game (no timestamp, so no line movement)</td><td class="num">100%</td></tr>
+<tr><td><code>temp</code>, <code>wind</code>, <code>roof</code>, <code>surface</code></td><td>Weather. Blanks are domes, which the code fills as 70° with no wind.</td><td class="num">65%</td></tr>
+<tr><td><code>away_rest</code>, <code>home_rest</code>, <code>div_game</code></td><td>Days since last game; divisional matchup</td><td class="num">100%</td></tr>
+<tr><td><code>away_qb_id</code>, <code>home_qb_id</code></td><td>Starting QB each game (drives the <code>green_qb</code> feature)</td><td class="num">100%</td></tr>
+<tr><td><code>home_coach</code>, <code>away_coach</code> <span class="tag disk">UNUSED</span></td><td>Head coach (95 distinct). Could capture coaching changes and play-calling tendencies.</td><td class="num">100%</td></tr>
+<tr><td><code>referee</code> <span class="tag disk">UNUSED</span></td><td>Referee crew chief (33 distinct). Crews differ in penalty rates, which changes the number of plays.</td><td class="num">100%</td></tr>
+<tr><td><code>home_score</code>, <code>away_score</code></td><td>Final score. <b>Never a feature</b>: not known before kickoff.</td><td class="num">100%</td></tr>
+</table>
+</div>
+
+<div class="card u">
+<h3>Snap counts <span class="tag used">IN MODEL</span></h3>
+<div class="meta"><code>data/raw/snaps.parquet</code> · 253,106 rows · 2016–2025 · all positions incl. defense and special teams · source: Pro Football Reference via nflverse</div>
+<p><code>offense_pct</code> = the share of his team's offensive plays he was on the field for. The model uses 3- and 5-game averages. Joined by name + team (it uses a different player ID), so a few players get lost in the join.</p>
+</div>
+
+<div class="card u">
+<h3>The model table <span class="tag used">IN MODEL</span></h3>
+<div class="meta"><code>data/processed/model_table.parquet</code> · 45,715 player-weeks · 2016–2024 · built by <code>src/features.py</code></div>
+<table>
+<tr><th style="width:24%">Family</th><th>Features (39 total)</th></tr>
+<tr><td>Recent scoring</td><td><code>dkp_r3 / r5 / r8</code> (averages), <code>dkp_ewm</code> (recent-weighted), <code>dkp_lag1</code> (last game), <code>dkp_std_r8</code> (how streaky)</td></tr>
+<tr><td>Opportunity</td><td>target share, air-yards share, WOPR, targets, carries, receptions, snap %, targets per snap, games so far</td></tr>
+<tr><td>Vegas / context</td><td>implied team &amp; opponent totals, total, spread, home, rest, divisional, green QB</td></tr>
+<tr><td>Matchup</td><td><code>def_allowed_r4 / r8</code>: points this defense gave up to his position recently</td></tr>
+<tr><td>Weather</td><td>wind, temp, indoor</td></tr>
+<tr><td>Interactions</td><td><code>spread_x_rb</code>, <code>spread_x_pass</code> (game-script effects)</td></tr>
+<tr><td>Position</td><td>QB / RB / WR / TE flags</td></tr>
+</table>
+<div class="note"><b>Built-in blind spot:</b> every rolling average resets each season, so in Week 1 the model knows nothing about any player's history. <b>Nothing about injuries, depth, age, price, or routes is in here yet.</b></div>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<div class="section">
+<h2>2 · On disk, never used</h2>
+<p>Already downloaded. Turning any of these into features costs code, not money.</p>
+
+<div class="card">
+<h3>Injury reports <span class="tag disk">ON DISK</span></h3>
+<div class="meta"><code>data/raw/injuries.parquet</code> · 55,556 rows · 2016–2025 · ~5,100–6,200 per season · source: official NFL reports via nflverse</div>
+<table>
+<tr><th style="width:30%">Column</th><th>Values seen</th></tr>
+<tr><td><code>report_status</code> (game designation)</td><td>Questionable 14,875 · Out 10,257 · Doubtful 1,672 (48% filled; blank = practiced but not designated)</td></tr>
+<tr><td><code>practice_status</code></td><td>Full 25,719 · Did Not Participate 15,654 · Limited 13,925</td></tr>
+<tr><td><code>report_primary_injury</code></td><td>Body part (hamstring, knee, …)</td></tr>
+<tr><td><code>date_modified</code></td><td>When the report was last updated (89% filled): a rough clock on when news became public</td></tr>
+</table>
+<p class="q">Feature #1 idea: when a starter is Out, how many targets and carries is he leaving behind, and who inherits them?</p>
+</div>
+
+<div class="card">
+<h3>Depth charts <span class="tag disk">ON DISK</span></h3>
+<div class="meta"><code>data/raw/depth_charts.parquet</code> · 886,389 rows · source: team-published, via nflverse</div>
+<table>
+<tr><th style="width:20%">Seasons</th><th>Format</th></tr>
+<tr><td>2016–2024</td><td>One chart per team per week (332,174 rows, regular season + playoffs). <code>depth_team</code> 1/2/3 = starter / backup / third.</td></tr>
+<tr><td>2025</td><td><b>Daily</b> copies, 219 days from Aug 3 2025 to Mar 14 2026 (554,215 rows). Different columns (<code>pos_rank</code>, <code>pos_slot</code>) and <b>no season/week column</b>, so dates must be matched to weeks.</td></tr>
+</table>
+<div class="note">Teams publish these themselves and they are often stale or vague. Pair them with injury reports: injuries say who is <i>out</i>, depth charts say who is <i>next</i>.</div>
+</div>
+
+<div class="card">
+<h3>Player ID crosswalk <span class="tag disk">ON DISK</span></h3>
+<div class="meta"><code>data/raw/ids.parquet</code> · 12,492 players · 35 columns · source: DynastyProcess via nflverse</div>
+<p>Translates one site's player ID into another's. <b>It is also the only place the project has age and draft data.</b></p>
+<table>
+<tr><th style="width:36%">Column</th><th>Use</th><th class="num">Fill</th></tr>
+<tr><td><code>gsis_id</code></td><td>The NFL's ID; what weekly stats use</td><td class="num">64%</td></tr>
+<tr><td><code>fantasy_data_id</code></td><td>Links FantasyData files. <b>Matches 294 of the top 300 salaried players</b> (1,101 of 1,391 skill players overall)</td><td class="num">47%</td></tr>
+<tr><td><code>birthdate</code>, <code>age</code></td><td>Aging curves. <b>No age feature exists in the model.</b></td><td class="num">90%</td></tr>
+<tr><td><code>draft_round</code>, <code>draft_pick</code></td><td>Draft capital: how much a team invested in him, which is a signal for rookies with no stats</td><td class="num">58%</td></tr>
+<tr><td><code>height</code>, <code>weight</code>, <code>college</code></td><td>Body type (e.g., size for goal-line backs)</td><td class="num">91–95%</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h3>DraftKings salaries, 2016–2021 <span class="tag disk">ON DISK</span></h3>
+<div class="meta"><code>data/raw/dk_salaries.parquet</code> · 41,201 rows · weeks 1–17 (2021 Week 18 missing) · source: RotoGuru</div>
+<p>Salary <b>and actual DK points</b> in the same row, so points per dollar is directly measurable. QB 3,804 · RB 10,800 · WR 14,849 · TE 8,676 · DEF 3,072 rows. Names are "Last, First" format; team codes are lowercase 3-letter (<code>kan</code>, <code>sfo</code>).</p>
+</div>
+</div>
+
+<div style="margin-top:14pt">
+<h2>2 · On disk, never used (continued): FantasyData</h2>
+<p>Bought one month of All Access and canceled on 2026-09-15. Folder: <code>data/raw/fantasydata/</code>.</p>
+
+<div class="card">
+<h3>Weekly salaries + FantasyData projection <span class="tag disk">ON DISK</span></h3>
+<div class="meta"><code>salaries/dk_{season}_wk{NN}.csv</code> · 72 files · 2022–2025, weeks 1–18, complete · ~650–950 players/week</div>
+<table>
+<tr><th style="width:30%">Column</th><th>Meaning</th></tr>
+<tr><td><code>salary_draftkings</code></td><td>DK salary</td></tr>
+<tr><td><code>fpts_draftkings</code></td><td><b>FantasyData's projection</b>, not actual points (equals actual only 2.8% of the time; correlation with actual 0.65). <b>This is the benchmark to beat.</b></td></tr>
+<tr><td><code>id</code></td><td>FantasyData player ID → crosswalk → NFL ID</td></tr>
+<tr><td><code>opp_rank</code>, <code>opp_pos_rank</code></td><td>FantasyData's defense rankings</td></tr>
+</table>
+<ul>
+<li>Includes kickers, defenses, individual defensive players, and many backups who never play.</li>
+<li>Salaries agree with RotoGuru on <b>99.7%</b> of 384 overlapping players (2021 Week 1), so the two sources can be combined.</li>
+<li>2022 Week 16 (Christmas): 7% of salaries differ from the projections export, because different DK slates were used.</li>
+<li>Files had no season/week column; each was identified by matching its games to the NFL schedule (all 72 matched exactly).</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>DFS projections export <span class="tag disk">ON DISK</span></h3>
+<div class="meta"><code>projections/dk_{season}_wk{NN}.csv</code> · 73 files</div>
+<table>
+<tr><th>Season</th><th>Weeks on disk</th><th>Season</th><th>Weeks on disk</th></tr>
+<tr><td>2017</td><td>1–17 except 16</td><td>2021</td><td>1–18 (all)</td></tr>
+<tr><td>2018</td><td>1–17 (all)</td><td>2022</td><td>2–18</td></tr>
+<tr><td>2019, 2020</td><td>Week 1 only</td><td>2023</td><td>17–18</td></tr>
+<tr><td></td><td></td><td>2026</td><td>Week 1</td></tr>
+</table>
+<p>Same salary and projection as the salary files, plus <code>roster_slots</code> and <code>own_pct</code>. <b>Ownership exists only for 2021 Weeks 1–5</b> (167–267 players per week, adding up to ~100% per roster slot); blank everywhere else. Holiday weeks sometimes leave out Thanksgiving or Saturday games.</p>
+</div>
+
+<div class="card">
+<h3>Advanced metrics, season totals <span class="tag disk">ON DISK</span></h3>
+<div class="meta"><code>advanced/{qb,rb,wr,te}_{2021..2025}.csv</code> · 20 files</div>
+<table>
+<tr><th style="width:10%">Pos</th><th>Columns</th></tr>
+<tr><td>WR/TE</td><td><b>RouteParticipation</b> (share of pass plays he ran a route), SnapShare, AverageTargetDistance, AirYards, RedZoneTargets, EndzoneTargets, TargetShare, FantasyPointsPerTarget, <s>TargetAccuracy</s> (dead in 2024–25)</td></tr>
+<tr><td>RB</td><td>SnapShare, OpportunityShare, ShotgunCarryRate, UnderCenterCarryRate, AverageDefendersInTheBox, Stacked/Base/LightFrontCarryRate, <s>Shotgun/UnderCenter YPC</s> (junk 2021–22). <b>No route participation.</b></td></tr>
+<tr><td>QB</td><td><b>MoneyThrows</b>, ProtectionRate, PressuredCompletionPercentage, AirYardsPerAttempt, DeepBallAttempts, DeepBallCompletionPercentage</td></tr>
+</table>
+<p class="q">Fill improves every year: the 2021 files are 50–77% filled (blanks are fringe players), 2024–25 are 93–100%.</p>
+</div>
+
+<div class="card">
+<h3>Efficiency metrics, season totals <span class="tag disk">ON DISK</span></h3>
+<div class="meta"><code>efficiency/{qb,rb,wr,te}_{2021..2025}.csv</code> · 20 files · nearly 100% filled</div>
+<table>
+<tr><th style="width:10%">Pos</th><th>Columns (<b>bold</b> = judged from game film, only source)</th></tr>
+<tr><td>RB</td><td><b>JukeRate, EvadedTackles, YardsCreated</b> (+ per game, per carry), BreakawayRuns/Rate, Drops, DropRate, points per carry/target/opportunity</td></tr>
+<tr><td>WR/TE</td><td><b>ContestedTargets, ContestedCatches, ReceiverContestedCatchRate, TrueCatchRate</b>, AverageCushion, TargetSeparation, YardsPerRouteRun, Drops</td></tr>
+<tr><td>QB</td><td><b>InterceptablePasses, TruePasserRating</b>, PlayactionPassCompletionPercentage, ReceiverTargetSeparation, RedZoneAttempts, DroppedPasses, <s>AccuracyRating</s> (dead 2024–25)</td></tr>
+</table>
+<div class="note">Season totals can only describe the <b>next</b> season (known-before-kickoff rule). Five seasons = four year-over-year comparisons: enough for a research test, thin for training a model.</div>
+</div>
+
+<div class="card">
+<h3>Live DraftKings slate snapshots, 2026 Week 1 <span class="tag disk">ON DISK</span></h3>
+<div class="meta"><code>data/slates/dg151307/</code> (12-game main slate, 744–746 players) · <code>data/slates/dg153069/</code> (711 players) · pulled Sept 8 and Sept 10</div>
+<p>Columns: salary, <code>status</code> (OUT/Q/IR), <code>news_status</code> (breaking news flag), <code>dk_fppg</code>, <code>dk_oprk</code>, kickoff time, dome, plus a projections file with the model's Week 1 numbers. <b>No snapshot from Sunday morning</b>, so last-minute status changes weren't captured. Only going forward can this build a salary and news history.</p>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<div class="section">
+<h2>3 · Free data, downloaded 2026-09-15</h2>
+<p>All free from nflverse, now in <code>data/raw/</code>. None of it is in the model yet. Current-season (2026) files grow every week; re-run the fetch script with <code>--refresh</code> to update them.</p>
+
+<div class="card f">
+<h3>Play-by-play <span class="tag free">NEW, UNUSED</span></h3>
+<div class="meta"><code>data/raw/pbp/</code> · 2016–2026 (2026 = Week 1 so far) · ~47–50k plays a season · 372 columns · 199 MB</div>
+<p>Every play: down, distance, field position (<code>yardline_100</code>), pass/run, air yards, who was targeted, result, win probability, EPA. Anything situational can be counted from it:</p>
+<ul>
+<li><b>Red-zone and goal-line</b> carries and targets (inside the 20, 10, 5)</li>
+<li><b>End-zone targets</b> and deep targets</li>
+<li><b>Pass rate over expected</b> by team (does a coach throw more than the situation calls for?)</li>
+<li><b>Pace</b>: seconds per play, plays per game</li>
+<li><b>2025 weekly stats</b>, rebuilt to fill the gap</li>
+</ul>
+</div>
+
+<div class="card f">
+<h3>Participation <span class="tag free">NEW, UNUSED</span></h3>
+<div class="meta"><code>data/raw/participation/</code> · 2016–2025 (2026 not published yet) · ~45–51k plays a season · player names and positions added from 2023</div>
+<p>The IDs of all 11 offensive and 11 defensive players on the field, plus formation, personnel, defenders in the box, pass rushers, time to throw, pressure, man/zone coverage, and a route label on pass plays.</p>
+<p><b>Weekly routes run, calculated free:</b> the share of team pass plays a receiver was on the field for. Checked against FantasyData's 2025 route participation, it landed within 1–4 points for six top WRs (e.g., Chase 96.5% vs 97.2%, Nacua 78.7% vs 77.2%). Not yet tested for TEs and RBs, where blocking snaps make it looser.</p>
+</div>
+
+<div class="card f">
+<h3>FTN film charting <span class="tag free">NEW, UNUSED</span></h3>
+<div class="meta"><code>data/raw/ftn/</code> · 2022–2026 · ~42–48k plays a season</div>
+<p>Human-charted flags on every play: <code>is_catchable_ball</code>, <code>is_contested_ball</code>, <code>is_created_reception</code>, <code>is_drop</code>, <code>is_interception_worthy</code>, <code>is_play_action</code>, <code>is_motion</code>, <code>is_rpo</code>, <code>is_screen_pass</code>, <code>n_blitzers</code>, <code>is_qb_out_of_pocket</code>, <code>is_throw_away</code>.</p>
+<p><b>This is the weekly, free version of several FantasyData film stats</b> (contested catches, catchable-ball rate, interception-worthy throws).</p>
+</div>
+
+<div class="card f">
+<h3>Next Gen Stats (weekly) <span class="tag free">NEW, UNUSED</span></h3>
+<div class="meta"><code>data/raw/ngs/</code> · 2016–2026 · receiving 14,877 · rushing 6,127 · passing 5,997 rows (week 0 = season totals)</div>
+<p>Receiving: <code>avg_separation</code> (distance from the nearest defender at the catch or incompletion), <code>avg_cushion</code> (how far off the defender plays at the snap), <code>avg_intended_air_yards</code>, <code>avg_yac_above_expectation</code>. Only the more-involved players each week (~1,350 receiving rows a season). <b>Cushion is the defense's own read on a receiver's speed</b>, making it the best free "losing a step" signal.</p>
+</div>
+
+<div class="card f">
+<h3>Pro Football Reference advanced (weekly) <span class="tag free">NEW, UNUSED</span></h3>
+<div class="meta"><code>data/raw/pfr/</code> · rush, rec, pass, def · 2018–2026 (2026 Week 1 incomplete upstream: 4 teams)</div>
+<p>Rushing yards before and after contact, broken tackles, receiving drops and drop %, passing drops, and more. Broken tackles run about <b>one-third</b> of FantasyData's "evaded tackles" (a stricter definition), but in six 2025 backs the top two and bottom one were the same players on both lists.</p>
+</div>
+
+<div class="card f">
+<h3>Draft picks · Combine · Contracts <span class="tag free">NEW, UNUSED</span></h3>
+<div class="meta"><code>data/raw/players/</code> · draft picks 12,927 (1980–2026) · combine 8,968 (2000–2026) · contracts 52,816</div>
+<p>Full draft history; 40-yard dash, weight, vertical, etc.; contract value and guaranteed money. A team that just gave a player guaranteed money has a reason to keep using him.</p>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<div class="section">
+<h2>4 · What is NOT there</h2>
+<p>Searched for and not found free or in the subscription, or only partly available. Each gap is also a clue: if data is hard to get, the market may price it poorly.</p>
+<table>
+<tr><th style="width:24%">Missing</th><th style="width:40%">Why it matters</th><th>Closest thing you have</th></tr>
+<tr><td><b>Historical ownership</b> <span class="tag miss">MISSING</span></td><td>Tournaments are won with players the field ignores. You can't learn what the crowd overlooks without knowing what it picked.</td><td>2021 Weeks 1–5 only. Could be approximated: ownership tends to follow salary value and recent points.</td></tr>
+<tr><td><b>Line movement</b> <span class="tag miss">MISSING</span></td><td>How the betting market reacted to news during the week</td><td>One line per game, two sources that differ slightly, no timestamps</td></tr>
+<tr><td><b>Player props</b> <span class="tag miss">MISSING</span></td><td>Vegas's own projection for each player (e.g., receiving yards over/under). Likely the sharpest projection that exists.</td><td>Team totals only (implied team total)</td></tr>
+<tr><td><b>Contest results</b> <span class="tag miss">MISSING</span></td><td>What winning lineups scored, field sizes, payout structures. Decides how much risk a lineup should take.</td><td>Your own DK entry history (downloadable from your account)</td></tr>
+<tr><td><b>Precipitation</b> <span class="tag miss">MISSING</span></td><td>Rain and snow hypotheses</td><td>Temp and wind only; would need Meteostat/NOAA joined on stadium location</td></tr>
+<tr><td><b>News timing</b> <span class="tag miss">MISSING</span></td><td>An injury announced Friday vs. 90 minutes before kickoff gets priced very differently</td><td>Injury <code>date_modified</code> (rough); DK <code>news_status</code> going forward</td></tr>
+<tr><td><b>Sunday inactives (history)</b> <span class="tag miss">MISSING</span></td><td>The final "who is really playing" list, 90 minutes before kickoff</td><td>Injury reports (Friday); snap counts show it after the fact</td></tr>
+<tr><td><b>Player speed / tracking</b> <span class="tag miss">MISSING</span></td><td>Direct measure of losing a step</td><td>NGS cushion and separation (free, weekly)</td></tr>
+<tr><td><b>Offensive line quality</b> <span class="tag miss">MISSING</span></td><td>Separates a running back's talent from his blocking</td><td>Can be built: pressure rate and yards before contact from free data</td></tr>
+<tr><td><b>Official weekly routes</b> <span class="tag miss">MISSING</span></td><td>The cleanest measure of receiver opportunity</td><td>Participation proxy (within 1–4 pts for WRs); FantasyData season totals to check it</td></tr>
+<tr><td><b>Salary slate detail 2016–2021</b> <span class="tag miss">MISSING</span></td><td>DK prices each slate separately; RotoGuru has one price per player per week</td><td>Matched FantasyData 99.7% on the overlap week</td></tr>
+<tr><td><b>Coaching / scheme changes</b> <span class="tag miss">MISSING</span></td><td>New offensive coordinator = new usage patterns</td><td>Head coach names (schedules). Coordinators are not in any file.</td></tr>
+</table>
+
+<h3>Your own ideas: what else might be missing?</h3>
+<div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div>
+</div>
+
+<!-- ============================================================ -->
+<div class="section">
+<h2>5 · Where an edge could hide</h2>
+<p>Every idea below is a <b>hypothesis, not a finding</b>. The pattern behind all of them: <b>DraftKings sets salaries days before kickoff, mostly from past points.</b> An edge exists wherever something important changes <i>after</i> the price is set, or sits <i>under</i> the points where a price can't see it. The test is always the same: does it predict points <i>beyond</i> what the current model already knows, in most seasons, not just one?</p>
+
+<table>
+<tr><th style="width:22%">Idea</th><th style="width:36%">Why salary might miss it</th><th>Data you have for it</th></tr>
+<tr><td><b>Vacated opportunity</b></td><td>A starter is ruled out after pricing; his targets and carries go to someone whose salary didn't move</td><td>Injuries + depth charts + target share (all on disk)</td></tr>
+<tr><td><b>Role change</b></td><td>A player's routes or snaps jump before his points do. Price follows points, so it lags.</td><td>Snaps (on disk); participation routes (free)</td></tr>
+<tr><td><b>Touchdown luck</b></td><td>A player with lots of red-zone and end-zone targets but few touchdowns is due; the reverse is overpriced. TDs swing year to year; opportunity is steadier.</td><td>Play-by-play red-zone counts (free); season end-zone targets (FantasyData)</td></tr>
+<tr><td><b>Early-season reputation lag</b></td><td>Week 1–4 prices lean on last year's points, not the efficiency underneath</td><td>FantasyData season totals 2021–25; NGS, PFR, FTN (free)</td></tr>
+<tr><td><b>Aging / losing a step</b></td><td>A vet whose points held up but whose yards created, separation, or cushion fell</td><td>Age (crosswalk); yards created (FantasyData); cushion (NGS, free)</td></tr>
+<tr><td><b>Rookies and draft capital</b></td><td>No history means the model knows little; salary is a guess</td><td>Draft round/pick (crosswalk); combine (free)</td></tr>
+<tr><td><b>Game environment</b></td><td>High over/under games score more at every position (QBs +60% in 52+ totals). Likely priced in already, so it's worth checking how completely.</td><td>Vegas lines (in model); points by total (measured 2026-09-15)</td></tr>
+<tr><td><b>Game script</b></td><td>Big favorites run 4 more times a game, <i>but don't pass less</i>. Fading their WRs loses (9.8 vs 7.7 pts vs. big underdogs).</td><td>Spread (in model); measured 2026-09-15</td></tr>
+<tr><td><b>Coach and referee tendencies</b></td><td>Pace and pass rate differ by coach; penalty rates by crew. Salaries rarely account for either.</td><td>Coach and referee columns (schedules, unused); play-by-play (free)</td></tr>
+<tr><td><b>Beat the paid projection</b></td><td>Not an edge by itself; it's the <b>scoreboard</b>. If the model can't rank players better than FantasyData, it has no edge yet.</td><td>FantasyData projections 2021–2025 (on disk)</td></tr>
+</table>
+
+<h3>Already tested (FEATURES.md §9)</h3>
+<ul>
+<li><b>Buy low on TEs</b> after a bad game: best-supported finding in the project. <b>Don't buy low on RBs</b> (a dud RB is usually hurt or benched). WRs: neutral.</li>
+<li><b>Fade WR1s with a green QB</b>: your original rule, inverted by the data.</li>
+<li><b>Wind</b> changes play-calling but not RB points. Rain is untested (no data).</li>
+<li>The bounce-back rule may be right in <i>points per dollar</i> but invisible in points. That test needs the salary data you now have.</li>
+</ul>
+
+<div class="notes"><h2>Notes: edge ideas to test</h2>
+<div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div><div class="write"></div>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<div class="section">
+<h2>6 · Data quality watch-list</h2>
+<p>Known problems, so they don't become silent bugs later.</p>
+<table>
+<tr><th style="width:30%">Issue</th><th>Detail / what to do</th></tr>
+<tr><td>Weekly stats end at 2024</td><td>Rebuild 2025 from play-by-play before training on it</td></tr>
+<tr><td>Rolling averages reset each season</td><td>Week 1 has no player history; last-season features would fill it</td></tr>
+<tr><td>Model vs. baseline row counts differ</td><td>0.5958 (21,071 rows) vs 0.5791 (16,751 rows). Compare on identical rows before trusting the 0.017 gap.</td></tr>
+<tr><td><code>green_qb</code> likely miscounts veterans</td><td>Counts starts from the first season <i>in the data</i> (<code>features.py:78</code>), not a QB's career. A 2016 veteran may look "green" for 6 games.</td></tr>
+<tr><td>Snap join is by name + team</td><td>Name spelling differences drop rows; the ID crosswalk could fix it</td></tr>
+<tr><td>2025 depth charts are daily with no week column</td><td>Match snapshot dates to game dates, using the latest snapshot <i>before</i> kickoff</td></tr>
+<tr><td>FantasyData holiday weeks</td><td>Thanksgiving and Saturday games are sometimes missing; 2022 Week 16 salaries differ 7% between exports</td></tr>
+<tr><td>FantasyData "accuracy" columns</td><td><code>TargetAccuracy</code> and <code>AccuracyRating</code> stop being tracked in 2024–25; do not use</td></tr>
+<tr><td>FantasyData RB shotgun/under-center YPC</td><td>Placeholder values in 2021–22; usable 2023+ only</td></tr>
+<tr><td>Film-charted stats disagree between services</td><td>Drops and broken tackles differ between FantasyData and PFR; pick one source per stat and stay with it</td></tr>
+<tr><td>Projections may have been revised after games</td><td>Can't prove FantasyData projections were frozen pre-game; check before claiming the model beats them</td></tr>
+<tr><td>No Sunday-morning DK snapshot for 2026 Week 1</td><td>Run the slate watcher close to lock each week to capture final statuses</td></tr>
+</table>
+</div>
+
+</body></html>
