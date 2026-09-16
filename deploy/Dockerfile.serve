@@ -1,0 +1,52 @@
+# Custom SERVING container. Note how little it shares with Dockerfile.train --
+# these implement two different contracts and the differences are all deliberate.
+#
+#   training  -- runs to completion and exits. No port, no server, no routes.
+#                Platform injects AIP_MODEL_DIR; the job writes there and dies.
+#   serving   -- a long-running HTTP server. Platform injects AIP_HTTP_PORT,
+#                AIP_HEALTH_ROUTE, AIP_PREDICT_ROUTE and AIP_STORAGE_URI, then
+#                sends it {"instances": [...]} and expects {"predictions": [...]}.
+#
+# Conflating the two is a standard exam trap: a training container that exposes
+# a health endpoint is the wrong answer, and so is a serving container that
+# exits when its work is done.
+#
+# WHY NOT THE PREBUILT XGBOOST SERVING IMAGE. It serves one model from a file
+# named model.bst. This artifact is two models (expected points and 85th
+# percentile), plus a calibration map that has to be applied per request, plus
+# an ordered feature list that every request must be reindexed into. None of
+# that is expressible in a prebuilt image.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+COPY deploy/requirements-serve.txt .
+RUN pip install --no-cache-dir -r requirements-serve.txt
+
+# Keep this in sync with what serve.py imports -- run
+# `python deploy/check_image_deps.py --entrypoint serve.py` before every build.
+COPY src/serve.py src/model_io.py src/calibrate.py ./src/
+
+ENV PYTHONPATH=/app/src
+
+# Shell form so ${AIP_HTTP_PORT} expands at RUN time. The platform sets it; 8080
+# is the documented default and the fallback for a local run.
+#
+# --workers 1 because every worker loads its own copy of the model into memory,
+# and this model is only ~3 MB of trees but the pandas/xgboost runtime is not.
+# Concurrency comes from --threads instead: the work is short, CPU-light matrix
+# lookups, so threads are the right shape here.
+#
+# --preload loads the app (and therefore the model) BEFORE forking, so the
+# health route cannot return 200 until the model is actually in memory. Without
+# it the platform can route live traffic at a container that is still loading.
+CMD exec gunicorn \
+      --bind "0.0.0.0:${AIP_HTTP_PORT:-8080}" \
+      --workers 1 --threads 8 \
+      --timeout 120 \
+      --preload \
+      --access-logfile - \
+      serve:app

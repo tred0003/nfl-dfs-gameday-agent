@@ -1,0 +1,13 @@
+# Serving container only. Smaller than the training image on purpose.
+#
+# Absent because inference does not need them: scikit-learn and scipy (metrics,
+# only used while training), pulp, matplotlib, openpyxl, nfl_data_py, pyarrow
+# (the server receives JSON, it never reads a parquet).
+#
+# A serving image is pulled on every scale-up, so its size is latency.
+flask>=3.0
+gunicorn>=21.2          # production WSGI server; Flask's own is single-threaded
+pandas>=2.0
+numpy>=1.24
+xgboost>=2.0
+google-cloud-storage>=2.14   # model_io pulls the artifact from AIP_STORAGE_URI

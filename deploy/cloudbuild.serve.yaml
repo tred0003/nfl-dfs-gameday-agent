@@ -1,0 +1,17 @@
+# Build config for the SERVING image. Separate from cloudbuild.train.yaml because
+# the two containers have different dependencies, different contracts, and
+# different reasons to change -- a fix to the predict route should not force a
+# rebuild of the training image, and vice versa.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args: ['build', '-f', 'deploy/Dockerfile.serve', '-t', '${_IMAGE}', '.']
+
+images:
+  - '${_IMAGE}'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: 1200s

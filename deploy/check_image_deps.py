@@ -8,12 +8,14 @@ submission, with the error buried in Cloud Logging.
 
 This catches it in under a second, locally, before the build.
 
-Run:  python deploy/check_image_deps.py
-Exit: 0 if the image is complete, 1 if a module is missing.
+Run:  python deploy/check_image_deps.py                       # both images
+      python deploy/check_image_deps.py --entrypoint serve.py  # just one
+Exit: 0 if every checked image is complete, 1 if any module is missing.
 """
 
 from __future__ import annotations
 
+import argparse
 import ast
 import re
 import sys
@@ -21,8 +23,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
-DOCKERFILE = ROOT / "deploy" / "Dockerfile.train"
-ENTRYPOINT = "train.py"
+# entrypoint -> the Dockerfile that must contain it
+IMAGES = {
+    "train.py": ROOT / "deploy" / "Dockerfile.train",
+    "serve.py": ROOT / "deploy" / "Dockerfile.serve",
+}
 
 
 def local_imports(start: Path) -> set[str]:
@@ -52,8 +57,8 @@ def local_imports(start: Path) -> set[str]:
     return seen
 
 
-def copied_modules() -> set[str]:
-    text = DOCKERFILE.read_text(encoding="utf-8")
+def copied_modules(dockerfile: Path) -> set[str]:
+    text = dockerfile.read_text(encoding="utf-8")
     copied = set()
     for line in text.splitlines():
         if line.strip().startswith("COPY") and "src/" in line:
@@ -61,26 +66,42 @@ def copied_modules() -> set[str]:
     return copied
 
 
-def main() -> int:
-    needed = local_imports(SRC / ENTRYPOINT) | {Path(ENTRYPOINT).stem}
-    have = copied_modules()
+def check(entrypoint: str, dockerfile: Path) -> int:
+    needed = local_imports(SRC / entrypoint) | {Path(entrypoint).stem}
+    have = copied_modules(dockerfile)
     missing = sorted(needed - have)
     extra = sorted(have - needed)
 
-    print(f"entrypoint : src/{ENTRYPOINT}")
-    print(f"needs      : {', '.join(sorted(needed))}")
-    print(f"image has  : {', '.join(sorted(have))}")
+    print(f"\n{dockerfile.name}  (entrypoint src/{entrypoint})")
+    print(f"  needs     : {', '.join(sorted(needed))}")
+    print(f"  image has : {', '.join(sorted(have))}")
 
     if missing:
-        print(f"\nMISSING from {DOCKERFILE.relative_to(ROOT)}: {', '.join(missing)}")
-        print("The build will succeed and the job will die on import. Add them to "
-              "the COPY line.")
+        print(f"  MISSING   : {', '.join(missing)}")
+        print("  -> the build will succeed and the container will die on import. "
+              "Add them to the COPY line.")
         return 1
     if extra:
         # not an error -- just image weight on a container that should be small
-        print(f"\nnote: copied but not imported: {', '.join(extra)}")
-    print("\nimage dependency list is complete")
+        print(f"  note      : copied but not imported: {', '.join(extra)}")
+    print("  complete")
     return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--entrypoint", choices=sorted(IMAGES),
+                    help="check only this one; default is every image")
+    a = ap.parse_args()
+
+    targets = {a.entrypoint: IMAGES[a.entrypoint]} if a.entrypoint else IMAGES
+    rc = 0
+    for entry, dockerfile in targets.items():
+        if not dockerfile.exists():
+            print(f"\n{dockerfile.name}: not found, skipped")
+            continue
+        rc |= check(entry, dockerfile)
+    return rc
 
 
 if __name__ == "__main__":

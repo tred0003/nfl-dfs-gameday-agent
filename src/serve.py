@@ -110,6 +110,20 @@ def predict():
 
         df = pd.DataFrame(instances)
 
+        # Rebuild the position one-hots exactly as training does. Training runs
+        # pd.get_dummies(position) and the model learned pos_QB/pos_RB/pos_WR/
+        # pos_TE; a caller naturally sends position="QB" instead. Without this
+        # all four arrive NaN and the model loses the position gate entirely --
+        # train/serve skew in the one place it is least excusable, and align()
+        # cannot catch it because the columns are legitimately absent.
+        #
+        # Built from the CARD's feature list rather than from whatever positions
+        # happen to be in this request: a slate with no quarterback must still
+        # produce a pos_QB column of zeros, or the column set shifts.
+        if "position" in df.columns:
+            for col in (f for f in CARD["features"] if f.startswith("pos_")):
+                df[col] = (df["position"].astype(str) == col[len("pos_"):]).astype(float)
+
         # THE SKEW GUARD. Reindex to the trained column order before the model
         # sees anything. Missing -> NaN (a real value to XGBoost); unknown ->
         # dropped. Without this a caller sending columns in a different order
