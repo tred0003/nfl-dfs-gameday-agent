@@ -145,13 +145,24 @@ dependency layer and are much faster, **as long as you don't touch
 ```powershell
 $RUN = Get-Date -Format "yyyyMMdd-HHmmss"
 
-gcloud ai custom-jobs create --region=$REGION --display-name="nfl-dfs-train-$RUN" --base-output-directory="gs://$BUCKET/runs/$RUN" --worker-pool-spec="machine-type=n1-standard-4,replica-count=1,container-image-uri=$IMAGE" --args="^@^--table=model_table_v3@--export@--no-save@--data-dir=gs://$BUCKET/processed"
+(Get-Content deploy/customjob.train.yaml.template) `
+  -replace 'IMAGE_URI', $IMAGE `
+  -replace 'DATA_DIR', "gs://$BUCKET/processed" `
+  -replace 'OUTPUT_PREFIX', "gs://$BUCKET/runs/$RUN" |
+  Set-Content deploy/customjob.train.yaml
+
+gcloud ai custom-jobs create --region=$REGION --display-name="nfl-dfs-train-$RUN" --config=deploy/customjob.train.yaml
 ```
 
-**One line on purpose.** PowerShell continues a line with a backtick, not a
-backslash, and a pasted multi-line command using the wrong character fails in a
-confusing way. Keep `--worker-pool-spec` and `--args` quoted — they contain
-commas and `@`, which PowerShell would otherwise try to interpret.
+**Why a config file and not flags.** `gcloud ai custom-jobs create` has **no
+`--base-output-directory` flag** — it exists on the CustomJobSpec API and on
+`hp-tuning-jobs`, but not on this CLI surface. Passing it produces
+`unrecognized arguments`. And that setting is the whole point of this step, so
+the job goes in as a spec file instead.
+
+The YAML is the REST API's `CustomJobSpec` verbatim, which means what you learn
+writing it transfers straight to the Python SDK and to Pipelines later. Flags
+are a convenience layer over this; the spec is the real interface.
 
 Three things here are worth understanding rather than copying.
 

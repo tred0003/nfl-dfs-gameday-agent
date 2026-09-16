@@ -1,0 +1,32 @@
+# CustomJobSpec for the training job. Template -- see DEPLOY-TRAINING.md step 6
+# for the PowerShell that fills in IMAGE_URI, DATA_DIR and OUTPUT_PREFIX.
+#
+# WHY A CONFIG FILE AND NOT FLAGS. `gcloud ai custom-jobs create` has no
+# --base-output-directory flag; it exists on the CustomJobSpec API and on
+# hp-tuning-jobs, but not on this CLI surface. And baseOutputDirectory is the
+# whole point -- it is what makes Agent Platform set AIP_MODEL_DIR inside the
+# container to <outputUriPrefix>/model, which train.py reads as its default
+# --model-dir. That is how one unmodified script writes to models/current on a
+# laptop and to Cloud Storage in a managed job.
+#
+# The shape here is the REST API's CustomJobSpec verbatim, so what you learn
+# writing this transfers directly to the Python SDK and to Pipelines.
+
+workerPoolSpecs:
+  - machineSpec:
+      # No accelerator on purpose. Boosted trees on 51k rows are CPU work and
+      # tree_method="hist" is already the fast path -- a GPU would cost more and
+      # run no faster. Knowing when NOT to attach one is exam material.
+      machineType: n1-standard-4
+    replicaCount: 1
+    containerSpec:
+      imageUri: IMAGE_URI
+      args:
+        - --table=model_table_v3
+        - --export        # without this the job trains, prints, and saves nothing
+        - --no-save       # skip the local research outputs; pointless in a container
+        - --data-dir=DATA_DIR
+
+# Agent Platform appends /model to this and exposes it as AIP_MODEL_DIR.
+baseOutputDirectory:
+  outputUriPrefix: OUTPUT_PREFIX

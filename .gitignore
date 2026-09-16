@@ -16,3 +16,6 @@ __pycache__/
 *.bak
 *.log
 .adk/
+
+# generated per-run from customjob.train.yaml.template
+deploy/customjob.train.yaml
