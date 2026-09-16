@@ -42,6 +42,8 @@ sys.path.insert(0, str(ROOT / "src"))
 import features  # noqa: E402
 import features_carry  # noqa: E402
 import features_extra  # noqa: E402
+import calibrate  # noqa: E402
+import model_io  # noqa: E402
 import preflight  # noqa: E402
 import value_board  # noqa: E402
 from optimize import optimize, show  # noqa: E402
@@ -50,6 +52,7 @@ from train import PARAMS, TARGET  # noqa: E402
 
 RAW = ROOT / "data" / "raw"
 LINEUPS = ROOT / "data" / "lineups"
+MODELS = ROOT / "models"
 SKILL = ["QB", "RB", "WR", "TE"]
 TEAM_FIX = {"LAR": "LA", "WSH": "WAS", "JAC": "JAX"}
 ID_COLS = {"player_id", "player_display_name", "position", "recent_team", "opponent_team",
@@ -207,6 +210,30 @@ def project(table: pd.DataFrame, season: int, week: int,
     ceil = xgb.XGBRegressor(objective="reg:quantileerror", quantile_alpha=0.85, **PARAMS)
     ceil.fit(train[feats], train[TARGET], verbose=False)
     target["ceiling"] = ceil.predict(target[feats])
+
+    # Apply the calibration map that shipped with the artifact. Without it the
+    # optimizer's nine picks overproject by ~7.4 points in total -- not because
+    # the model is biased on the pool (it is not) but because the ILP selects
+    # the players whose errors are most positive. See src/calibrate.py.
+    #
+    # The map is read from the artifact rather than refitted here: it has to be
+    # fitted on out-of-sample predictions, and nothing in this script is
+    # out-of-sample.
+    target["projection_raw"] = target["projection"]
+    try:
+        _, card = model_io.load(MODELS / "current")
+        cal = card.get("calibration") or {}
+    except FileNotFoundError:
+        cal = {}
+    if cal:
+        target["projection"] = calibrate.apply(target, cal, "projection")
+        shift = (target["projection"] - target["projection_raw"]).mean()
+        print(f"calibration applied (fitted on {cal['n']:,} held-out rows): "
+              f"mean projection {shift:+.2f}")
+    else:
+        print("NO CALIBRATION in models/current -- projections will run ~5% hot "
+              "on the players the optimizer picks. Run: "
+              "python src/train.py --table model_table_v3 --export")
     return target
 
 

@@ -113,6 +113,7 @@ def save(
     train_rows: int,
     coverage: dict | None = None,
     metrics: list[dict] | None = None,
+    calibration: dict | None = None,
 ) -> Path:
     """Write the fitted models plus the card that describes them.
 
@@ -141,6 +142,11 @@ def save(
         "train_rows": int(train_rows),
         "coverage": coverage or {},
         "metrics": metrics or [],
+        # The map that turns the raw model output into a number that means what
+        # it says. Travels WITH the model because it is part of the model's
+        # contract: an artifact served without its calibration overprojects a
+        # lineup by ~7.4 points and nothing downstream can tell.
+        "calibration": calibration or {},
         "artifacts": artifacts,
         "versions": {
             "python": platform.python_version(),

@@ -39,6 +39,7 @@ import xgboost as xgb
 from scipy.stats import spearmanr
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
+import calibrate
 import model_io
 
 warnings.filterwarnings("ignore")
@@ -359,12 +360,24 @@ def main(save: bool, export: bool, table: str, model_dir: str,
         (MODELS / "metrics.json").write_text(json.dumps(rows, indent=2))
         print(f"\nsaved predictions + metrics to {MODELS}")
 
+    # Calibration is fitted on the WALK-FORWARD predictions -- every row of
+    # which is out-of-sample -- and ships inside the artifact. Fitting it on the
+    # final model's own training fits would learn the training residuals, which
+    # are small, differently shaped, and useless in production.
+    cal = calibrate.fit(preds, "pred_mean")
+    print("\n" + calibrate.describe(cal))
+    corrected = calibrate.apply(preds, cal, "pred_mean")
+    print(f"  slate Spearman {slate_spearman(preds, 'pred_mean'):.4f} -> "
+          f"{slate_spearman(preds.assign(_c=corrected), '_c'):.4f}  "
+          f"(rank barely moves -- the level was the problem, not the order)")
+
     if export:
         models, coverage = fit_final(df, features)
         out = model_io.save(
             model_dir, models,
             features=features, params=PARAMS, target=TARGET,
             train_rows=len(df), coverage=coverage, metrics=rows,
+            calibration=cal,
         )
         print(f"\nexported artifact -> {out}")
         print(f"  {len(models)} models, {len(features)} features, "
