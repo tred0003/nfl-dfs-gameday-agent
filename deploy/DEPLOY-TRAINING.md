@@ -7,6 +7,17 @@ writes a versioned artifact to a bucket. Your laptop is closed.
 **Run these yourself — the point is the GCP reps.** Each block says what it does
 and why, not just what to type.
 
+**Shell: PowerShell.** Every block below is PowerShell, because that is what this
+machine opens. `export` is bash and will fail with
+`The term 'export' is not recognized`. PowerShell uses `$NAME = "value"`, and
+`gcloud` is identical in both. Start by moving to the project:
+
+```powershell
+cd C:
+ew_career2026
+fl-dfs
+```
+
 **What this touches:** Cloud Storage, Artifact Registry, Cloud Build, Agent
 Platform custom training jobs, and service-account IAM. That is most of the
 training half of the PMLE exam, on something you actually want to exist.
@@ -36,15 +47,19 @@ the API surface genuinely did not rename. Only the console did.
 
 ## 0. Set your variables
 
-```bash
-export PROJECT=fantasy-football-ml-503718
-export REGION=us-central1
-export BUCKET=$PROJECT-nfl-dfs
-export REPO=nfl-dfs
-export IMAGE=$REGION-docker.pkg.dev/$PROJECT/$REPO/train:v1
+```powershell
+$PROJECT = "fantasy-football-ml-503718"
+$REGION  = "us-central1"
+$BUCKET  = "${PROJECT}-nfl-dfs"
+$REPO    = "nfl-dfs"
+$IMAGE   = "$REGION-docker.pkg.dev/$PROJECT/$REPO/train:v1"
 
 gcloud config set project $PROJECT
 ```
+
+`${PROJECT}` uses braces because a hyphen would otherwise be read as part of the
+variable name. These live only in the current window — reopen PowerShell and you
+set them again.
 
 Bucket names are **globally unique across all of Google Cloud**, not just your
 project — prefixing with the project ID is the standard way to guarantee you
@@ -52,12 +67,8 @@ get one.
 
 ## 1. Enable the APIs
 
-```bash
-gcloud services enable \
-  aiplatform.googleapis.com \
-  storage.googleapis.com \
-  cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com
+```powershell
+gcloud services enable aiplatform.googleapis.com storage.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
 ```
 
 `aiplatform.googleapis.com` is already on in this project — it shows up as
@@ -65,8 +76,8 @@ gcloud services enable \
 
 ## 2. Create the bucket
 
-```bash
-gcloud storage buckets create gs://$BUCKET --location=$REGION
+```powershell
+gcloud storage buckets create "gs://$BUCKET" --location=$REGION
 ```
 
 **Put the bucket in the same region as the training job.** A job in
@@ -79,9 +90,9 @@ exam question.
 The image ships **code, not data**. That is deliberate — retraining on new data
 should never require rebuilding a container.
 
-```bash
-gcloud storage cp data/processed/model_table_v3.parquet gs://$BUCKET/processed/
-gcloud storage ls gs://$BUCKET/processed/
+```powershell
+gcloud storage cp data/processed/model_table_v3.parquet "gs://$BUCKET/processed/"
+gcloud storage ls "gs://$BUCKET/processed/"
 ```
 
 About 12 MB. Re-run this line each week after you rebuild features, and the
@@ -94,11 +105,8 @@ not 51,046 — if the job logs the old number, you uploaded a stale file.
 
 ## 4. Create the image repository
 
-```bash
-gcloud artifacts repositories create $REPO \
-  --repository-format=docker \
-  --location=$REGION \
-  --description="NFL DFS containers"
+```powershell
+gcloud artifacts repositories create $REPO --repository-format=docker --location=$REGION --description="NFL DFS containers"
 ```
 
 Artifact Registry is where built images live. **Container Registry (`gcr.io`)
@@ -106,7 +114,7 @@ is retired** — if a tutorial tells you to push to `gcr.io`, it predates 2026.
 
 ## 5a. Check the image will actually run (one second, saves ten minutes)
 
-```bash
+```powershell
 python deploy/check_image_deps.py
 ```
 
@@ -124,11 +132,8 @@ Run it before every build.
 You have no local Docker and do not need it. Cloud Build uploads the source,
 builds in the cloud, and pushes to Artifact Registry.
 
-```bash
-gcloud builds submit \
-  --config deploy/cloudbuild.train.yaml \
-  --substitutions=_IMAGE=$IMAGE \
-  .
+```powershell
+gcloud builds submit --config deploy/cloudbuild.train.yaml --substitutions=_IMAGE=$IMAGE .
 ```
 
 First build takes 3–5 minutes (xgboost and scipy wheels). Later builds reuse the
@@ -137,16 +142,16 @@ dependency layer and are much faster, **as long as you don't touch
 
 ## 6. Run the training job
 
-```bash
-export RUN=$(date +%Y%m%d-%H%M%S)
+```powershell
+$RUN = Get-Date -Format "yyyyMMdd-HHmmss"
 
-gcloud ai custom-jobs create \
-  --region=$REGION \
-  --display-name=nfl-dfs-train-$RUN \
-  --base-output-directory=gs://$BUCKET/runs/$RUN \
-  --worker-pool-spec=machine-type=n1-standard-4,replica-count=1,container-image-uri=$IMAGE \
-  --args=^@^--table=model_table_v3@--export@--no-save@--data-dir=gs://$BUCKET/processed
+gcloud ai custom-jobs create --region=$REGION --display-name="nfl-dfs-train-$RUN" --base-output-directory="gs://$BUCKET/runs/$RUN" --worker-pool-spec="machine-type=n1-standard-4,replica-count=1,container-image-uri=$IMAGE" --args="^@^--table=model_table_v3@--export@--no-save@--data-dir=gs://$BUCKET/processed"
 ```
+
+**One line on purpose.** PowerShell continues a line with a backtick, not a
+backslash, and a pasted multi-line command using the wrong character fails in a
+confusing way. Keep `--worker-pool-spec` and `--args` quoted — they contain
+commas and `@`, which PowerShell would otherwise try to interpret.
 
 Three things here are worth understanding rather than copying.
 
@@ -171,10 +176,10 @@ knowing how.
 
 ## 7. Watch it
 
-```bash
+```powershell
 gcloud ai custom-jobs list --region=$REGION --limit=5
 
-# streams until the job finishes
+# streams until the job finishes — JOB_ID is the numeric id from the list
 gcloud ai custom-jobs stream-logs JOB_ID --region=$REGION
 ```
 
@@ -189,9 +194,9 @@ exported artifact -> gs://.../runs/<RUN>/model
 
 ## 8. Confirm the artifact landed
 
-```bash
-gcloud storage ls -l gs://$BUCKET/runs/$RUN/model/
-gcloud storage cat gs://$BUCKET/runs/$RUN/model/model_card.json
+```powershell
+gcloud storage ls -l "gs://$BUCKET/runs/$RUN/model/"
+gcloud storage cat "gs://$BUCKET/runs/$RUN/model/model_card.json"
 ```
 
 Three files: `model_mean.ubj`, `model_ceiling.ubj`, `model_card.json`.
@@ -216,11 +221,9 @@ don't register it.
 default service account, `PROJECT_NUMBER-compute@developer.gserviceaccount.com`.
 It needs object read/write:
 
-```bash
-export PROJECT_NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
-gcloud storage buckets add-iam-policy-binding gs://$BUCKET \
-  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
-  --role="roles/storage.objectAdmin"
+```powershell
+$PROJECT_NUMBER = gcloud projects describe $PROJECT --format='value(projectNumber)'
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" --role="roles/storage.objectAdmin"
 ```
 
 **`ModuleNotFoundError: model_io`.** `PYTHONPATH=/app/src` is missing from the
