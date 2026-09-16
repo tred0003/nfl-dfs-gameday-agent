@@ -1,0 +1,42 @@
+# Custom training container for Agent Platform (the renamed Vertex AI).
+#
+# THE CONTRACT for a custom TRAINING container is much simpler than the one for
+# a serving container, and mixing them up is a classic exam trap:
+#
+#   training  -- runs to completion and exits. No server, no port, no health
+#                check. Exit code 0 means success. The platform injects
+#                AIP_MODEL_DIR (a gs:// URI) telling the job where to write.
+#   serving   -- long-running HTTP server on AIP_HTTP_PORT (default 8080), with
+#                a health route returning 200 and a predict route accepting
+#                {"instances": [...]}. None of that applies here.
+#
+# WHY A CUSTOM CONTAINER AT ALL. Google ships prebuilt training containers for
+# XGBoost, and for a plain scikit-style fit they are the shorter path. This
+# project needs its own because training depends on project code -- model_io
+# writes the model card that pins feature order -- and a prebuilt container has
+# no way to carry that. Knowing both options exist, and why you picked one, is
+# the actual exam answer.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+# Dependencies before source: this layer is cached, so a code change rebuilds
+# in seconds instead of reinstalling xgboost and scipy every time.
+COPY deploy/requirements-train.txt .
+RUN pip install --no-cache-dir -r requirements-train.txt
+
+# Only what training imports. The image ships CODE, never the 51,046-row model
+# table -- that lives in Cloud Storage and is read at run time, so retraining on
+# new data does not require rebuilding the image.
+COPY src/train.py src/model_io.py ./src/
+
+# src/ on the path so `import model_io` inside train.py resolves the same way
+# it does when the file is run directly on a laptop.
+ENV PYTHONPATH=/app/src
+
+# No CMD arguments: they are supplied per-run by the custom job, so one image
+# can train any table into any output location.
+ENTRYPOINT ["python", "src/train.py"]

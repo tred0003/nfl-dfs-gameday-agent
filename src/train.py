@@ -292,14 +292,20 @@ def write_tuning_excel(results: pd.DataFrame, grid: pd.DataFrame) -> None:
     print(f"saved tuning results to {path}")
 
 
-def load_table(name: str = "model_table") -> tuple[pd.DataFrame, list[str]]:
+def load_table(name: str = "model_table",
+               data_dir: str | None = None) -> tuple[pd.DataFrame, list[str]]:
     """Read a model table; every column that isn't an ID or the answer is a feature.
 
     Kept as a function rather than inlined in main() because src/backtest.py
     imports it to build the same feature set main() trains on. Two copies of
     this logic is how training and backtesting quietly drift apart.
+
+    `data_dir` may be a local directory or a gs:// prefix. Inside a training
+    container there is no data/ directory -- the image ships code, not the
+    51,046-row table -- so the job is pointed at Cloud Storage instead.
     """
-    df = pd.read_parquet(PROC / f"{name}.parquet")
+    base = str(data_dir).rstrip("/") if data_dir else str(PROC)
+    df = pd.read_parquet(f"{base}/{name}.parquet")
     features = [c for c in df.columns if c not in {
         "player_id", "player_display_name", "position", "recent_team",
         "opponent_team", "season", "week", TARGET,
@@ -310,8 +316,9 @@ def load_table(name: str = "model_table") -> tuple[pd.DataFrame, list[str]]:
     return df, features
 
 
-def main(save: bool, export: bool, table: str, model_dir: str) -> None:
-    df, features = load_table(table)
+def main(save: bool, export: bool, table: str, model_dir: str,
+         data_dir: str | None = None) -> None:
+    df, features = load_table(table, data_dir)
 
     print(f"model table {df.shape[0]:,} rows, {len(features)} features")
     print(f"walk-forward over seasons {TEST_SEASONS}\n")
@@ -376,5 +383,9 @@ if __name__ == "__main__":
                    help="where to write the artifact; accepts a gs:// path. "
                         "Defaults to AIP_MODEL_DIR when set, which is how Agent "
                         "Platform tells a custom training job where its output goes.")
+    p.add_argument("--data-dir", default=os.environ.get("AIP_DATA_DIR"),
+                   help="where the model table lives; local dir or gs:// prefix. "
+                        "Defaults to data/processed when unset.")
     a = p.parse_args()
-    main(save=not a.no_save, export=a.export, table=a.table, model_dir=a.model_dir)
+    main(save=not a.no_save, export=a.export, table=a.table,
+         model_dir=a.model_dir, data_dir=a.data_dir)

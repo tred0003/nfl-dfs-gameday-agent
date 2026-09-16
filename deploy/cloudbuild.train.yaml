@@ -1,0 +1,20 @@
+# Build config for the training image.
+#
+# Separate from cloudbuild.yaml (which builds the gameday report container)
+# because the two images have different dependencies, different lifecycles and
+# different reasons to change. One Dockerfile per job is the point -- a single
+# fat image that both trains models and posts to Discord would be rebuilt every
+# time either concern moved.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args: ['build', '-f', 'deploy/Dockerfile.train', '-t', '${_IMAGE}', '.']
+
+images:
+  - '${_IMAGE}'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8      # xgboost + scipy wheels; the default is slow
+
+timeout: 1200s

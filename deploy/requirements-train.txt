@@ -1,0 +1,20 @@
+# Training container only. Deliberately NOT the project requirements.txt.
+#
+# Absent on purpose: pulp (the optimizer is a separate concern and never runs
+# during training), matplotlib, openpyxl (only imported inside the tuning path,
+# which a scheduled job never takes), nfl_data_py (the container consumes a
+# built table, it does not pull raw NFL data).
+#
+# Every extra package is image size, build time, and attack surface on a
+# container whose only job is to fit two models and write them to a bucket.
+pandas>=2.0
+numpy>=1.24
+pyarrow>=15.0
+scikit-learn>=1.4
+scipy>=1.11
+xgboost>=2.0
+
+# reading gs:// parquet straight into pandas
+gcsfs>=2024.2.0
+# model_io uses this to copy the finished artifact to the bucket
+google-cloud-storage>=2.14
