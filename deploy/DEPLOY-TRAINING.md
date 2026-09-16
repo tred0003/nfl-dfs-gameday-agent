@@ -81,14 +81,16 @@ should never require rebuilding a container.
 
 ```bash
 gcloud storage cp data/processed/model_table_v3.parquet gs://$BUCKET/processed/
-
-# NOTE: the tables were rebuilt on 2026-09-16 (scoring fix + leak fixes), so
-# re-upload even if you copied them earlier. 51,356 rows now, not 51,046.
 gcloud storage ls gs://$BUCKET/processed/
 ```
 
 About 12 MB. Re-run this line each week after you rebuild features, and the
 next training run picks it up with no image rebuild.
+
+**The tables were rebuilt on 2026-09-16** (DK scoring fix, plus the
+`healthy_tgt_rank` leak and the `green_qb` / `depth_rank` scale bugs), so
+re-upload even if you copied them before that. The table is **51,356 rows** now,
+not 51,046 — if the job logs the old number, you uploaded a stale file.
 
 ## 4. Create the image repository
 
@@ -180,7 +182,8 @@ gcloud ai custom-jobs stream-logs JOB_ID --region=$REGION
 walk-forward lines, the held-out table, then:
 
 ```
-final fit on all 51,046 rows (83 features)
+calibration fitted on 21,099 held-out rows (seasons [2021, 2022, 2023, 2024])
+final fit on all 51,356 rows (83 features)
 exported artifact -> gs://.../runs/<RUN>/model
 ```
 
@@ -198,6 +201,12 @@ Three files: `model_mean.ubj`, `model_ceiling.ubj`, `model_card.json`.
 `metrics` carries the walk-forward scores — which are the model's *estimated*
 skill, not this artifact's measured score. The shipped model was refit on
 everything and has never been graded on data it did not see.
+
+`calibration` is the newest field and the one that has to travel with the model.
+It maps the raw prediction to a number that means what it says; without it the
+optimizer's nine picks overproject by ~7 points and nothing downstream can tell.
+An artifact whose `calibration` is `{}` was built before that stage existed —
+don't register it.
 
 ---
 
