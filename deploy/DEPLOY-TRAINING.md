@@ -81,6 +81,9 @@ should never require rebuilding a container.
 
 ```bash
 gcloud storage cp data/processed/model_table_v3.parquet gs://$BUCKET/processed/
+
+# NOTE: the tables were rebuilt on 2026-09-16 (scoring fix + leak fixes), so
+# re-upload even if you copied them earlier. 51,356 rows now, not 51,046.
 gcloud storage ls gs://$BUCKET/processed/
 ```
 
@@ -98,6 +101,21 @@ gcloud artifacts repositories create $REPO \
 
 Artifact Registry is where built images live. **Container Registry (`gcr.io`)
 is retired** — if a tutorial tells you to push to `gcr.io`, it predates 2026.
+
+## 5a. Check the image will actually run (one second, saves ten minutes)
+
+```bash
+python deploy/check_image_deps.py
+```
+
+A Dockerfile's `COPY` line is a dependency list that nothing keeps in sync. When
+`train.py` gained `import calibrate`, the COPY line did not follow — and that
+build would have succeeded, pushed, been submitted as a job, and died on its
+first line with `ModuleNotFoundError`, with the error buried in Cloud Logging
+five minutes later.
+
+This parses the imports transitively and compares them against the Dockerfile.
+Run it before every build.
 
 ## 5. Build the image
 

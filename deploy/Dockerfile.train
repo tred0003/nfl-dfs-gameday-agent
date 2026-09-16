@@ -28,10 +28,16 @@ WORKDIR /app
 COPY deploy/requirements-train.txt .
 RUN pip install --no-cache-dir -r requirements-train.txt
 
-# Only what training imports. The image ships CODE, never the 51,046-row model
+# Only what training imports. The image ships CODE, never the 51,356-row model
 # table -- that lives in Cloud Storage and is read at run time, so retraining on
 # new data does not require rebuilding the image.
-COPY src/train.py src/model_io.py ./src/
+#
+# This list is a dependency that nothing enforces: train.py gained an `import
+# calibrate` after this file was written, and the next build would have failed
+# in the cloud with ModuleNotFoundError. If you add an import to train.py, add
+# the module here. The test below catches it before Cloud Build does:
+#     python -c "import ast,sys; ..."   -- see deploy/DEPLOY-TRAINING.md step 5a
+COPY src/train.py src/model_io.py src/calibrate.py ./src/
 
 # src/ on the path so `import model_io` inside train.py resolves the same way
 # it does when the file is run directly on a laptop.
