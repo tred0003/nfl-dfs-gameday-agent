@@ -42,6 +42,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import features  # noqa: E402
 import features_carry  # noqa: E402
 import features_extra  # noqa: E402
+import preflight  # noqa: E402
 import value_board  # noqa: E402
 from optimize import optimize, show  # noqa: E402
 from predict_slate import project_dk_vegas  # noqa: E402
@@ -171,13 +172,28 @@ def build_rows(season: int, week: int, slate: pd.DataFrame,
 
 
 # ------------------------------------------------------------------ model
-def project(table: pd.DataFrame, season: int, week: int) -> pd.DataFrame:
+def project(table: pd.DataFrame, season: int, week: int,
+            strict: bool = True) -> pd.DataFrame:
     table = pd.concat([table, pd.get_dummies(table["position"], prefix="pos")], axis=1)
     feats = [c for c in table.columns if c not in ID_COLS]
     done = (table[TARGET].notna() & ~table["_future"]
             & ((table["season"] < season) | ((table["season"] == season) & (table["week"] < week))))
     train = table[done]
     target = table[table["_future"] & table["season"].eq(season) & table["week"].eq(week)].copy()
+
+    # The check that matters most, and the one only possible here: a feature can
+    # be fully populated across ten years of training rows and entirely absent on
+    # the handful of rows actually being scored. Route share in 2026 is exactly
+    # that. Comparing the two populations is the only way to see it.
+    r = preflight.Result()
+    preflight.check_features(target, feats, r)
+    if not r.report() and strict:
+        raise SystemExit(
+            "\npre-flight failed on the rows being scored. These features are absent "
+            "for THIS week even though they were present in training -- the model has "
+            "never seen this input pattern.\n"
+            "Re-run with --skip-preflight to build a lineup anyway."
+        )
     print(f"training v3 on {len(train):,} completed player-games ({len(feats)} features), "
           f"predicting {len(target)} players", flush=True)
     model = xgb.XGBRegressor(objective="reg:squarederror", **PARAMS)
@@ -204,12 +220,19 @@ def main() -> None:
     ap.add_argument("--score", action="store_true", help="week already played: score the lineup")
     ap.add_argument("--board-top", type=int, default=12,
                     help="rows per position on the deal board")
+    ap.add_argument("--skip-preflight", action="store_true",
+                    help="build a lineup even when inputs are missing. Checks still "
+                         "print -- you just proceed knowing what is absent.")
     a = ap.parse_args()
+
+    # Data checks BEFORE build_rows, which takes about four minutes. Failing
+    # fast on a missing injury report beats discovering it after the wait.
+    preflight.run(a.season, a.week, strict=not a.skip_preflight)
 
     slate = load_slate(a.slate, a.season, a.week)
     prev = load_slate(a.prev_slate, a.season, a.prev_week) if a.prev_slate else None
     table, matched, unmatched = build_rows(a.season, a.week, slate, prev, a.prev_week)
-    proj = project(table, a.season, a.week)
+    proj = project(table, a.season, a.week, strict=not a.skip_preflight)
 
     skill = slate[slate["position"].isin(SKILL)].merge(
         matched[["name", "team", "position", "player_id"]], on=["name", "team", "position"], how="left")
