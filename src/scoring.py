@@ -26,9 +26,16 @@ DK_RULES = {
     "passing_2pt_conversions": 2.0,
     "rushing_2pt_conversions": 2.0,
     "receiving_2pt_conversions": 2.0,
-    "sack_fumbles_lost": -1.0,
-    "rushing_fumbles_lost": -1.0,
-    "receiving_fumbles_lost": -1.0,
+    # DK charges -1 for ANY fumble lost. The three specific columns
+    # (sack_/rushing_/receiving_fumbles_lost) miss muffed punts, kick-return
+    # fumbles and fumble-recovery fumbles -- 418 player-weeks carrying 420
+    # unpenalised fumbles. `fumbles_lost_total` is a clean superset: verified
+    # zero rows where it is less than the sum of the three.
+    "fumbles_lost_total": -1.0,
+    # Offensive fumble-recovery TD, +6 on DK, previously not scored at all.
+    # 252 player-weeks, 254 touchdowns -- e.g. Mike Evans 2018 wk11 was recorded
+    # as 27.0 when he actually scored 33.0.
+    "fumble_recovery_tds": 6.0,
 }
 
 BONUSES = [
