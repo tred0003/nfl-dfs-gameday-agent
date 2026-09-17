@@ -293,8 +293,47 @@ def write_tuning_excel(results: pd.DataFrame, grid: pd.DataFrame) -> None:
     print(f"saved tuning results to {path}")
 
 
+# ---------------------------------------------------------------- feature families
+# A named group of features that arrive together and go missing together, because
+# they come out of one upstream file.
+#
+# `routes` is the one this exists for. nflverse publishes participation data --
+# who was on the field for each play -- on a lag, and as of 2026-09-17 the 2026
+# file is not published. Not late on this machine: not published, for anyone.
+#
+# Serving the full model anyway is worse than it sounds, and the reason is what
+# missingness MEANS in the training data. Across 2021-2025 WR/TE rows, the ones
+# where route_share_r3 is NaN have dkp_ewm of -0.17 against 7.93 for the rest,
+# and their snap and target history is blank too. Route data goes missing for
+# players with no recent history at all -- debuts, returns, deep bench. So the
+# model learned, correctly, that a missing route share means someone who barely
+# plays.
+#
+# In 2026 it is missing for EVERYONE. Every established receiver hits that split
+# and gets routed down a branch built from players averaging -0.17 points. That
+# is not ten percent less information, it is a systematic depression of exactly
+# the players an optimizer would roster, and nothing about the output looks wrong.
+#
+# So train a variant without them. A model fit without route features leans on
+# the snap family instead, and never builds a split whose default branch is a
+# trap in production.
+FEATURE_FAMILIES = {
+    "routes": ["route_share_r3", "route_share_r5", "route_share_ewm",
+               "route_share_last", "tprr_r5", "route_share_trend"],
+}
+
+
+def resolve_drop(names: list[str]) -> list[str]:
+    """Expand family names; anything unrecognised is taken as a literal column."""
+    out: list[str] = []
+    for n in names:
+        out.extend(FEATURE_FAMILIES.get(n, [n]))
+    return out
+
+
 def load_table(name: str = "model_table",
-               data_dir: str | None = None) -> tuple[pd.DataFrame, list[str]]:
+               data_dir: str | None = None,
+               drop: list[str] | None = None) -> tuple[pd.DataFrame, list[str]]:
     """Read a model table; every column that isn't an ID or the answer is a feature.
 
     Kept as a function rather than inlined in main() because src/backtest.py
@@ -311,6 +350,13 @@ def load_table(name: str = "model_table",
         "player_id", "player_display_name", "position", "recent_team",
         "opponent_team", "season", "week", TARGET,
     }]
+    if drop:
+        cut = resolve_drop(drop)
+        absent = [c for c in cut if c not in features]
+        features = [c for c in features if c not in cut]
+        print(f"dropping {len(cut) - len(absent)} feature(s): {sorted(set(cut) - set(absent))}")
+        if absent:
+            print(f"  (not in this table anyway: {absent})")
     # position is categorical and genuinely predictive -- one-hot it
     df = pd.concat([df, pd.get_dummies(df["position"], prefix="pos")], axis=1)
     features += [c for c in df.columns if c.startswith("pos_")]
@@ -318,8 +364,8 @@ def load_table(name: str = "model_table",
 
 
 def main(save: bool, export: bool, table: str, model_dir: str,
-         data_dir: str | None = None) -> None:
-    df, features = load_table(table, data_dir)
+         data_dir: str | None = None, drop: list[str] | None = None) -> None:
+    df, features = load_table(table, data_dir, drop=drop)
 
     print(f"model table {df.shape[0]:,} rows, {len(features)} features")
     print(f"walk-forward over seasons {TEST_SEASONS}\n")
@@ -377,7 +423,7 @@ def main(save: bool, export: bool, table: str, model_dir: str,
             model_dir, models,
             features=features, params=PARAMS, target=TARGET,
             train_rows=len(df), coverage=coverage, metrics=rows,
-            calibration=cal,
+            calibration=cal, dropped=resolve_drop(drop) if drop else None,
         )
         print(f"\nexported artifact -> {out}")
         print(f"  {len(models)} models, {len(features)} features, "
@@ -399,6 +445,12 @@ if __name__ == "__main__":
     p.add_argument("--data-dir", default=os.environ.get("AIP_DATA_DIR"),
                    help="where the model table lives; local dir or gs:// prefix. "
                         "Defaults to data/processed when unset.")
+    p.add_argument("--drop", nargs="+", metavar="NAME", default=None,
+                   help="exclude features before training: a family name "
+                        "(routes) or literal column names. Use when an upstream "
+                        "source stops publishing -- a model fit without the family "
+                        "beats one whose missing-value branches were learned on a "
+                        "different population than they now meet.")
     a = p.parse_args()
     main(save=not a.no_save, export=a.export, table=a.table,
-         model_dir=a.model_dir, data_dir=a.data_dir)
+         model_dir=a.model_dir, data_dir=a.data_dir, drop=a.drop)

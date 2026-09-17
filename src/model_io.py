@@ -114,6 +114,7 @@ def save(
     coverage: dict | None = None,
     metrics: list[dict] | None = None,
     calibration: dict | None = None,
+    dropped: list[str] | None = None,
 ) -> Path:
     """Write the fitted models plus the card that describes them.
 
@@ -147,6 +148,11 @@ def save(
         # contract: an artifact served without its calibration overprojects a
         # lineup by ~7.4 points and nothing downstream can tell.
         "calibration": calibration or {},
+        # Features deliberately excluded. `features` already implies this by
+        # omission, but a human reading the registry needs it stated: two
+        # artifacts with different feature counts are otherwise indistinguishable
+        # at a glance, and the one you want depends on what upstream published.
+        "dropped": list(dropped) if dropped else [],
         "artifacts": artifacts,
         "versions": {
             "python": platform.python_version(),
