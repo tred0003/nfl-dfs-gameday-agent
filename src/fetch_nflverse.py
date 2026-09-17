@@ -25,7 +25,12 @@ RELEASES = "https://github.com/nflverse/nflverse-data/releases/download"
 
 def _safe_parquet(df: pd.DataFrame, path: Path, label: str) -> None:
     """nflverse mixes types inside object columns; parquet refuses those."""
-    for col in df.select_dtypes(include="object").columns:
+    # include="object" alone also returns pandas 3's str columns, which is
+    # deprecated and becomes an error in pandas 4. It was never what this wanted
+    # anyway: a pure string column cannot hold mixed types, so stringifying it
+    # was wasted work. exclude="str" narrows this to the columns that are
+    # genuinely mixed -- the only ones parquet objects to.
+    for col in df.select_dtypes(include="object", exclude="str").columns:
         if df[col].dropna().map(type).nunique() > 1:
             df[col] = df[col].astype(str).where(df[col].notna(), None)
     # Write beside the target and swap, rather than writing through it. A pull
