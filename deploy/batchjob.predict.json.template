@@ -1,0 +1,29 @@
+{
+  "_comment_1": "BatchPredictionJob. Filled from this template by PowerShell -replace, same pattern as customjob.train.yaml.template, because the generated file carries a run-specific output prefix and should never be committed.",
+
+  "_comment_2": "WHY REST AND NOT gcloud: there is no batch surface on the CLI. `gcloud ai batch-prediction-jobs` is not a typo or a missing component -- the whole group does not exist, GA or otherwise. `gcloud ai` has custom-jobs, endpoints, models, operations, indexes, index-endpoints, hp-tuning-jobs, model-monitoring-jobs, model-garden, persistent-resources, tensorboards and tuning-jobs. That is the list. Batch prediction is REST, the Python SDK, or the console. Same situation as `gcloud ai models update`, which also does not exist.",
+
+  "displayName": "DISPLAY_NAME",
+
+  "_comment_3": "Addressed by ALIAS, not by version number. This is the payoff from 4.2: promoting a new model to the weekly batch job becomes a label move, and this file never changes. If the alias form is rejected, the bare form is .../models/7035124545010794496@3.",
+  "model": "MODEL_REF",
+
+  "_comment_4": "instancesFormat jsonl means ONE JSON OBJECT PER LINE, and the platform packs lines into {\"instances\": [...]} requests against the container's predict route -- the same route serve.py already answers online. It decides the batch size, not you. The response array must come back the same length and in the same order as the instances it was sent; serve.py returns one record per input row, so this holds.",
+  "inputConfig": {
+    "instancesFormat": "jsonl",
+    "gcsSource": { "uris": ["INPUT_URI"] }
+  },
+
+  "_comment_5": "Output is a TIMESTAMPED SUBDIRECTORY under this prefix, not this path -- which is why input and output get different prefixes. Each line comes back as {\"instance\": {...}, \"prediction\": {...}}: the instance is echoed, so player_id and name ride home with the number and features_present is still attached a week later.",
+  "outputConfig": {
+    "predictionsFormat": "jsonl",
+    "gcsDestination": { "outputUriPrefix": "OUTPUT_PREFIX" }
+  },
+
+  "_comment_6": "A custom container gets no default machine. The platform will not pick one for you the way a prebuilt container's job can, so omitting dedicatedResources fails the submit. n1-standard-4 matches the training job; no accelerator, for the same reason 4.1 had none -- this is tree inference on 318 rows. One replica: a second would halve a job that runs in minutes and double the per-node startup you are actually paying for.",
+  "dedicatedResources": {
+    "machineSpec": { "machineType": "n1-standard-4" },
+    "startingReplicaCount": 1,
+    "maxReplicaCount": 1
+  }
+}

@@ -19,3 +19,6 @@ __pycache__/
 
 # generated per-run from customjob.train.yaml.template
 deploy/customjob.train.yaml
+
+# generated per-run from batchjob.predict.json.template
+deploy/batchjob.predict.json
