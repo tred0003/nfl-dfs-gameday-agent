@@ -42,6 +42,21 @@ Point 3 is the entire reason this file exists rather than a prebuilt image. It
 is where training/serving skew is actually prevented, in production, on every
 request.
 
+EVERY PREDICTION CARRIES ITS OWN FEATURE COUNT
+
+align() degrades instead of crashing -- absent features become NaN, which the
+model reads as a real value -- so an under-specified request comes back looking
+exactly like a good one. Ask this server for a projection with three of the
+eighty-three features and it answers with a confident number near the pool mean
+and a 200. That is correct behaviour and a terrible thing to be unable to see.
+
+So `features_present` ships on every prediction, beside the number it qualifies.
+It is per-prediction rather than per-response on purpose: batch prediction pairs
+predictions[i] with instances[i] and makes no promise about any other key in the
+body, so a response-level summary is the one place the count could be dropped on
+the way out. Riding on the prediction, it survives into the output JSONL and is
+still there when the job is read back a week later.
+
 Local test:
     AIP_STORAGE_URI=models/current python src/serve.py
     curl -X POST localhost:8080/predict -H 'Content-Type: application/json' \
@@ -97,8 +112,10 @@ def health():
 def predict():
     """{"instances": [{feature: value, ...}, ...]} -> {"predictions": [...]}
 
-    Each prediction carries both models' output plus the raw uncalibrated mean,
-    so a caller can see what the correction did rather than having to trust it.
+    Each prediction carries both models' output, the raw uncalibrated mean so a
+    caller can see what the correction did rather than trust it, and
+    `features_present` / `features_expected` so a caller can see how much of the
+    model's input actually arrived.
     """
     if not READY:
         return jsonify({"error": "model still loading"}), 503
@@ -128,11 +145,21 @@ def predict():
         # sees anything. Missing -> NaN (a real value to XGBoost); unknown ->
         # dropped. Without this a caller sending columns in a different order
         # gets confident garbage and no error.
-        preds = model_io.predict(df, MODELS, CARD, label="request")
+        info: dict = {}
+        preds = model_io.predict(df, MODELS, CARD, label="request", info=info)
 
         out = pd.DataFrame({"mean_raw": preds["pred_mean"]})
         if "pred_ceiling" in preds:
             out["ceiling"] = preds["pred_ceiling"]
+
+        # Counted AFTER the dummy rebuild above, so a caller who sent
+        # position="QB" is credited with the four pos_ columns it produced
+        # rather than penalised for not having sent them by hand.
+        #
+        # Both numbers, not a ratio: 6 of 83 is a sentence a human reads at a
+        # glance, and it stays readable if the feature count ever changes.
+        out["features_present"] = info["present_per_row"].values
+        out["features_expected"] = info["n_features"]
 
         cal = CARD.get("calibration") or {}
         if cal and "salary" in df.columns and "position" in df.columns:
@@ -143,7 +170,8 @@ def predict():
             out["mean"] = preds["pred_mean"]
             out["calibrated"] = False
 
-        cols = ["mean", "ceiling", "mean_raw", "calibrated"]
+        cols = ["mean", "ceiling", "mean_raw", "calibrated",
+                "features_present", "features_expected"]
         return jsonify({"predictions": out[[c for c in cols if c in out]]
                         .to_dict(orient="records")}), 200
 

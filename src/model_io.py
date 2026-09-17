@@ -204,7 +204,8 @@ def load(model_dir: Path | str) -> tuple[dict[str, xgb.Booster], dict]:
     return models, card
 
 
-def align(df: pd.DataFrame, card: dict, *, label: str = "slate") -> pd.DataFrame:
+def align(df: pd.DataFrame, card: dict, *, label: str = "slate",
+          info: dict | None = None) -> pd.DataFrame:
     """Force a live table into the exact feature order the model was trained on.
 
     This is the single function standing between you and training/serving skew.
@@ -212,6 +213,28 @@ def align(df: pd.DataFrame, card: dict, *, label: str = "slate") -> pd.DataFrame
     column set drifts by one -- and XGBoost will not complain, it will just
     read feature 12 out of the slot where feature 11 used to be and return
     confident nonsense.
+
+    WHY `info` EXISTS: A PRINT IS NOT A RETURN VALUE
+
+    This function has always known when a request arrived half-empty. It said so
+    on stdout and then handed back a frame that looks exactly like a good one,
+    so the caller had no way to act on it. Online that is survivable -- a human
+    is reading the response. In a batch job nobody is reading anything: a
+    malformed input file produces three hundred confident near-mean numbers, a
+    JOB_STATE_SUCCEEDED, and no red anywhere. The count has to travel with the
+    predictions, so `info` is filled in for a caller that passes a dict.
+
+    AND WHY IT IS COUNTED PER ROW, NOT JUST PER COLUMN
+
+    `missing` below is a COLUMN-level check, and it is blind to the failure that
+    actually happens in batch. `pd.DataFrame(instances)` unions the keys of
+    every instance, so one fully-populated row is enough to create a column --
+    and the rows that carry nothing for it get NaN in a column that is, as far
+    as this check can tell, present. `missing` reports zero and 90% of the slate
+    is empty. `present_per_row` is the number that survives that: it counts, for
+    each row, how many of the pinned features actually hold a value. It also
+    subsumes the column case, because a column absent from the whole request is
+    null on every row.
     """
     feats = card["features"]
     missing = [c for c in feats if c not in df.columns]
@@ -225,12 +248,52 @@ def align(df: pd.DataFrame, card: dict, *, label: str = "slate") -> pd.DataFrame
     if extra:
         print(f"  align({label}): {len(extra)} column(s) not in the model, dropped")
 
-    return df.reindex(columns=feats)
+    X = df.reindex(columns=feats)
+
+    # FORCE THE DTYPES, DO NOT TRUST THEM. There are two ways a feature ends up
+    # with no value, and pandas gives them different dtypes:
+    #
+    #   absent from the request   -> reindex creates it as float64 NaN.  Works.
+    #   present as JSON null      -> pd.DataFrame builds an OBJECT column of
+    #                                None.  xgb.DMatrix rejects object dtype
+    #                                outright: "DataFrame.dtypes for data must
+    #                                be int, float, bool or category."
+    #
+    # Which is backwards from every intuition -- sending nothing is safe and
+    # sending an honest null is fatal. It went unnoticed through 4.2 and 4.3
+    # because the hand-written test payload had no nulls in it. Every line of a
+    # real batch file does, so the first real batch job would have failed on it
+    # at $node-minutes with the reason buried in Cloud Logging.
+    #
+    # astype rather than pd.to_numeric(errors="coerce") on purpose: None becomes
+    # NaN either way, but a genuine string in a numeric feature SHOULD raise
+    # here. Coercing it would turn a caller's bad data into a confident number.
+    X = X.astype("float64")
+
+    if info is not None:
+        info.update({
+            "n_features": len(feats),
+            "absent": len(missing),
+            "absent_names": missing,
+            "dropped": len(extra),
+            # int64 Series indexed like df. The caller decides what a bad number
+            # is -- there is no threshold here on purpose. "How many features is
+            # too few" depends on which features, and inventing a cutoff would
+            # replace a real number with a guess dressed up as a decision.
+            "present_per_row": X.notna().sum(axis=1),
+        })
+
+    return X
 
 
-def predict(df: pd.DataFrame, models: dict, card: dict, *, label: str = "slate") -> pd.DataFrame:
-    """Aligned prediction for every role in the artifact. Returns a frame of columns."""
-    X = align(df, card, label=label)
+def predict(df: pd.DataFrame, models: dict, card: dict, *, label: str = "slate",
+            info: dict | None = None) -> pd.DataFrame:
+    """Aligned prediction for every role in the artifact. Returns a frame of columns.
+
+    Pass `info` as an empty dict to get the feature-coverage diagnostics back
+    alongside the predictions -- see align().
+    """
+    X = align(df, card, label=label, info=info)
     # The Booster API predicts on a DMatrix, not a DataFrame. Built from the
     # aligned frame so the DMatrix carries the column names, which buys a second
     # skew guard for free: the booster stores the feature names it was fit on
