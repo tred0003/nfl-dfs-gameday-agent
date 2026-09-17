@@ -175,14 +175,103 @@ def build_rows(season: int, week: int, slate: pd.DataFrame,
 
 
 # ------------------------------------------------------------------ model
+def _refuse_if_trained_on(card: dict, season: int, week: int) -> None:
+    """Refuse to score a week the stored artifact was fitted on.
+
+    This is the one thing a REGISTERED model can get wrong that refitting never
+    could, and it is the price of the swap below.
+
+    The refit path cannot leak by construction: it rebuilds its training set from
+    the table on every run and filters to games strictly before the target week,
+    so the boundary is recomputed every time. A stored artifact has a fixed
+    training window baked in on the day it was fitted, and nothing about loading
+    it tells you what that window was -- model_io.load() hands back two boosters
+    and a card, and reports no opinion about dates.
+
+    So ask the card. coverage.through records the last (season, week) that went
+    into the fit. An artifact trained through 2026 week 1 scoring week 2 is
+    clean. The same artifact scoring week 1 is scoring its own training rows,
+    which would look excellent, beat every baseline, and mean nothing.
+
+    This raises rather than warns. A leaked projection is not a degraded result
+    you can mentally discount -- it is a number with no information in it that
+    looks better than a real one.
+    """
+    through = (card.get("coverage") or {}).get("through")
+    if not through:
+        warnings.warn(
+            "artifact card has no coverage.through, so this cannot verify the "
+            "artifact was not trained on this week. Check it by hand before "
+            "trusting the projections."
+        )
+        return
+    t_season, t_week = int(through[0]), int(through[1])
+    if (season, week) <= (t_season, t_week):
+        raise SystemExit(
+            f"\nREFUSING TO SCORE. The artifact was trained through {t_season} "
+            f"week {t_week}; you asked for {season} week {week}.\n"
+            f"Those rows are in its training set, so the projections would "
+            f"measure memory rather than skill.\n"
+            f"Pick a later week, or retrain and re-export:\n"
+            f"    python src/train.py --table model_table_v3 --export"
+        )
+    print(f"  artifact trained through {t_season} wk{t_week}, scoring {season} "
+          f"wk{week} -- no overlap")
+
+
 def project(table: pd.DataFrame, season: int, week: int,
-            strict: bool = True) -> pd.DataFrame:
+            strict: bool = True, model_dir: str | None = None) -> pd.DataFrame:
+    """Projections for the target week: from a stored artifact, or from a refit.
+
+    TWO PATHS, AND THE DEFAULT IS THE WRONG ONE FOR PRODUCTION
+
+    Passing model_dir scores with a stored artifact -- the exact file trained in
+    the cloud, registered as a version, pinned to a feature order, and served by
+    a container proven to agree with this laptop to 0.000e+00. Omitting it refits
+    XGBoost from scratch on every run.
+
+    The refit is what this script always did, and it quietly undermined the whole
+    of phase 4. Pinned features, pinned dependencies, immutable versions, a
+    calibration map travelling with its model, a batch job verified row by row --
+    every bit of it applied to an artifact that then had no part in choosing the
+    lineup. The model making the decision was a fresh fit that existed for ninety
+    seconds, was never registered, never versioned, and could not be rolled back
+    to or audited after a bad week.
+
+    The refit stays, because it is the right tool for a BACKTEST: scoring a week
+    in 2023 needs a model that never saw 2023, and only refitting can give you
+    one. It is no longer the right tool for Sunday.
+
+    WHAT THE SWAP ACTUALLY CHANGES
+
+    Little code, which is the point -- the work was done upstream:
+
+      - the feature set stops being whatever columns this frame happens to hold
+        and becomes the card's pinned 83, in order, enforced by align().
+      - the calibration map comes from the artifact being scored instead of from
+        whatever sits in models/current, so the correction can no longer belong
+        to a different model than the projection it is correcting.
+      - the projection becomes reproducible. Re-run it next month and the number
+        is the same, because the model is a file rather than a fit.
+    """
     table = pd.concat([table, pd.get_dummies(table["position"], prefix="pos")], axis=1)
     feats = [c for c in table.columns if c not in ID_COLS]
     done = (table[TARGET].notna() & ~table["_future"]
             & ((table["season"] < season) | ((table["season"] == season) & (table["week"] < week))))
     train = table[done]
     target = table[table["_future"] & table["season"].eq(season) & table["week"].eq(week)].copy()
+
+    models = card = None
+    if model_dir:
+        models, card = model_io.load(model_dir)
+        print(f"loaded artifact {model_dir}")
+        print(f"  {card['n_features']} features pinned, git_sha {card.get('git_sha')}, "
+              f"fitted on {card['train_rows']:,} rows")
+        _refuse_if_trained_on(card, season, week)
+        # The card's list is the CONTRACT. Pre-flight against that instead of
+        # against this frame's columns, because the contract is what these rows
+        # are about to be reindexed into.
+        feats = [f for f in card["features"] if f in target.columns]
 
     # The check that matters most, and the one only possible here: a feature can
     # be fully populated across ten years of training rows and entirely absent on
@@ -197,42 +286,55 @@ def project(table: pd.DataFrame, season: int, week: int,
             "never seen this input pattern.\n"
             "Re-run with --skip-preflight to build a lineup anyway."
         )
-    print(f"training v3 on {len(train):,} completed player-games ({len(feats)} features), "
-          f"predicting {len(target)} players", flush=True)
-    model = xgb.XGBRegressor(objective="reg:squarederror", **PARAMS)
-    model.fit(train[feats], train[TARGET], verbose=False)
-    target["projection"] = model.predict(target[feats])
 
-    # Second model, different question. `projection` is the expected score --
-    # what you want in cash games, where you only need to clear a line. This one
-    # is the 85th percentile: how high can he go. Tournaments pay the tail, so
-    # the two columns get read differently and both belong on the board.
-    ceil = xgb.XGBRegressor(objective="reg:quantileerror", quantile_alpha=0.85, **PARAMS)
-    ceil.fit(train[feats], train[TARGET], verbose=False)
-    target["ceiling"] = ceil.predict(target[feats])
-
-    # Apply the calibration map that shipped with the artifact. Without it the
-    # optimizer's nine picks overproject by ~7.4 points in total -- not because
-    # the model is biased on the pool (it is not) but because the ILP selects
-    # the players whose errors are most positive. See src/calibrate.py.
-    #
-    # The map is read from the artifact rather than refitted here: it has to be
-    # fitted on out-of-sample predictions, and nothing in this script is
-    # out-of-sample.
-    target["projection_raw"] = target["projection"]
-    try:
-        _, card = model_io.load(MODELS / "current")
+    if model_dir:
+        print(f"scoring {len(target)} players with the REGISTERED artifact -- no refit",
+              flush=True)
+        preds = model_io.predict(target, models, card, label=f"{season} wk{week}")
+        target["projection"] = preds["pred_mean"].values
+        target["ceiling"] = (preds["pred_ceiling"].values
+                             if "pred_ceiling" in preds else np.nan)
         cal = card.get("calibration") or {}
-    except FileNotFoundError:
-        cal = {}
+    else:
+        print(f"training v3 on {len(train):,} completed player-games ({len(feats)} features), "
+              f"predicting {len(target)} players", flush=True)
+        model = xgb.XGBRegressor(objective="reg:squarederror", **PARAMS)
+        model.fit(train[feats], train[TARGET], verbose=False)
+        target["projection"] = model.predict(target[feats])
+
+        # Second model, different question. `projection` is the expected score --
+        # what you want in cash games, where you only need to clear a line. This one
+        # is the 85th percentile: how high can he go. Tournaments pay the tail, so
+        # the two columns get read differently and both belong on the board.
+        ceil = xgb.XGBRegressor(objective="reg:quantileerror", quantile_alpha=0.85, **PARAMS)
+        ceil.fit(train[feats], train[TARGET], verbose=False)
+        target["ceiling"] = ceil.predict(target[feats])
+
+        # A refit has no calibration of its own -- the map must be fitted on
+        # out-of-sample predictions and nothing in this path is out-of-sample --
+        # so it borrows the one from models/current. That is a genuine mismatch:
+        # the correction was fitted for a different model than the one that just
+        # produced these numbers. Close enough to be worth applying, and one more
+        # reason the artifact path is the better one.
+        try:
+            _, ref = model_io.load(MODELS / "current")
+            cal = ref.get("calibration") or {}
+        except FileNotFoundError:
+            cal = {}
+
+    # Apply the calibration map. Without it the optimizer's nine picks
+    # overproject by ~7.4 points in total -- not because the model is biased on
+    # the pool (it is not) but because the ILP selects the players whose errors
+    # are most positive. See src/calibrate.py.
+    target["projection_raw"] = target["projection"]
     if cal:
         target["projection"] = calibrate.apply(target, cal, "projection")
         shift = (target["projection"] - target["projection_raw"]).mean()
         print(f"calibration applied (fitted on {cal['n']:,} held-out rows): "
               f"mean projection {shift:+.2f}")
     else:
-        print("NO CALIBRATION in models/current -- projections will run ~5% hot "
-              "on the players the optimizer picks. Run: "
+        print("NO CALIBRATION -- projections will run ~5% hot on the players the "
+              "optimizer picks. Run: "
               "python src/train.py --table model_table_v3 --export")
     return target
 
@@ -247,6 +349,11 @@ def main() -> None:
     ap.add_argument("--score", action="store_true", help="week already played: score the lineup")
     ap.add_argument("--board-top", type=int, default=12,
                     help="rows per position on the deal board")
+    ap.add_argument("--model-dir", default=None,
+                    help="score with a stored artifact instead of refitting: a local path "
+                         "or a gs:// URI. This is the registered, versioned model -- the "
+                         "one the serving container runs. Omit it to refit, which is "
+                         "correct for a backtest and wrong for a live week.")
     ap.add_argument("--skip-preflight", action="store_true",
                     help="build a lineup even when inputs are missing. Checks still "
                          "print -- you just proceed knowing what is absent.")
@@ -259,7 +366,8 @@ def main() -> None:
     slate = load_slate(a.slate, a.season, a.week)
     prev = load_slate(a.prev_slate, a.season, a.prev_week) if a.prev_slate else None
     table, matched, unmatched = build_rows(a.season, a.week, slate, prev, a.prev_week)
-    proj = project(table, a.season, a.week, strict=not a.skip_preflight)
+    proj = project(table, a.season, a.week, strict=not a.skip_preflight,
+                   model_dir=a.model_dir)
 
     skill = slate[slate["position"].isin(SKILL)].merge(
         matched[["name", "team", "position", "player_id"]], on=["name", "team", "position"], how="left")
