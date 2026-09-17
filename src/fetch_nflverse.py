@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import os
 from pathlib import Path
 
 import nfl_data_py as nfl
@@ -27,7 +28,13 @@ def _safe_parquet(df: pd.DataFrame, path: Path, label: str) -> None:
     for col in df.select_dtypes(include="object").columns:
         if df[col].dropna().map(type).nunique() > 1:
             df[col] = df[col].astype(str).where(df[col].notna(), None)
-    df.to_parquet(path, engine="pyarrow", index=False)
+    # Write beside the target and swap, rather than writing through it. A pull
+    # interrupted halfway -- dropped connection, Ctrl-C -- otherwise leaves a
+    # truncated parquet where a good one used to be, and the next reader gets a
+    # confusing schema error instead of the previous file.
+    tmp = path.with_suffix(".tmp.parquet")
+    df.to_parquet(tmp, engine="pyarrow", index=False)
+    os.replace(tmp, path)
     print(f"  {label:<12} {str(df.shape):>16}  -> {path.name}")
 
 
@@ -60,6 +67,11 @@ def pull_player_stats(years: list[int], path: Path) -> None:
     air_yards_share and wopr are 0 for a zero-target game instead of blank.
     Columns are renamed to the old names so nothing downstream changes.
     """
+    _safe_parquet(_load_player_stats(years), path, "weekly")
+
+
+def _load_player_stats(years: list[int]) -> pd.DataFrame:
+    """The fetch half of pull_player_stats, so update() can reuse it."""
     frames = []
     for y in years:
         r = requests.get(f"{RELEASES}/stats_player/stats_player_week_{y}.parquet", timeout=120)
@@ -74,7 +86,7 @@ def pull_player_stats(years: list[int], path: Path) -> None:
         "sacks_suffered": "sacks",
         "sack_yards_lost": "sack_yards",
     })
-    _safe_parquet(df, path, "weekly")
+    return df
 
 
 def fetch(start: int, end: int) -> None:
@@ -167,6 +179,120 @@ def fetch_extras(start: int, end: int, refresh: bool) -> None:
     _pull_release("contracts", "historical_contracts.parquet", None, "players", "contracts", refresh)
 
 
+# ------------------------------------------------------------------ in-season update
+# A full pull rewrites eleven seasons to refresh one week. That is slow enough
+# that you skip it, and skipping it is how a lineup gets built on a stale injury
+# report -- which pre-flight then correctly refuses, leaving you stuck between a
+# check you cannot satisfy and a download you will not run.
+#
+# Worse, the obvious shortcut is destructive. `_pull` writes whatever it fetched
+# over the whole file, so `--start 2026 --end 2026` does not add 2026, it
+# REPLACES 2016-2025 with it. Nothing warns. The file just gets smaller.
+#
+# So: update one season, merged into what is already there.
+#
+# Only the tables that actually move during a season are listed. `ids` is a name
+# crosswalk and barely changes; history never changes at all.
+
+UPDATABLE = {
+    # label:      (loader, filename, what "fresh" means for this one)
+    "injuries":   (lambda yrs: nfl.import_injuries(yrs), "injuries.parquet",
+                   "a new practice report daily; inactives 90 min before kickoff"),
+    "schedules":  (lambda yrs: nfl.import_schedules(yrs), "schedules.parquet",
+                   "where the Vegas lines live -- they move all week"),
+    "snaps":      (lambda yrs: nfl.import_snap_counts(yrs), "snaps.parquet",
+                   "after each week's games"),
+    "weekly":     (_load_player_stats, "weekly.parquet",
+                   "after each week's games -- this is the label"),
+    "depth":      (lambda yrs: nfl.import_depth_charts(yrs), "depth_charts.parquet",
+                   "teams reshuffle weekly"),
+}
+
+
+def _season_slice(df: pd.DataFrame, season: int) -> pd.Series:
+    """Rows for one season. Dtype-proof: nflverse gives season as int or float."""
+    return pd.to_numeric(df["season"], errors="coerce").eq(float(season))
+
+
+def _freshness(df: pd.DataFrame, label: str) -> str:
+    """One line describing how current this slice is, in the terms that matter.
+
+    Max week is the right measure for everything except schedules, which are
+    published for all 18 weeks before the season starts. For those the number
+    that moves during a week is how many games have a line yet.
+    """
+    if df.empty:
+        return "no rows"
+    wk = int(pd.to_numeric(df["week"], errors="coerce").max())
+    if label == "schedules" and "total_line" in df.columns:
+        priced = int(df["total_line"].notna().sum())
+        return f"wk{wk}, {priced}/{len(df)} games priced"
+    return f"wk{wk}, {len(df):,} rows"
+
+
+def update(season: int, only: list[str] | None = None) -> None:
+    """Refresh one season in place. Merges; never overwrites other seasons."""
+    print(f"updating {season} in {RAW}")
+    print("  (history untouched -- this replaces only this season's rows)")
+    print("")
+
+    for label, (loader, fname, why) in UPDATABLE.items():
+        if only and label not in only:
+            continue
+        path = RAW / fname
+        if not path.exists():
+            print(f"  {label:<10} SKIP -- {fname} does not exist. Run a full pull first.")
+            continue
+
+        old = pd.read_parquet(path)
+        old_slice = old[_season_slice(old, season)]
+        before = _freshness(old_slice, label)
+
+        try:
+            new = loader([season])
+        except Exception as e:
+            print(f"  {label:<10} FAILED to fetch: {type(e).__name__}: {str(e)[:70]}")
+            print(f"             nothing written. {before} still on disk.")
+            continue
+
+        if new is None or new.empty:
+            print(f"  {label:<10} upstream has nothing for {season}. Unchanged ({before}).")
+            continue
+
+        # REFUSE TO GO BACKWARDS. A partial publish, a truncated response or an
+        # upstream mid-update all look like a successful download of less data.
+        # Without this the good file is quietly replaced by a worse one and the
+        # only symptom is a pre-flight failure next week that makes no sense.
+        old_wk = pd.to_numeric(old_slice["week"], errors="coerce").max() if len(old_slice) else -1
+        new_wk = pd.to_numeric(new["week"], errors="coerce").max()
+        if len(old_slice) and (new_wk < old_wk or len(new) < len(old_slice) * 0.9):
+            print(f"  {label:<10} REFUSED -- download is smaller than what you have")
+            print(f"             on disk {before}  ->  offered wk{int(new_wk)}, {len(new):,} rows")
+            print(f"             nothing written. Try again later.")
+            continue
+
+        # Schema drift: keep the column set downstream already expects, and say
+        # so rather than silently adding or dropping features mid-season.
+        added = [c for c in new.columns if c not in old.columns]
+        gone = [c for c in old.columns if c not in new.columns]
+        if added:
+            print(f"  {label:<10} note: upstream added {len(added)} column(s), not adopted: {added[:4]}")
+        if gone:
+            print(f"  {label:<10} WARN: upstream dropped {len(gone)} column(s) this file has: {gone[:4]}")
+            print(f"             they will be null for {season}.")
+        new = new.reindex(columns=old.columns)
+
+        merged = pd.concat([old[~_season_slice(old, season)], new], ignore_index=True)
+        _safe_parquet(merged, path, label)
+        after = _freshness(merged[_season_slice(merged, season)], label)
+        arrow = "unchanged" if before == after else f"{before}  ->  {after}"
+        print(f"             {arrow}")
+
+    print("")
+    print("Unchanged is often correct: snaps and box scores cannot advance until")
+    print("the games are played. Injuries and lines are the ones that move midweek.")
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--start", type=int, default=2016)
@@ -175,7 +301,19 @@ if __name__ == "__main__":
                    help="skip the core tables the model is already built on")
     p.add_argument("--refresh", action="store_true",
                    help="re-download extras that already exist")
+    p.add_argument("--update", type=int, metavar="SEASON",
+                   help="in-season refresh: re-pull ONLY this season and merge it into "
+                        "the existing files. Seconds rather than minutes, and it cannot "
+                        "delete history the way --start SEASON would. Run it before a "
+                        "slate for injuries and lines, and after the games for snaps "
+                        "and box scores.")
+    p.add_argument("--only", nargs="+", metavar="TABLE",
+                   help=f"with --update, limit to these tables: {', '.join(UPDATABLE)}")
     a = p.parse_args()
-    if not a.extras_only:
-        fetch(a.start, a.end)
-    fetch_extras(a.start, a.end, a.refresh)
+
+    if a.update:
+        update(a.update, a.only)
+    else:
+        if not a.extras_only:
+            fetch(a.start, a.end)
+        fetch_extras(a.start, a.end, a.refresh)

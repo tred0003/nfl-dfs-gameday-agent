@@ -116,7 +116,9 @@ def check_injuries(season: int, week: int, r: Result) -> None:
               f"nothing for {season} week {week}"
               + (f" (latest on disk: week {int(have)})" if pd.notna(have) else "")
               + ". vacated_* and n_out would read as 0 = 'everyone healthy'. "
-                "Re-pull injuries; official inactives drop 90 min before kickoff.")
+                f"FIX: python src/fetch_nflverse.py --update {season} --only injuries "
+                f"schedules  (seconds, merges, leaves history alone). Inactives drop "
+                f"90 min before kickoff, so run it again Sunday morning before you lock.")
     else:
         out = wk["report_status"].isin(["Out", "Doubtful"]).sum()
         lvl = WARN if out == 0 else OK
@@ -135,7 +137,11 @@ def check_participation(season: int, r: Result) -> None:
         r.add(WARN, "participation",
               f"no {season} file (have {min(years)}-{max(years)}). All six route "
               f"features -- route_share_*, tprr_r5, route_share_trend -- will be NaN. "
-              f"That family is ~9.7% of model attribution and the main WR/TE signal.")
+              f"That family is ~9.7% of model attribution and the main WR/TE signal. "
+              f"TRY: python src/fetch_nflverse.py --extras-only --end {season}. If that "
+              f"reports 'not published upstream' it is NOT fixable here -- which is why "
+              f"this is a WARN. The snap family (snap_pct_r3/r5, targets_per_snap_r5) is "
+              f"weekly, present for {season}, and covers the same players more coarsely.")
     else:
         r.add(OK, "participation", f"{season} present ({min(years)}-{max(years)})")
 
