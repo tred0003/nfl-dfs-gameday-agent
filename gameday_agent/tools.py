@@ -10,6 +10,13 @@ and the model, seeing an empty list, would confidently report the first. A
 status field lets a tool say it failed, and the agent say so rather than invent
 a clean bill of health.
 
+Injury status and weather come from ESPN (espn_client.py), not DK, as of
+September 2026 -- see espn_client.py's module docstring for why. DK's
+draftables call (slate.py) is still consulted for salary and roster
+structure, since nothing else has that. `_with_espn_status` is the seam:
+every tool that needs to know if a player can play goes through it rather
+than reading DK's own `status`/`news_status` columns directly.
+
 Everything else about how tools work is unchanged from the raw-SDK build: the
 function signature and the docstring below it ARE the specification the model
 sees. Nothing in a function body reaches the model. Rename a parameter and you
@@ -21,10 +28,11 @@ from __future__ import annotations
 import os
 
 import pandas as pd
+import requests
 
 from predict_slate import normalize_name, vegas_for_slate
 
-from .slate import my_lineup_names, slate
+from .slate import espn_injuries, espn_scoreboard, my_lineup_names, slate
 
 
 def _f(v) -> float | None:
@@ -47,12 +55,75 @@ def _s(v, default: str = "None") -> str:
     return default if v is None or pd.isna(v) or v == "" else str(v)
 
 
+def _unavailable(e: Exception) -> dict:
+    """A live-data fetch (DK or ESPN) failed -- both are unofficial, undocumented
+    endpoints and have each been seen returning a transient 403 in testing.
+
+    Returned instead of letting the exception crash the whole agent turn, so
+    the model can say what could not be checked -- the same reasoning as the
+    `status` field on every tool's happy-path return.
+    """
+    return {
+        "status": "error",
+        "message": f"Live slate/injury data is unavailable right now ({e}). "
+                   "Do not report the lineup or slate as clean without it.",
+    }
+
+
+def _with_espn_status(players: pd.DataFrame) -> pd.DataFrame:
+    """Left-join ESPN's injury report onto a DK players frame, by name.
+
+    ESPN's `status` replaces DK's own `status`/`news_status` columns entirely
+    -- it is fresher and, unlike DK's `news_status`, not 36%-of-the-slate
+    noise (see espn_client.py). A player absent from ESPN's report gets
+    status None, same meaning as ESPN's own "Active".
+    """
+    inj = espn_injuries()[["jn", "status", "body_part", "return_date", "comment"]]
+    inj = inj.drop_duplicates("jn", keep="last")
+    return players.drop(columns=["status", "news_status"], errors="ignore").merge(
+        inj, on="jn", how="left"
+    )
+
+
+def _injury_detail(r) -> str | None:
+    """Human-readable injury context, or None if there is nothing to say.
+
+    Gated on an actual designation (status not None): ESPN attaches a
+    `comment` to EVERY player who has ever been on a report, including
+    healthy ones -- and for a healthy player that comment is a last-game
+    recap blurb, not injury news. Surfacing it regardless of status was
+    caught live-testing this: a perfectly healthy player came back with
+    "caught 8 of 9 targets for 92 yards and two touchdowns" under
+    `injury_detail`, which reads like the model should be worried about it.
+    """
+    if r.get("status") is None or pd.isna(r.get("status")):
+        return None
+
+    parts = []
+    if r.get("body_part") is not None and not pd.isna(r.get("body_part")):
+        parts.append(str(r["body_part"]))
+    if r.get("return_date") is not None and not pd.isna(r.get("return_date")):
+        parts.append(f"est. return {r['return_date']}")
+    if r.get("comment") is not None and not pd.isna(r.get("comment")):
+        parts.append(str(r["comment"]))
+    return " -- ".join(parts) if parts else None
+
+
 def get_lineup_status() -> dict:
     """Get the user's current DFS lineup with each player's live availability.
 
-    Returns one record per rostered player with position, team, opponent, salary,
-    injury status (None/Q/D/OUT/IR) and whether DraftKings is flagging breaking
-    news on them.
+    Returns one record per rostered player with position, team, opponent,
+    salary, injury status (None/Q/D/OUT/IR, from ESPN's injury report) and an
+    `injury_detail` string (body part, estimated return date, and/or a
+    sourced note) when ESPN has one -- None means there is nothing to report,
+    not that it was not checked.
+
+    `dk_points_per_game` can be null for a player DK has not accumulated
+    enough games on yet (a rookie, an early-season week, a recent trade).
+    Null there means "no average yet", nothing more -- it is not a sign the
+    player is inactive, fake, or needs replacing. Use `injury_status` and
+    `not_found_on_slate` to judge whether someone can actually play; a
+    healthy player belongs in the report even with a null points-per-game.
     """
     names = my_lineup_names()
     if not names:
@@ -63,7 +134,11 @@ def get_lineup_status() -> dict:
                        "lineup as clean.",
         }
 
-    players, _ = slate()
+    try:
+        players, _ = slate()
+        players = _with_espn_status(players)
+    except requests.RequestException as e:
+        return _unavailable(e)
     want = {normalize_name(pd.Series([n]))[0] for n in names}
     mine = players[players["jn"].isin(want)]
 
@@ -80,7 +155,7 @@ def get_lineup_status() -> dict:
                 "game": r["game"],
                 "salary": int(r["salary"]),
                 "injury_status": _s(r["status"]),
-                "news_flag": _s(r["news_status"]),
+                "injury_detail": _injury_detail(r),
                 "dk_points_per_game": _f(r["dk_fppg"]),
                 "opponent_rank_vs_position": _i(r["dk_oprk"]),
             }
@@ -93,20 +168,30 @@ def get_lineup_status() -> dict:
 
 
 def get_slate_weather() -> dict:
-    """Get weather for every game on the slate.
+    """Get weather for this week's NFL games, from ESPN.
 
-    `is_dome` matters: DraftKings reports the outdoor forecast even for covered
-    stadiums, so a dome game showing rain is not actually affected.
+    `is_dome` matters: a dome game is not affected by outdoor conditions no
+    matter what the forecast says.
+
+    `weather_posted` matters just as much: ESPN does not publish a forecast
+    until close to kickoff. When it is false, no forecast exists yet -- that
+    is "unknown", not "clear skies". Say weather has not been posted rather
+    than reporting a dome-free game as fine.
     """
-    _, games = slate()
+    try:
+        games = espn_scoreboard()
+    except requests.RequestException as e:
+        return _unavailable(e)
     return {
         "status": "ok",
         "games": [
             {
                 "game": g["game"],
                 "venue": g["venue"],
-                "is_dome": bool(g["is_dome"]),
-                "conditions": g["weather_icon"],
+                "is_dome": bool(g["is_dome"]) if not pd.isna(g["is_dome"]) else None,
+                "weather_posted": bool(g["weather_posted"]),
+                "conditions": _s(g["weather_condition"], default="not posted"),
+                "temperature_f": _f(g["weather_temp_f"]),
             }
             for _, g in games.iterrows()
         ],
@@ -154,7 +239,11 @@ def find_replacements(position: str, max_salary: int, min_salary: int = 3000) ->
     Excludes anyone who is themselves OUT or on IR. Returns the top options by
     DraftKings points per game.
     """
-    players, _ = slate()
+    try:
+        players, _ = slate()
+        players = _with_espn_status(players)
+    except requests.RequestException as e:
+        return _unavailable(e)
     p = players[
         players["position"].eq(position.upper())
         & players["salary"].between(min_salary, max_salary)
@@ -186,7 +275,11 @@ def get_notable_scratches(min_salary: int = 6000) -> dict:
     These reshape the slate even if the user does not roster them -- their
     backups become viable and their teammates absorb the vacated workload.
     """
-    players, _ = slate()
+    try:
+        players, _ = slate()
+        players = _with_espn_status(players)
+    except requests.RequestException as e:
+        return _unavailable(e)
     p = players[
         players["status"].isin(["OUT", "IR", "D"]) & players["salary"].ge(min_salary)
     ]
@@ -201,6 +294,7 @@ def get_notable_scratches(min_salary: int = 6000) -> dict:
                 "team": r["team"],
                 "salary": int(r["salary"]),
                 "injury_status": _s(r["status"]),
+                "injury_detail": _injury_detail(r),
             }
             for _, r in p.nlargest(10, "salary").iterrows()
         ],

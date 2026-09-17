@@ -1,0 +1,125 @@
+"""ESPN's unofficial site API -- injury reports and per-game venue/weather.
+
+ESPN publishes no official public API, but this is the same JSON endpoint
+their own site and app consume, and -- as of September 2026 -- it is far more
+stable than DraftKings': the DK draftables endpoint (dk_client.py) started
+hard-blocking this project's requests with a 403 (Akamai) mid-September,
+while this one has not. DK is still the only source for salaries, so it is
+not being replaced, just no longer trusted for injury status or news.
+
+Everything that knows about ESPN's undocumented JSON shape lives in THIS
+file, same isolation rule as dk_client.py: when ESPN changes their payload,
+exactly one file breaks.
+
+Personal research use only -- do not redistribute the pulled data.
+
+Run: python src/espn_client.py --injuries
+     python src/espn_client.py --scoreboard
+"""
+
+from __future__ import annotations
+
+import argparse
+
+import pandas as pd
+import requests
+
+INJURIES_URL = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/injuries"
+SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+
+HEADERS = {"User-Agent": "Mozilla/5.0 (research; personal use)"}
+TIMEOUT = 30
+
+# ESPN's designation strings -> the short codes the rest of this project uses
+# (see dk_client.py's `status` column: None/Q/D/OUT/IR). "Active" is ESPN's
+# baseline for anyone who has ever had an injury-report entry but is
+# currently unrestricted -- it means the same as no designation at all.
+STATUS_MAP = {
+    "Active": None,
+    "Questionable": "Q",
+    "Doubtful": "D",
+    "Out": "OUT",
+    "Injured Reserve": "IR",
+}
+
+
+def _get_json(url: str, **params) -> dict:
+    r = requests.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+
+def fetch_injuries() -> pd.DataFrame:
+    """One row per player who has ever had an injury-report entry, league-wide.
+
+    Rows where `status` is None (ESPN's "Active") mean the designation was
+    lifted -- keep them rather than dropping, since `get_lineup_status` needs
+    to tell "no report" apart from "was hurt, now cleared".
+
+    `body_part` and `return_date` come from ESPN's own structured detail, not
+    parsed out of free text -- when present, `return_date` is a real signal
+    DK's endpoint never provided at all.
+    """
+    data = _get_json(INJURIES_URL)
+    rows = []
+    for team in data.get("injuries", []):
+        team_name = team.get("displayName")
+        for inj in team.get("injuries", []):
+            athlete = inj.get("athlete") or {}
+            details = inj.get("details") or {}
+            rows.append({
+                "team": team_name,
+                "name": athlete.get("displayName"),
+                "position": (athlete.get("position") or {}).get("abbreviation"),
+                "status": STATUS_MAP.get(inj.get("status"), inj.get("status")),
+                "body_part": details.get("type"),
+                "return_date": details.get("returnDate"),
+                "comment": inj.get("shortComment") or inj.get("longComment"),
+                "report_date": inj.get("date"),
+            })
+    return pd.DataFrame(rows)
+
+
+def fetch_scoreboard() -> pd.DataFrame:
+    """One row per NFL game this week: venue, dome flag, and weather if posted.
+
+    ESPN does not populate `weather` until close to kickoff -- every Week 2
+    game showed it as absent as of the Thursday before. `weather_posted`
+    tells a caller "not available yet" apart from "checked, no weather
+    issue" -- treat a false there as unknown, not as clear skies. The actual
+    sub-fields (temperature/condition) are unverified against a live example
+    since ESPN hadn't posted one yet; re-check the raw payload once it has.
+    """
+    data = _get_json(SCOREBOARD_URL)
+    rows = []
+    for e in data.get("events", []):
+        comp = (e.get("competitions") or [{}])[0]
+        venue = comp.get("venue") or {}
+        weather = comp.get("weather") or {}
+        competitors = comp.get("competitors", [])
+        home = next((c for c in competitors if c.get("homeAway") == "home"), {})
+        away = next((c for c in competitors if c.get("homeAway") == "away"), {})
+        rows.append({
+            "game": e.get("name"),
+            "home_team": (home.get("team") or {}).get("abbreviation"),
+            "away_team": (away.get("team") or {}).get("abbreviation"),
+            "start_time_utc": e.get("date"),
+            "venue": venue.get("fullName"),
+            "is_dome": venue.get("indoor"),
+            "weather_posted": bool(weather),
+            "weather_temp_f": weather.get("temperature"),
+            "weather_condition": weather.get("displayValue"),
+        })
+    return pd.DataFrame(rows)
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(description="Fetch ESPN NFL injuries/scoreboard")
+    p.add_argument("--injuries", action="store_true")
+    p.add_argument("--scoreboard", action="store_true")
+    a = p.parse_args()
+
+    if a.injuries or not a.scoreboard:
+        print(fetch_injuries().to_string(index=False))
+    if a.scoreboard:
+        print(fetch_scoreboard().to_string(index=False))

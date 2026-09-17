@@ -30,6 +30,7 @@ import time
 import pandas as pd
 
 from dk_client import fetch_draftables, list_slates, pick_main_slate
+from espn_client import fetch_injuries, fetch_scoreboard
 from predict_slate import normalize_name
 
 # Seconds a fetched slate stays usable. Long enough to cover one multi-tool
@@ -38,6 +39,7 @@ SLATE_TTL = float(os.environ.get("SLATE_TTL_SECONDS", "90"))
 
 _slates: dict[int, dict] = {}
 _draft_group_cache: dict = {}
+_espn: dict = {}
 
 
 def _draft_group() -> int:
@@ -72,6 +74,35 @@ def slate() -> tuple[pd.DataFrame, pd.DataFrame]:
     players["jn"] = normalize_name(players["name"])
     _slates[dg] = {"players": players, "games": games, "at": now}
     return players, games
+
+
+def espn_injuries() -> pd.DataFrame:
+    """League-wide injury report from ESPN, cached on the same TTL as the slate.
+
+    DK's draftables call still supplies salary and roster structure -- this is
+    consulted separately and merged in by name, not used to replace `slate()`.
+    """
+    now = time.monotonic()
+    cached = _espn.get("injuries")
+    if cached is not None and now - cached["at"] < SLATE_TTL:
+        return cached["df"]
+
+    df = fetch_injuries()
+    df["jn"] = normalize_name(df["name"])
+    _espn["injuries"] = {"df": df, "at": now}
+    return df
+
+
+def espn_scoreboard() -> pd.DataFrame:
+    """This week's games from ESPN -- venue, dome flag, weather if posted."""
+    now = time.monotonic()
+    cached = _espn.get("scoreboard")
+    if cached is not None and now - cached["at"] < SLATE_TTL:
+        return cached["df"]
+
+    df = fetch_scoreboard()
+    _espn["scoreboard"] = {"df": df, "at": now}
+    return df
 
 
 def my_lineup_names() -> list[str]:
