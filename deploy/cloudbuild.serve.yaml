@@ -7,8 +7,49 @@ steps:
     id: build
     args: ['build', '-f', 'deploy/Dockerfile.serve', '-t', '${_IMAGE}', '.']
 
+  # THE LOCK THAT requirements-serve.txt CANNOT BE
+  #
+  # That file pins six top-level packages with ==. Their dependencies are still
+  # resolved fresh on every build: Flask pulls werkzeug, jinja2, itsdangerous,
+  # click and blinker; google-cloud-storage pulls google-auth, google-api-core
+  # and protobuf. So the top-level pins make the build MOSTLY reproducible and
+  # leave a tail that can still move underneath you.
+  #
+  # Rather than hand-maintain that tail, ask the image what it ended up with.
+  # This runs pip freeze INSIDE the container that was just built, so the answer
+  # is observed rather than predicted -- the same reason cloud state gets
+  # queried instead of inferred from the repo.
+  #
+  # It does not gate the build. A lock you must produce before you can build is
+  # a chicken-and-egg problem; a lock the build emits as a record is just a
+  # receipt. Promote it to a real constraint when you want one:
+  #     gcloud storage cp gs://$PROJECT-nfl-dfs/build/serve/requirements-serve.lock.txt deploy/
+  #     # then in Dockerfile.serve:
+  #     #   COPY deploy/requirements-serve.lock.txt .
+  #     #   RUN pip install --no-cache-dir -r requirements-serve.lock.txt
+  #
+  # No --entrypoint needed: Dockerfile.serve sets CMD and no ENTRYPOINT, and a
+  # command passed to `docker run` replaces CMD outright.
+  - name: gcr.io/cloud-builders/docker
+    id: freeze
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        docker run --rm '${_IMAGE}' pip freeze > requirements-serve.lock.txt
+        echo "----- resolved into ${_IMAGE} -----"
+        cat requirements-serve.lock.txt
+
 images:
   - '${_IMAGE}'
+
+# Uploaded after a successful build. ${PROJECT_ID} is a built-in substitution,
+# so this needs no new --substitutions argument at submit time. Paths are
+# relative to /workspace.
+artifacts:
+  objects:
+    location: 'gs://${PROJECT_ID}-nfl-dfs/build/serve/'
+    paths: ['requirements-serve.lock.txt']
 
 options:
   logging: CLOUD_LOGGING_ONLY

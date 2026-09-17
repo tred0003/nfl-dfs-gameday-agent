@@ -12,9 +12,62 @@
 # sklearn in drags scipy with it, and this image is pulled on every scale-up.
 #
 # A serving image is pulled on every scale-up, so its size is latency.
-flask>=3.0
-gunicorn>=21.2          # production WSGI server; Flask's own is single-threaded
-pandas>=2.0
-numpy>=1.24
-xgboost>=2.0
-google-cloud-storage>=2.14   # model_io pulls the artifact from AIP_STORAGE_URI
+#
+# ---------------------------------------------------------------------------
+# WHY THESE ARE == AND NOT >=
+#
+# Every line here used to say >=. That is a recipe, not a lockfile: pip resolves
+# it fresh against the package index on every build, so the same Dockerfile at
+# the same commit can produce a different image. Same inputs, different bytes,
+# and no way to tell which build is running in front of you.
+#
+# It already changed a decision once. Phase 4.2 needed a SHA-tagged serving
+# image and the obvious move was to rebuild. That was wrong for exactly this
+# reason, and the image got retagged instead -- one digest, two tags, provably
+# the artifact that was tested. Retagging only works while the code is
+# unchanged. The moment it changes you must rebuild, and then a floating
+# requirement means the new image differs from the old one in ways you did not
+# author and cannot enumerate.
+#
+# WHERE THE NUMBERS COME FROM. Not from "latest that works" -- from the
+# environment the ARTIFACT WAS TRAINED IN. models/current/model_card.json
+# records python 3.11.15, xgboost 3.2.0, pandas 3.0.5, and model_io.load()
+# already warns at startup when the serving xgboost does not match the card.
+# Pinning to the card's versions makes that warning structurally impossible
+# rather than merely unlikely, and it means a prediction that differs between
+# this container and the laptop is attributable to the platform instead of to
+# package drift. That distinction is the entire value of the 0.6419-vs-0.6423
+# check from phase 4.1, applied to serving instead of training.
+#
+# WHAT THIS IS NOT. Six == lines are not a lock. Transitive dependencies still
+# float: Flask pulls werkzeug, jinja2, itsdangerous, click and blinker;
+# google-cloud-storage pulls google-auth, google-api-core, protobuf and more.
+# A werkzeug release has broken a pinned Flask before. The real fix is a
+# generated lock, which is why cloudbuild.serve.yaml now emits `pip freeze` as
+# a build artifact -- promote that file to a constraints file and this becomes
+# reproducible all the way down.
+# ---------------------------------------------------------------------------
+
+# The numeric path. These three decide what number comes back, so they are
+# pinned hardest and are the ones the model card knows about.
+xgboost==3.2.0               # matches model_card.json; .ubj is forward-compatible, but "compatible" is not "identical"
+pandas==3.0.5                # matches model_card.json
+numpy==2.4.6                 # pandas/xgboost both build on it; floating it floats them
+
+# The transport path. These decide whether a request arrives and a response
+# leaves. They cannot change a prediction, only whether you get one.
+Flask==3.1.3
+google-cloud-storage==3.13.0   # model_io pulls the artifact from AIP_STORAGE_URI
+
+# gunicorn is the one line still floating, and deliberately so rather than by
+# oversight: it is the production WSGI server (Flask's own is single-threaded
+# and not one), it sits entirely outside the numeric path, and it is the only
+# dependency here that is not installable on this Windows laptop -- so unlike
+# the five above there is no local environment to source a truthful version
+# from. Guessing one would defeat the point of the file.
+#
+# Close it from the build that actually resolved it:
+#   gcloud builds list --limit=10 --format='table(id,createTime,status,images)'
+#   gcloud builds log BUILD_ID | Select-String 'Successfully installed'
+# then replace this line with the == it reports.
+gunicorn>=21.2
