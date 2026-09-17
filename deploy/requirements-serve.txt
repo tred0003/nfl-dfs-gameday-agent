@@ -1,8 +1,15 @@
 # Serving container only. Smaller than the training image on purpose.
 #
-# Absent because inference does not need them: scikit-learn and scipy (metrics,
-# only used while training), pulp, matplotlib, openpyxl, nfl_data_py, pyarrow
-# (the server receives JSON, it never reads a parquet).
+# Absent because inference does not need them: scikit-learn, pulp, matplotlib,
+# openpyxl, nfl_data_py, pyarrow (the server receives JSON, it never reads a
+# parquet).
+#
+# SCIPY IS NOT ABSENT, AND THIS COMMENT USED TO CLAIM IT WAS. The generated lock
+# from build fc99ad9 says scipy==1.17.1 sits in the image regardless: it is a
+# hard dependency of xgboost itself, not something sklearn drags in. The
+# reasoning below about keeping sklearn out is still right; the claim about what
+# that bought was wrong, and nobody could have known it without asking the image.
+# That is the difference between a requirements file and a lock.
 #
 # scikit-learn stays out DELIBERATELY, and it cost a failed deployment to keep
 # it that way. model_io.load() originally built an xgb.XGBRegressor -- the
@@ -11,7 +18,18 @@
 # the native xgb.Booster loader, not a bigger image. Keep it that way: pulling
 # sklearn in drags scipy with it, and this image is pulled on every scale-up.
 #
-# A serving image is pulled on every scale-up, so its size is latency.
+# A serving image is pulled on every scale-up, so its size is latency. Which
+# makes the other thing the lock revealed worth acting on: nvidia-nccl-cu12
+# is in this image. It arrives as a dependency of the stock xgboost wheel on
+# linux, it is a multi-hundred-megabyte GPU collective-communications library,
+# and this container has no GPU and never will -- 4.1 already established that
+# gradient-boosted trees on 51k rows are CPU work. It is pure cold-start cost.
+#
+# The fix is the xgboost-cpu wheel, which is the same library built without the
+# NVIDIA dependencies. Not done in this commit because it changes what gets
+# installed and therefore needs its own build to verify, and the image that is
+# about to be registered as version 3 is already built and tested.
+# NEXT REBUILD: swap xgboost for xgboost-cpu, diff the lock, compare image size.
 #
 # ---------------------------------------------------------------------------
 # WHY THESE ARE == AND NOT >=
@@ -59,15 +77,12 @@ numpy==2.4.6                 # pandas/xgboost both build on it; floating it floa
 Flask==3.1.3
 google-cloud-storage==3.13.0   # model_io pulls the artifact from AIP_STORAGE_URI
 
-# gunicorn is the one line still floating, and deliberately so rather than by
-# oversight: it is the production WSGI server (Flask's own is single-threaded
-# and not one), it sits entirely outside the numeric path, and it is the only
-# dependency here that is not installable on this Windows laptop -- so unlike
-# the five above there is no local environment to source a truthful version
-# from. Guessing one would defeat the point of the file.
+# The production WSGI server; Flask's own is single-threaded and not one. This
+# was the one line left floating when the file was first pinned, because
+# gunicorn does not install on Windows and there was no local environment to
+# source a truthful version from -- guessing one would have defeated the point.
 #
-# Close it from the build that actually resolved it:
-#   gcloud builds list --limit=10 --format='table(id,createTime,status,images)'
-#   gcloud builds log BUILD_ID | Select-String 'Successfully installed'
-# then replace this line with the == it reports.
-gunicorn>=21.2
+# 26.2.0 is not a guess. It is what build fc99ad9 actually resolved, read back
+# out of the lock that build emitted. The image was not rebuilt to adopt it:
+# this line now describes bytes that were already there.
+gunicorn==26.2.0
