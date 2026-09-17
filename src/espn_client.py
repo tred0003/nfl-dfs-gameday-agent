@@ -13,6 +13,14 @@ exactly one file breaks.
 
 Personal research use only -- do not redistribute the pulled data.
 
+No custom headers, on purpose. site.api.espn.com's WAF 403s a request that
+sends ANY User-Agent that looks hand-set -- a browser string, a custom
+identifying one, even an empty one -- but passes requests' own default
+(`python-requests/x.y.z`). Confirmed by testing each of those explicitly:
+only the unmodified default got through, consistently, across repeated
+tries. It looked exactly like random flakiness until isolated. Don't add a
+User-Agent override here without re-testing against the live endpoint.
+
 Run: python src/espn_client.py --injuries
      python src/espn_client.py --scoreboard
 """
@@ -27,7 +35,6 @@ import requests
 INJURIES_URL = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/injuries"
 SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (research; personal use)"}
 TIMEOUT = 30
 
 # ESPN's designation strings -> the short codes the rest of this project uses
@@ -44,7 +51,7 @@ STATUS_MAP = {
 
 
 def _get_json(url: str, **params) -> dict:
-    r = requests.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
+    r = requests.get(url, params=params, timeout=TIMEOUT)
     r.raise_for_status()
     return r.json()
 

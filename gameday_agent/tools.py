@@ -232,12 +232,19 @@ def get_vegas_context() -> dict:
     }
 
 
-def find_replacements(position: str, max_salary: int, min_salary: int = 3000) -> dict:
+def find_replacements(position: str, max_salary: int, min_salary: int = 0) -> dict:
     """Find available players at a position within a salary range.
 
     Use this when a rostered player is OUT or Doubtful and needs replacing.
     Excludes anyone who is themselves OUT or on IR. Returns the top options by
     DraftKings points per game.
+
+    `min_salary` defaults to 0, not some assumed floor -- DK's real minimum
+    varies by position (DST as low as $2000, TE $2500 on a slate checked live)
+    and is often below what a cheap OUT player like a min-salary TE actually
+    costs. A higher default silently returned zero options for exactly the
+    player who most needed one -- found by the eval harness's emergency_out
+    scenario, not by guessing.
     """
     try:
         players, _ = slate()
