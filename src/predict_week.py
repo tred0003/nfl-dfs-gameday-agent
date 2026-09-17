@@ -278,7 +278,10 @@ def project(table: pd.DataFrame, season: int, week: int,
     # the handful of rows actually being scored. Route share in 2026 is exactly
     # that. Comparing the two populations is the only way to see it.
     r = preflight.Result()
-    preflight.check_features(target, feats, r)
+    # `train` is the reference population: the completed rows this model learned
+    # from. Week-matched, because a rolling window that is empty in week 2 is
+    # empty in week 2 of training too, and that is not a gap.
+    preflight.check_features(target, feats, r, reference=train, week=week)
     if not r.report() and strict:
         raise SystemExit(
             "\npre-flight failed on the rows being scored. These features are absent "

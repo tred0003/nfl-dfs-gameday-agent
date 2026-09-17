@@ -146,17 +146,68 @@ def check_participation(season: int, r: Result) -> None:
         r.add(OK, "participation", f"{season} present ({min(years)}-{max(years)})")
 
 
-def check_features(table: pd.DataFrame, features: list[str], r: Result) -> None:
-    """The catch-all: any feature entirely absent on the rows being scored."""
+def check_features(table: pd.DataFrame, features: list[str], r: Result,
+                   reference: pd.DataFrame | None = None,
+                   week: int | None = None) -> None:
+    """Any feature absent on the rows being scored -- that the model did not EXPECT absent.
+
+    THE COMPARISON HAS TO BE WEEK-MATCHED, AND THE FIRST VERSION OF THIS WAS NOT
+
+    A feature being 100% NaN on the serve rows is not by itself a problem. What
+    makes it a problem is the model having been trained on rows where it was
+    present, because then the split's default direction was learned from a
+    population these rows are not part of.
+
+    Two cases look identical if you only look at the serve rows, and they could
+    not be more different:
+
+      ROUTES, 2026. NaN in training meant "a player with no recent history" --
+      1,278 WR/TE rows out of 16,250, with dkp_ewm of -0.17 against 7.93. At
+      serve time it means everyone. Ja'Marr Chase takes the branch built for
+      players who barely play. THIS IS THE ALARM.
+
+      ROLLING WINDOWS, WEEK 2. dkp_r3 needs two prior games (min_periods=2) and
+      week 2 has one, so it is 100% NaN in week 2 of EVERY season, training
+      included. The model has seen thousands of week-2 rows shaped exactly like
+      these and learned what to do with them -- which is to lean on dkp_blended,
+      0% NaN in week 2 and its single largest feature. THIS IS NORMAL.
+
+    Judging the serve rows alone called the second one fatal and made every
+    early-season run impossible for the wrong reason. So `reference` is the
+    completed rows the model trains on, and the same WEEK NUMBER within it is
+    the only fair comparison: a feature dead in week 2 of training and dead in
+    week 2 now is the model operating as designed.
+
+    Without a reference this falls back to the old behaviour, which is the right
+    default -- flagging too much beats flagging nothing.
+    """
     if table.empty:
         r.add(FATAL, "feature coverage", "no rows to score")
         return
     nan = table[features].isna().mean().sort_values(ascending=False)
 
     dead = nan[nan >= ALL_NAN_FATAL]
+    expected: list[str] = []
+    if len(dead) and reference is not None and week is not None:
+        ref = reference[pd.to_numeric(reference["week"], errors="coerce").eq(week)]
+        cols = [c for c in dead.index if c in ref.columns]
+        if len(ref) and cols:
+            ref_nan = ref[cols].isna().mean()
+            expected = [c for c in cols if ref_nan[c] >= ALL_NAN_FATAL]
+
+    if expected:
+        r.add(OK, "feature coverage",
+              f"{len(expected)} feature(s) 100% NaN, and 100% NaN in week {week} of "
+              f"training too -- the model learned this pattern, not a gap: "
+              + ", ".join(expected[:4]) + (" ..." if len(expected) > 4 else ""))
+
+    dead = dead[[c for c in dead.index if c not in expected]]
     if len(dead):
         shown = ", ".join(dead.index[:6]) + (" ..." if len(dead) > 6 else "")
         r.add(FATAL, "feature coverage",
+              f"{len(dead)} of {len(features)} features are 100% NaN on all "
+              f"{len(table)} rows AND were present in week {week} of training: {shown}"
+              if week is not None else
               f"{len(dead)} of {len(features)} features are 100% NaN on all "
               f"{len(table)} rows: {shown}")
     high = nan[(nan >= HIGH_NAN_WARN) & (nan < ALL_NAN_FATAL)]
@@ -165,8 +216,13 @@ def check_features(table: pd.DataFrame, features: list[str], r: Result) -> None:
               f"{len(high)} feature(s) >{HIGH_NAN_WARN:.0%} NaN: "
               + ", ".join(f"{c} {v:.0%}" for c, v in high.head(6).items()))
     if not len(dead) and not len(high):
-        r.add(OK, "feature coverage",
-              f"{len(features)} features, worst is {nan.iloc[0]:.0%} NaN ({nan.index[0]})")
+        # "worst" has to skip the expected-absent ones, or this reports 100% NaN
+        # on a line whose whole point is that everything is fine.
+        rest = nan[[c for c in nan.index if c not in expected]]
+        if len(rest):
+            r.add(OK, "feature coverage",
+                  f"{len(features)} features, worst of the rest is "
+                  f"{rest.iloc[0]:.0%} NaN ({rest.index[0]})")
 
 
 def check_pool(pool: pd.DataFrame, r: Result) -> None:
