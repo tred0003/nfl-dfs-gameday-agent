@@ -162,7 +162,7 @@ def save(
     return local
 
 
-def load(model_dir: Path | str) -> tuple[dict[str, xgb.XGBRegressor], dict]:
+def load(model_dir: Path | str) -> tuple[dict[str, xgb.Booster], dict]:
     """Read the artifacts back. Returns ({role: model}, card)."""
     if _is_gcs(model_dir):
         staged = Path(tempfile.mkdtemp(prefix="artifact_"))
@@ -179,8 +179,20 @@ def load(model_dir: Path | str) -> tuple[dict[str, xgb.XGBRegressor], dict]:
 
     models = {}
     for role, fname in card["artifacts"].items():
-        m = xgb.XGBRegressor()
-        m.load_model(model_dir / fname)
+        # The NATIVE Booster, not XGBRegressor. XGBRegressor is xgboost's
+        # scikit-learn wrapper and constructing one imports sklearn -- which the
+        # serving image does not carry, and should not: inference computes no
+        # metrics. This failed a deployment on 2026-09-17 with
+        # "ImportError: sklearn needs to be installed in order to use this
+        # module", raised from the constructor before a single byte was read.
+        #
+        # Nothing is lost. .ubj stores trees -- splits, thresholds, leaf values
+        # -- not a Python object graph, so the wrapper was never doing anything
+        # at load time. Predictions are identical because training uses a fixed
+        # n_estimators with no early stopping, so there is no best_iteration for
+        # the wrapper to apply on our behalf.
+        m = xgb.Booster()
+        m.load_model(str(model_dir / fname))
         models[role] = m
 
     if xgb.__version__ != card["versions"]["xgboost"]:
@@ -219,7 +231,14 @@ def align(df: pd.DataFrame, card: dict, *, label: str = "slate") -> pd.DataFrame
 def predict(df: pd.DataFrame, models: dict, card: dict, *, label: str = "slate") -> pd.DataFrame:
     """Aligned prediction for every role in the artifact. Returns a frame of columns."""
     X = align(df, card, label=label)
+    # The Booster API predicts on a DMatrix, not a DataFrame. Built from the
+    # aligned frame so the DMatrix carries the column names, which buys a second
+    # skew guard for free: the booster stores the feature names it was fit on
+    # and RAISES on a mismatch. align() prevents the shift; this catches it if
+    # align() is ever bypassed. Missing values stay NaN, which is what the model
+    # was trained to read.
+    dmat = xgb.DMatrix(X)
     return pd.DataFrame(
-        {f"pred_{role}": m.predict(X) for role, m in models.items()},
+        {f"pred_{role}": m.predict(dmat) for role, m in models.items()},
         index=df.index,
     )

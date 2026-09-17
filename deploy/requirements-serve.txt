@@ -4,6 +4,13 @@
 # only used while training), pulp, matplotlib, openpyxl, nfl_data_py, pyarrow
 # (the server receives JSON, it never reads a parquet).
 #
+# scikit-learn stays out DELIBERATELY, and it cost a failed deployment to keep
+# it that way. model_io.load() originally built an xgb.XGBRegressor -- the
+# sklearn-API wrapper -- whose constructor imports sklearn, so the container
+# died at startup with "ImportError: sklearn needs to be installed". The fix was
+# the native xgb.Booster loader, not a bigger image. Keep it that way: pulling
+# sklearn in drags scipy with it, and this image is pulled on every scale-up.
+#
 # A serving image is pulled on every scale-up, so its size is latency.
 flask>=3.0
 gunicorn>=21.2          # production WSGI server; Flask's own is single-threaded
