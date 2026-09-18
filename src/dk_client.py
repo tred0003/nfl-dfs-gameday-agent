@@ -26,8 +26,19 @@ import requests
 LOBBY_URL = "https://www.draftkings.com/lobby/getcontests?sport=NFL"
 DRAFTABLES_URL = "https://api.draftkings.com/draftgroups/v1/draftgroups/{dg}/draftables"
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (research; personal use)"}
 TIMEOUT = 30
+
+# No custom headers, on purpose -- especially no User-Agent.
+#
+# This endpoint 403s a request carrying a hand-set User-Agent and serves one
+# that carries requests' own default (`python-requests/x.y.z`). This module
+# used to send "Mozilla/5.0 (research; personal use)", which meant every call
+# from this code failed while manual curl checks (which send curl's own UA)
+# succeeded -- so the block looked like it was aimed at the machine rather
+# than at the request. It wasn't. Same finding as espn_client.py, found the
+# same way, one day apart.
+#
+# Don't add a User-Agent here without re-testing against the live endpoint.
 
 SLATES_DIR = Path(__file__).resolve().parent.parent / "data" / "slates"
 
@@ -41,7 +52,7 @@ STAT_OPRK = -2      # opponent rank vs this position
 
 
 def _get_json(url: str) -> dict:
-    r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
+    r = requests.get(url, timeout=TIMEOUT)
     r.raise_for_status()
     return r.json()
 
@@ -87,6 +98,17 @@ def pick_main_slate(slates: pd.DataFrame) -> int:
     silently returns the wrong one. The reliable signal is prize money: the main
     slate always hosts the week's largest tournament.
 
+    Prize money alone is not enough. DK advertises contests against draft
+    groups that have no players in them yet -- a $6,000,000 "Main Event"
+    outranked the real $3,000,000 Sunday slate on 2026-09-18 and returned a
+    200 with zero draftables. Sorting on prize alone picks that one every
+    time, and an empty slate is indistinguishable downstream from a slate
+    where none of your players are listed.
+
+    So candidates are tried richest-first and the first one that actually has
+    players wins. That costs one extra request per empty candidate, which is
+    cheap next to silently returning a slate with nobody on it.
+
     Still a heuristic. Pin PIN_DRAFT_GROUP or pass --dg for anything that
     matters, and check the printed slate before trusting it.
     """
@@ -100,11 +122,25 @@ def pick_main_slate(slates: pd.DataFrame) -> int:
     ]
     if m.empty:
         raise RuntimeError("no Sunday Classic slate found; inspect list_slates()")
-    best = m.sort_values("top_prize", ascending=False).iloc[0]
-    print(f"  main slate -> dg{best['draft_group_id']} "
-          f"({best['slate_label']}, top prize ${best['top_prize']:,.0f}): "
-          f"{best['example_contest']}")
-    return int(best["draft_group_id"])
+
+    skipped = []
+    for _, c in m.sort_values("top_prize", ascending=False).iterrows():
+        dg = int(c["draft_group_id"])
+        n = len(_get_json(DRAFTABLES_URL.format(dg=dg)).get("draftables", []))
+        if n == 0:
+            skipped.append(f"dg{dg} (${c['top_prize']:,.0f}, no players yet)")
+            continue
+        if skipped:
+            print(f"  skipped {', '.join(skipped)}")
+        print(f"  main slate -> dg{dg} "
+              f"({c['slate_label']}, top prize ${c['top_prize']:,.0f}, "
+              f"{n} draftables): {c['example_contest']}")
+        return dg
+
+    raise RuntimeError(
+        f"every Sunday Classic slate came back empty ({', '.join(skipped)}); "
+        "salaries are probably not released yet -- inspect list_slates()"
+    )
 
 
 def fetch_draftables(draft_group_id: int) -> tuple[pd.DataFrame, pd.DataFrame]:
