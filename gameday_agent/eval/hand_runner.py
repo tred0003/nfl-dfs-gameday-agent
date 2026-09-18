@@ -46,7 +46,11 @@ from google.genai import types  # noqa: E402
 from gameday_agent.agent import INSTRUCTION, MODEL  # noqa: E402
 from gameday_agent.tools import TOOLS  # noqa: E402
 
-QUERY = "Check my lineup for this Sunday and tell me if anything needs my attention."
+DEFAULT_QUERY = "Check my lineup for this Sunday and tell me if anything needs my attention."
+# Pass a different question to watch tool SELECTION change. The model picks by
+# matching your words against each tool's description -- so the question
+# changes which tool comes first, and nothing in the code decides that.
+QUERY = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_QUERY
 MAX_TURNS = 8
 
 # Name -> the actual Python function, so we can run what the model asks for.
