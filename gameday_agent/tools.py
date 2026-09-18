@@ -30,7 +30,7 @@ import os
 import pandas as pd
 import requests
 
-from predict_slate import normalize_name, vegas_for_slate
+from predict_slate import TEAM_FIXES, normalize_name, vegas_for_slate
 
 from .slate import espn_injuries, espn_scoreboard, my_lineup_names, slate
 
@@ -82,6 +82,24 @@ def _with_espn_status(players: pd.DataFrame) -> pd.DataFrame:
     inj = inj.drop_duplicates("jn", keep="last")
     return players.drop(columns=["status", "news_status"], errors="ignore").merge(
         inj, on="jn", how="left"
+    )
+
+
+def _slate_teams(games: pd.DataFrame) -> set[str]:
+    """Team codes playing on this slate, normalized to one spelling.
+
+    The user plays the Sunday main slate only -- the 1pm and 4pm windows. A
+    Thursday, Sunday-night or Monday-night game is not on it and its players
+    cannot be rostered, so anything about those games is noise in a report
+    whose whole job is to earn an interruption.
+
+    Three sources spell teams three ways (ESPN `WSH`/`LAR`, DK `WAS`,
+    nflverse `LA`), so everything goes through TEAM_FIXES before comparison.
+    """
+    return set(
+        pd.concat([games["home_team"], games["away_team"]])
+        .replace(TEAM_FIXES)
+        .dropna()
     )
 
 
@@ -168,7 +186,12 @@ def get_lineup_status() -> dict:
 
 
 def get_slate_weather() -> dict:
-    """Get weather for this week's NFL games, from ESPN.
+    """Get weather for the games on this week's slate, from ESPN.
+
+    Only games the user can actually roster are returned -- the Sunday main
+    slate, which is the 1pm and 4pm windows. Thursday, Sunday-night and
+    Monday-night games are excluded because no player in them can be in the
+    lineup, so their weather cannot matter.
 
     `is_dome` matters: a dome game is not affected by outdoor conditions no
     matter what the forecast says.
@@ -179,9 +202,16 @@ def get_slate_weather() -> dict:
     than reporting a dome-free game as fine.
     """
     try:
+        _, slate_games = slate()
         games = espn_scoreboard()
     except requests.RequestException as e:
         return _unavailable(e)
+
+    on_slate = _slate_teams(slate_games)
+    home = games["home_team"].replace(TEAM_FIXES)
+    away = games["away_team"].replace(TEAM_FIXES)
+    games = games[home.isin(on_slate) & away.isin(on_slate)]
+
     return {
         "status": "ok",
         "games": [
@@ -199,18 +229,29 @@ def get_slate_weather() -> dict:
 
 
 def get_vegas_context() -> dict:
-    """Get each team's Vegas implied point total for this week.
+    """Get the implied point total for each team playing on this slate.
 
     Implied team total is how many points the betting market expects a team to
     score. It was the strongest non-form predictor in backtesting -- a player in
     a 28-point offense is in a materially better spot than one in a 19-point
     offense, regardless of talent.
+
+    Restricted to teams on the Sunday main slate, so a team playing Thursday,
+    Sunday night or Monday night does not appear -- none of its players can be
+    rostered.
     """
     season = int(os.environ.get("SEASON", "2026"))
     week = int(os.environ.get("WEEK", "1"))
 
+    try:
+        _, slate_games = slate()
+    except requests.RequestException as e:
+        return _unavailable(e)
+
     v = vegas_for_slate(season, week)
+    v["team"] = v["team"].replace(TEAM_FIXES)
     v = v.dropna(subset=["implied_team_total"]).drop_duplicates("team")
+    v = v[v["team"].isin(_slate_teams(slate_games))]
     if v.empty:
         return {
             "status": "error",

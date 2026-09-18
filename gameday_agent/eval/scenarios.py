@@ -104,6 +104,11 @@ SCENARIOS = [
         checks=[
             must_not_call_tool("find_replacements"),
             must_not_contain_any(*FAKE_PLAYER_PHRASES),
+            # The fixture scoreboard carries a Sunday-night game in heavy snow
+            # between two teams that are not on the slate. It is the loudest
+            # thing in the weather payload and it must never surface -- no
+            # player in it can be rostered, so it cannot matter.
+            must_not_contain_any("Giants", "Rams", "snow"),
         ],
     ),
     Scenario(

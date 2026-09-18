@@ -55,16 +55,29 @@ POOL_PLAYERS = [
 ]
 
 
-def dk_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(players, games) in the shape slate() returns.
+# The games these players are in. This IS load-bearing: the weather and Vegas
+# tools scope themselves to the teams on the slate, so an empty games frame
+# would scope them to nothing. Every game here is a 1pm or 4pm Sunday kickoff,
+# because that is the only window the user's contest covers.
+SLATE_GAMES = [
+    {"game": "WAS @ PHI", "home_team": "PHI", "away_team": "WAS"},
+    {"game": "NO @ DET", "home_team": "DET", "away_team": "NO"},
+    {"game": "MIA @ LV", "home_team": "LV", "away_team": "MIA"},
+    {"game": "ATL @ PIT", "home_team": "PIT", "away_team": "ATL"},
+    {"game": "NYJ @ TEN", "home_team": "TEN", "away_team": "NYJ"},
+    {"game": "GB @ MIN", "home_team": "MIN", "away_team": "GB"},
+    {"game": "BAL @ IND", "home_team": "IND", "away_team": "BAL"},
+    {"game": "ARI @ LAC", "home_team": "LAC", "away_team": "ARI"},
+    {"game": "BUF @ HOU", "home_team": "HOU", "away_team": "BUF"},
+    {"game": "TB @ CIN", "home_team": "CIN", "away_team": "TB"},
+]
 
-    No tool reads the games frame directly any more -- get_slate_weather
-    moved to ESPN's scoreboard -- so it is a minimal placeholder, kept only
-    so slate()'s (players, games) contract still holds.
-    """
+
+def dk_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(players, games) in the shape slate() returns."""
     players = pd.DataFrame(LINEUP_PLAYERS + POOL_PLAYERS)
     players["jn"] = normalize_name(players["name"])
-    games = pd.DataFrame(columns=["game", "home_team", "away_team"])
+    games = pd.DataFrame(SLATE_GAMES)
     return players, games
 
 
@@ -85,12 +98,21 @@ def espn_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
     ])
     injuries["jn"] = normalize_name(injuries["name"])
 
+    # ESPN returns every game in the week, including the primetime ones that
+    # are NOT on the user's slate. The third row exists so the scoping filter
+    # in get_slate_weather is actually exercised: it is a Sunday-night game in
+    # a blizzard, and it must never reach the report, because no player in it
+    # can be rostered. ESPN also spells Washington `WSH` where DK says `WAS`,
+    # so the first row keeps that normalization honest too.
     scoreboard = pd.DataFrame([
+        {"game": "Washington Commanders at Philadelphia Eagles", "home_team": "PHI", "away_team": "WSH",
+         "start_time_utc": "2026-09-20T20:25Z", "venue": "Lincoln Financial Field", "is_dome": False,
+         "weather_posted": True, "weather_temp_f": 68, "weather_condition": "Rain"},
         {"game": "New Orleans Saints at Detroit Lions", "home_team": "DET", "away_team": "NO",
          "start_time_utc": "2026-09-20T17:00Z", "venue": "Ford Field", "is_dome": True,
          "weather_posted": False, "weather_temp_f": None, "weather_condition": None},
-        {"game": "Washington Commanders at Philadelphia Eagles", "home_team": "PHI", "away_team": "WAS",
-         "start_time_utc": "2026-09-20T20:25Z", "venue": "Lincoln Financial Field", "is_dome": False,
-         "weather_posted": True, "weather_temp_f": 68, "weather_condition": "Rain"},
+        {"game": "New York Giants at Los Angeles Rams", "home_team": "LAR", "away_team": "NYG",
+         "start_time_utc": "2026-09-21T00:20Z", "venue": "SoFi Stadium", "is_dome": False,
+         "weather_posted": True, "weather_temp_f": 21, "weather_condition": "Heavy Snow"},
     ])
     return injuries, scoreboard
