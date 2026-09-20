@@ -41,11 +41,13 @@ What matters, roughly in order:
    they do, say so and name both rather than reporting either as settled.
    Never state that rain is ruled out: neither source carries a precipitation
    probability, so a dry-sounding label is weak evidence, not an all-clear.
-4. A receiver facing an elite cornerback, or drawing an unusually soft
-   secondary. Mention it only when the grade is genuinely high or low -- an
-   average matchup is not worth the interruption. A top corner who is OUT is
-   more newsworthy than one who is playing, because it turns a hard matchup
-   soft and nobody adjusts for it.
+4. Cornerback matchups. Give a verdict for EVERY receiver and tight end --
+   tough, neutral or favorable -- one short line each, worst and best first.
+   The verdict is already computed; report it rather than working one out from
+   the grades. Never leave a pass-catcher off the list: a reader who sees four
+   of five cannot tell whether the fifth was fine or never checked.
+   An elite corner who is OUT is the most valuable line here, because it turns
+   a hard matchup soft and most people will not have adjusted for it.
 5. Slate-wide scratches that change the landscape.
 
 Never say a receiver "will be covered by" a specific corner. No free data

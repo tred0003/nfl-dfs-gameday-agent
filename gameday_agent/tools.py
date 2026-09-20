@@ -354,6 +354,56 @@ def find_replacements(position: str, max_salary: int, min_salary: int = 0) -> di
     }
 
 
+# Corner grades are percentile ranks within full-time corners, so these cut at
+# meaningful places: 75 is roughly the top quarter of starting corners, 40 the
+# bottom third. A receiver's week turns on whether the best man who can PLAY is
+# in the first bucket or the last.
+TOUGH_GRADE = 75.0
+FAVORABLE_GRADE = 40.0
+
+# Designations that mean he will not be covering anybody on Sunday.
+CANNOT_PLAY = {"OUT", "IR", "PUP", "Out"}
+
+
+def _matchup_verdict(corners: list[dict]) -> tuple[str, dict | None, str | None]:
+    """Judge a receiver's matchup from the corners who can actually play.
+
+    Computed here rather than left to the model on purpose. A grade of 86.2 is
+    only meaningful against the distribution it came from, and asking a
+    language model to infer "is that good?" from a bare number invites it to
+    guess. The tool knows the distribution; it should answer.
+
+    Returns (verdict, best available corner, name of an elite corner who is
+    unavailable). That last one is the most actionable thing here: an elite
+    corner ruled out turns a hard matchup soft, and it is the kind of change
+    most people have not priced in an hour before kickoff.
+    """
+    available = [c for c in corners if c["injury_status"] not in CANNOT_PLAY]
+    graded = [c for c in available if c["coverage_grade"] is not None]
+
+    # An elite corner who is out is worth naming even though he is excluded.
+    sidelined = next(
+        (c["name"] for c in corners
+         if c["injury_status"] in CANNOT_PLAY
+         and (c["coverage_grade"] or 0) >= TOUGH_GRADE),
+        None,
+    )
+
+    if not graded:
+        # Nobody left carries a grade: the starters are out or are backups with
+        # too little data. That is a soft matchup, not an unknown one.
+        return "favorable", (available[0] if available else None), sidelined
+
+    best = max(graded, key=lambda c: c["coverage_grade"])
+    if best["coverage_grade"] >= TOUGH_GRADE:
+        verdict = "tough"
+    elif best["coverage_grade"] < FAVORABLE_GRADE:
+        verdict = "favorable"
+    else:
+        verdict = "neutral"
+    return verdict, best, sidelined
+
+
 _cb_cache: dict = {}
 
 
@@ -400,6 +450,22 @@ def get_cb_matchups() -> dict:
     `injury_status` matters more than the grade. An elite corner who is OUT
     turns a hard matchup into a soft one, and the backup behind him is usually
     the weakest graded player on the list.
+
+    `verdict` is the answer, already computed -- "tough", "neutral" or
+    "favorable". It is based on the best corner who can actually PLAY, so a
+    secondary whose best man is OUT is scored on whoever is left. Report the
+    verdict rather than re-deriving one from the grades; a number like 86.2
+    means nothing to a reader without the distribution behind it.
+
+    Give a verdict for EVERY receiver and tight end in the lineup, one line
+    each, shortest first. Lead with anything tough or favorable, since those
+    are the ones that change a decision, but do not silently omit the neutral
+    ones -- a reader who sees four of five players listed cannot tell whether
+    the fifth was fine or unchecked.
+
+    `top_corner_unavailable` names an elite corner who is OUT, IR or Doubtful.
+    That is the single most useful line in this tool: the matchup just got
+    easier and most people will not have adjusted for it.
     """
     names = my_lineup_names()
     if not names:
@@ -426,12 +492,7 @@ def get_cb_matchups() -> dict:
         if opp is None:
             continue
         corners = board[board["team"].eq(opp)].head(4)
-        out.append({
-            "player": r["name"],
-            "position": r["position"],
-            "opponent": opp,
-            "game": r["game"],
-            "opponent_corners": [
+        packed = [
                 {
                     "name": c["pfr_player_name"],
                     "coverage_grade": _f(c["coverage_grade"]),
@@ -441,8 +502,18 @@ def get_cb_matchups() -> dict:
                     "injury_status": _s(c["injury_status"]),
                     "snap_share": _f(c["snap_share"]),
                 }
-                for _, c in corners.iterrows()
-            ],
+            for _, c in corners.iterrows()
+        ]
+        verdict, best, sidelined = _matchup_verdict(packed)
+        out.append({
+            "player": r["name"],
+            "position": r["position"],
+            "opponent": opp,
+            "game": r["game"],
+            "verdict": verdict,
+            "best_available_corner": best,
+            "top_corner_unavailable": sidelined,
+            "opponent_corners": packed,
         })
 
     return {
