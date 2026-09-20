@@ -1,0 +1,12 @@
+# Dependencies for the DEPLOYED agent. `adk deploy agent_engine` uses this file
+# if it exists and otherwise writes one containing google-adk alone -- which
+# builds fine and then dies on `import pandas` at the first tool call.
+#
+# Lighter than gameday_agent's on purpose. This agent talks to Sleeper and
+# FantasyCalc, both plain JSON over HTTPS. It never touches nflverse, never
+# reads a parquet, and so needs neither nfl_data_py nor pyarrow.
+google-adk[a2a]==2.8.0
+
+# sleeper_client.py and tools.py
+pandas>=2.0
+requests>=2.31
