@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -41,7 +42,6 @@ def _load_agent_env() -> None:
     env = Path(__file__).resolve().parent / ".env"
     if not env.exists():
         return
-    import os
     for line in env.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
@@ -67,6 +67,36 @@ TIMEOUT_SECONDS = 600
 
 def log(msg: str) -> None:
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
+
+
+def run_agent_remote(resource: str, query: str) -> str:
+    """Call the agent deployed on Agent Platform and return its memo.
+
+    Same split as gameday_agent/run_report.py: the agent lives in the cloud,
+    this script is a thin client that asks, receives and delivers. Event shapes
+    differ between the two paths -- in-process ADK yields Event objects with
+    attribute access, stream_query yields plain dicts -- so the loops cannot be
+    shared.
+    """
+    import vertexai
+    from vertexai import agent_engines
+
+    vertexai.init(
+        project=os.environ.get("GOOGLE_CLOUD_PROJECT", "advisor-agent-2026"),
+        location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
+    )
+    agent = agent_engines.get(resource)
+
+    final, calls = "", []
+    for event in agent.stream_query(user_id="scheduled", message=query):
+        for part in (event.get("content", {}) or {}).get("parts", []) or []:
+            if "function_call" in part:
+                calls.append(part["function_call"]["name"])
+            if part.get("text"):
+                final = part["text"]
+
+    log(f"tools called: {', '.join(calls) or 'none'}")
+    return final.strip()
 
 
 async def run_agent(query: str) -> str:
@@ -101,13 +131,27 @@ def main() -> int:
     p.add_argument("--dry-run", action="store_true",
                    help="print the memo instead of sending it")
     p.add_argument("--ask", help="ask something other than the default read")
+    p.add_argument("--local", action="store_true",
+                   help="run the agent in this process instead of calling the "
+                        "deployed one (for testing an unpushed change)")
     a = p.parse_args()
 
-    load_env()  # DISCORD_WEBHOOK_URL from the repo-root .env
-    log("starting sleeper strategy agent")
+    load_env()  # DISCORD_WEBHOOK_URL + SLEEPER_AGENT_ENGINE_ID from repo-root .env
+    query = a.ask or QUERY
+
+    # Its own variable, not AGENT_ENGINE_ID: the two agents are separate
+    # deployments with separate resource ids, and sharing one name would
+    # silently point this script at the DFS agent.
+    resource = os.environ.get("SLEEPER_AGENT_ENGINE_ID", "").strip()
 
     try:
-        memo = asyncio.run(asyncio.wait_for(run_agent(a.ask or QUERY), TIMEOUT_SECONDS))
+        if resource and not a.local:
+            log(f"calling deployed agent {resource.rsplit('/', 1)[-1]}")
+            memo = run_agent_remote(resource, query)
+        else:
+            why = "--local" if a.local else "SLEEPER_AGENT_ENGINE_ID unset"
+            log(f"running agent in-process ({why})")
+            memo = asyncio.run(asyncio.wait_for(run_agent(query), TIMEOUT_SECONDS))
         if not memo:
             raise RuntimeError("agent returned an empty memo")
         log(f"agent produced {len(memo)} characters")
