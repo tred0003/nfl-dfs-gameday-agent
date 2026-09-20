@@ -186,20 +186,42 @@ def get_lineup_status() -> dict:
 
 
 def get_slate_weather() -> dict:
-    """Get weather for the games on this week's slate, from ESPN.
+    """Get weather for the games on this week's slate, from two sources.
 
     Only games the user can actually roster are returned -- the Sunday main
     slate, which is the 1pm and 4pm windows. Thursday, Sunday-night and
     Monday-night games are excluded because no player in them can be in the
     lineup, so their weather cannot matter.
 
-    `is_dome` matters: a dome game is not affected by outdoor conditions no
-    matter what the forecast says.
+    TWO INDEPENDENT SOURCES are reported per game and they do not always
+    agree. Report a disagreement as a disagreement -- do not silently pick
+    one and present it as settled.
 
-    `weather_posted` matters just as much: ESPN does not publish a forecast
-    until close to kickoff. When it is false, no forecast exists yet -- that
-    is "unknown", not "clear skies". Say weather has not been posted rather
-    than reporting a dome-free game as fine.
+    ESPN (`conditions`, `temperature_f`):
+    - `conditions` is a one-word summary such as "Cloudy" or "Mostly sunny".
+      There is NO precipitation probability in this feed, so "Cloudy" at a 5%
+      chance of rain and "Cloudy" at a 60% chance are the identical string.
+      A non-rain word means the label is not a rain word -- it does not mean
+      rain has been ruled out.
+    - `temperature_f` is the DAILY HIGH, not the temperature at kickoff. A
+      1pm game on a day that turns severe by 4pm still reads as the high.
+
+    DraftKings (`dk_weather_icon`): DK's own per-game forecast icon, e.g.
+    "rain", "clear-day", "partly-cloudy-day". Coarser than ESPN -- no
+    temperature, no timestamp, and it may be stale -- but it is a second
+    opinion, and it has flagged rain on games ESPN labels merely cloudy. If
+    it says rain and ESPN does not, say both and let the user decide.
+
+    `is_dome` (ESPN) and `dk_is_dome` (DraftKings): a dome game is not
+    affected by outdoor conditions no matter what either forecast says. These
+    two disagree on retractable-roof stadiums. When they differ, the roof is
+    operable and whether it is open on Sunday is genuinely unknown -- treat
+    the weather as possibly relevant rather than assuming indoors.
+
+    `weather_posted` distinguishes "no forecast exists yet" from "checked, no
+    weather issue". When it is false that is "unknown", not "clear skies".
+
+    Neither source reports wind. Do not comment on wind.
     """
     try:
         _, slate_games = slate()
@@ -207,25 +229,40 @@ def get_slate_weather() -> dict:
     except requests.RequestException as e:
         return _unavailable(e)
 
-    on_slate = _slate_teams(slate_games)
-    home = games["home_team"].replace(TEAM_FIXES)
-    away = games["away_team"].replace(TEAM_FIXES)
-    games = games[home.isin(on_slate) & away.isin(on_slate)]
+    games = games.copy()
+    games["home_n"] = games["home_team"].replace(TEAM_FIXES)
+    games["away_n"] = games["away_team"].replace(TEAM_FIXES)
+    games = games[
+        games["home_n"].isin(_slate_teams(slate_games))
+        & games["away_n"].isin(_slate_teams(slate_games))
+    ]
 
-    return {
-        "status": "ok",
-        "games": [
-            {
-                "game": g["game"],
-                "venue": g["venue"],
-                "is_dome": bool(g["is_dome"]) if not pd.isna(g["is_dome"]) else None,
-                "weather_posted": bool(g["weather_posted"]),
-                "conditions": _s(g["weather_condition"], default="not posted"),
-                "temperature_f": _f(g["weather_temp_f"]),
-            }
-            for _, g in games.iterrows()
-        ],
+    # DK's own forecast, keyed by the same normalized team pair -- the two
+    # feeds name games differently ("Green Bay Packers at New York Jets" vs
+    # "GB @ NYJ"), so the team codes are the only reliable join key.
+    dk = slate_games.copy()
+    dk["home_n"] = dk["home_team"].replace(TEAM_FIXES)
+    dk["away_n"] = dk["away_team"].replace(TEAM_FIXES)
+    dk_by_pair = {
+        (r["home_n"], r["away_n"]): (r.get("weather_icon"), r.get("is_dome"))
+        for _, r in dk.iterrows()
     }
+
+    out = []
+    for _, g in games.iterrows():
+        dk_icon, dk_dome = dk_by_pair.get((g["home_n"], g["away_n"]), (None, None))
+        out.append({
+            "game": g["game"],
+            "venue": g["venue"],
+            "is_dome": bool(g["is_dome"]) if not pd.isna(g["is_dome"]) else None,
+            "dk_is_dome": None if dk_dome is None or pd.isna(dk_dome) else bool(dk_dome),
+            "weather_posted": bool(g["weather_posted"]),
+            "conditions": _s(g["weather_condition"], default="not posted"),
+            "temperature_f": _f(g["weather_temp_f"]),
+            "dk_weather_icon": _s(dk_icon, default="unavailable"),
+        })
+
+    return {"status": "ok", "games": out}
 
 
 def get_vegas_context() -> dict:
