@@ -6,6 +6,18 @@ the model's decision. The model writes the report; this script sends it.
 
     python gameday_agent/run_report.py --dry-run    # print, never send
     python gameday_agent/run_report.py              # send to Discord
+    python gameday_agent/run_report.py --local      # run in-process, not deployed
+
+TWO MODES. With AGENT_ENGINE_ID set it calls the agent deployed on Agent
+Platform and this file is a thin client -- it asks, receives, delivers. With
+--local, or with that variable unset, it runs the agent in this process
+instead, which is how an unpushed change gets tested before a four-minute
+redeploy.
+
+The split matters beyond convenience. Delivery and the fallback live in the
+client so that a deployed agent which is down, out of quota or mid-redeploy
+still produces a report: the thing that notices the failure cannot be the
+thing that failed.
 
 Why not an ADK `after_agent_callback`, which is the framework-native way to hook
 "agent finished"? Because a callback lives on the agent, so it would also fire
@@ -14,8 +26,12 @@ channel. Keeping the send out here means the UI stays a safe place to poke at
 the agent and only the scheduled job actually talks to Discord.
 
 Two env files are read, on purpose:
-    nfl-dfs/.env                  DISCORD_WEBHOOK_URL (a credential, gitignored)
-    nfl-dfs/gameday_agent/.env    MY_LINEUP, WEEK, model + project config
+    nfl-dfs/.env                  DISCORD_WEBHOOK_URL, AGENT_ENGINE_ID -- the
+                                  CLIENT's config, never staged into the image
+    nfl-dfs/gameday_agent/.env    MY_LINEUP, WEEK, model + project config, all
+                                  of which `adk deploy` bakes into the
+                                  deployment (so changing a lineup means a
+                                  redeploy until it moves to session state)
 
 ADK loads the second one itself when it launches the agent. Nothing loads it
 here, so this script has to -- the same gap that made hand_runner.py report an
@@ -26,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -53,7 +70,6 @@ def _load_agent_env() -> None:
     env = Path(__file__).resolve().parent / ".env"
     if not env.exists():
         return
-    import os
     for line in env.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
@@ -79,8 +95,48 @@ def log(msg: str) -> None:
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
 
 
+def run_agent_remote(resource: str) -> str:
+    """Call the agent deployed on Agent Platform and return its final report.
+
+    This is the mode the scheduled job runs in. The agent lives in the cloud;
+    this script is a thin client that asks it a question, takes the answer and
+    delivers it. Delivery and the fallback stay OUT HERE on purpose -- if the
+    deployed agent is down, out of quota or mid-redeploy, something that is
+    not the agent has to notice and still send a report.
+
+    The event shape differs from the in-process runner. Locally ADK yields
+    Event objects with attribute access; stream_query yields plain dicts. Same
+    content, different surface, so the two loops below cannot be shared.
+    """
+    import vertexai
+    from vertexai import agent_engines
+
+    vertexai.init(
+        project=os.environ.get("GOOGLE_CLOUD_PROJECT", "advisor-agent-2026"),
+        location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
+    )
+    agent = agent_engines.get(resource)
+
+    final, calls = "", []
+    for event in agent.stream_query(user_id="scheduled", message=QUERY):
+        for part in (event.get("content", {}) or {}).get("parts", []) or []:
+            if "function_call" in part:
+                calls.append(part["function_call"]["name"])
+            if part.get("text"):
+                final = part["text"]
+
+    log(f"tools called: {', '.join(calls) or 'none'}")
+    return final.strip()
+
+
 async def run_agent() -> str:
-    """Drive the ADK agent through one turn and return its final report."""
+    """Drive the ADK agent IN THIS PROCESS and return its final report.
+
+    Used with --local, for testing a code change before deploying it. The
+    deployed agent runs whatever was last pushed, so a local run and a remote
+    run can legitimately disagree -- which is the point of being able to do
+    both.
+    """
     from google.adk.runners import InMemoryRunner
     from google.genai import types
 
@@ -115,13 +171,28 @@ def main() -> int:
                    help="print the report instead of sending it")
     p.add_argument("--no-fallback", action="store_true",
                    help="fail loudly instead of sending the rule-based report")
+    p.add_argument("--local", action="store_true",
+                   help="run the agent in this process instead of calling the "
+                        "deployed one (for testing an unpushed change)")
     a = p.parse_args()
 
-    load_env()  # DISCORD_WEBHOOK_URL from the repo-root .env
-    log("starting gameday agent")
+    load_env()  # DISCORD_WEBHOOK_URL and AGENT_ENGINE_ID from the repo-root .env
+
+    # The resource id lives in the REPO-ROOT .env, not the agent's own. Anything
+    # in gameday_agent/.env is staged into the deployment by `adk deploy`, and
+    # an agent carrying its own resource name around is both pointless and one
+    # more value to keep in sync.
+    resource = os.environ.get("AGENT_ENGINE_ID", "").strip()
+    remote = bool(resource) and not a.local
 
     try:
-        report = asyncio.run(asyncio.wait_for(run_agent(), TIMEOUT_SECONDS))
+        if remote:
+            log(f"calling deployed agent {resource.rsplit('/', 1)[-1]}")
+            report = run_agent_remote(resource)
+        else:
+            why = "--local" if a.local else "AGENT_ENGINE_ID unset"
+            log(f"running agent in-process ({why})")
+            report = asyncio.run(asyncio.wait_for(run_agent(), TIMEOUT_SECONDS))
         if not report:
             raise RuntimeError("agent returned an empty report")
         log(f"agent produced {len(report)} characters")
@@ -134,8 +205,6 @@ def main() -> int:
         # the deterministic version. The rule-based report needs no model and
         # no Agent Platform quota, so it survives most things that kill the LLM.
         log("falling back to the rule-based report")
-        import os
-
         from gameday_report import build_report
         report = build_report(int(os.environ.get("WEEK", 1)))
 
