@@ -1,0 +1,20 @@
+# Dependencies for the DEPLOYED agent. `adk deploy agent_engine` uses this file
+# if it exists and otherwise writes one containing google-adk alone -- which
+# builds fine and then dies on `import pandas` at the first tool call, because
+# nothing else the agent imports is a dependency of ADK.
+#
+# Keep this list to what the agent actually imports at runtime. The repo's
+# top-level requirements.txt carries the training and optimizing stack
+# (xgboost, scikit-learn, pulp, matplotlib) which has no business in a
+# container that reads two JSON endpoints and writes a paragraph.
+google-adk[a2a]==2.8.0
+
+# tools.py, slate.py, and everything they pull out of src/
+pandas>=2.0
+requests>=2.31
+
+# predict_slate.vegas_for_slate falls back to nfl_data_py when
+# data/raw/schedules.parquet is absent -- which it always is in the container,
+# since only src/ is staged. pyarrow is what reads the parquet it returns.
+nfl_data_py>=0.3.2
+pyarrow>=15.0
