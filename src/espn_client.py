@@ -90,19 +90,27 @@ def fetch_injuries() -> pd.DataFrame:
 def fetch_scoreboard() -> pd.DataFrame:
     """One row per NFL game this week: venue, dome flag, and weather if posted.
 
-    ESPN does not populate `weather` until close to kickoff -- every Week 2
-    game showed it as absent as of the Thursday before. `weather_posted`
-    tells a caller "not available yet" apart from "checked, no weather
-    issue" -- treat a false there as unknown, not as clear skies. The actual
-    sub-fields (temperature/condition) are unverified against a live example
-    since ESPN hadn't posted one yet; re-check the raw payload once it has.
+    `weather` hangs off the EVENT, not the competition. Reading it off `comp`
+    returns None for every game in every week, which made `weather_posted`
+    permanently False -- and the earlier docstring here explained that away as
+    "ESPN doesn't post until close to kickoff." It was never an ESPN
+    limitation; the forecast was in the payload the whole time, one level up.
+    Checked Friday 2026-09-18: 15 of 16 events carried a Sunday forecast.
+
+    `weather_posted` still distinguishes "not available yet" from "checked, no
+    weather issue" -- treat a false as unknown, not as clear skies. It is
+    legitimately false for a game already in progress.
+
+    No wind: ESPN's scoreboard weather is displayValue, temperature,
+    highTemperature and conditionId only. `gust` is absent on every event.
+    Any wind-based reasoning needs a different source.
     """
     data = _get_json(SCOREBOARD_URL)
     rows = []
     for e in data.get("events", []):
         comp = (e.get("competitions") or [{}])[0]
         venue = comp.get("venue") or {}
-        weather = comp.get("weather") or {}
+        weather = e.get("weather") or {}
         competitors = comp.get("competitors", [])
         home = next((c for c in competitors if c.get("homeAway") == "home"), {})
         away = next((c for c in competitors if c.get("homeAway") == "away"), {})
