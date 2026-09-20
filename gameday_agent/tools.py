@@ -1,4 +1,4 @@
-"""The five tools the agent can call.
+"""The six tools the agent can call.
 
 Ported from src/agent.py with one deliberate change: every tool returns a dict
 carrying a `status`, not a bare list.
@@ -354,6 +354,106 @@ def find_replacements(position: str, max_salary: int, min_salary: int = 0) -> di
     }
 
 
+_cb_cache: dict = {}
+
+
+def _cb_board():
+    """Cornerback board, cached for the life of the process.
+
+    Unlike the slate this has no short TTL. Grades are built from a full prior
+    season plus whatever of the current one nflverse has published, and that
+    does not change during a Sunday morning -- whereas a warm Agent Platform
+    process would otherwise rebuild it, including two parquet downloads, on
+    every tool call.
+    """
+    import time
+
+    from cb_coverage import cb_board
+
+    now = time.monotonic()
+    if _cb_cache and now - _cb_cache["at"] < 3600:
+        return _cb_cache["df"]
+    df = cb_board()
+    _cb_cache.update(df=df, at=now)
+    return df
+
+
+def get_cb_matchups() -> dict:
+    """Get the cornerbacks each of the user's receivers and tight ends will face.
+
+    `coverage_grade` runs 0-100 among full-time corners, higher meaning harder
+    to throw on. It blends passer rating allowed, yards allowed per target, and
+    how often quarterbacks throw his way per coverage snap. A grade of None
+    means the player is a backup or has too little data, NOT that he is bad.
+
+    THIS CANNOT TELL YOU WHO COVERS WHOM. No free data source publishes per-snap
+    alignment, so there is no way to know whether a corner shadows a particular
+    receiver or simply plays one side. `role` is inferred from how deep he is
+    thrown at -- "boundary" corners see deeper targets than "slot" corners --
+    and that is a tendency, not an assignment. Say "likely draws" or "may see",
+    never "will be covered by".
+
+    Grades come mostly from LAST season, because this season's defensive data
+    lags by weeks. That is reasonable for corner talent, which is stable, but do
+    not present it as current form.
+
+    `injury_status` matters more than the grade. An elite corner who is OUT
+    turns a hard matchup into a soft one, and the backup behind him is usually
+    the weakest graded player on the list.
+    """
+    names = my_lineup_names()
+    if not names:
+        return {
+            "status": "error",
+            "message": "No lineup is configured (MY_LINEUP is unset), so there "
+                       "is nothing to find matchups for.",
+        }
+
+    try:
+        players, _ = slate()
+        board = _cb_board()
+    except (requests.RequestException, OSError, RuntimeError) as e:
+        return _unavailable(e)
+
+    want = {normalize_name(pd.Series([n]))[0] for n in names}
+    mine = players[players["jn"].isin(want) & players["position"].isin(["WR", "TE"])]
+
+    out = []
+    for _, r in mine.iterrows():
+        # "PIT @ NE" -- the opponent is whichever side is not his own team.
+        sides = [t.strip() for t in str(r["game"]).replace("@", " ").split()]
+        opp = next((t for t in sides if t != r["team"]), None)
+        if opp is None:
+            continue
+        corners = board[board["team"].eq(opp)].head(4)
+        out.append({
+            "player": r["name"],
+            "position": r["position"],
+            "opponent": opp,
+            "game": r["game"],
+            "opponent_corners": [
+                {
+                    "name": c["pfr_player_name"],
+                    "coverage_grade": _f(c["coverage_grade"]),
+                    "role": _s(c["role"], default="unknown"),
+                    "passer_rating_allowed": _f(c["passer_rating_allowed"]),
+                    "yards_per_target": _f(c["yards_per_target"]),
+                    "injury_status": _s(c["injury_status"]),
+                    "snap_share": _f(c["snap_share"]),
+                }
+                for _, c in corners.iterrows()
+            ],
+        })
+
+    return {
+        "status": "ok",
+        "matchups": out,
+        "shadow_data_available": False,
+        "note": "Grades are mostly prior-season. No alignment data exists, so "
+                "which corner covers which receiver is unknown.",
+    }
+
+
 def get_notable_scratches(min_salary: int = 6000) -> dict:
     """Get expensive players across the whole slate who are OUT, IR or Doubtful.
 
@@ -388,6 +488,7 @@ def get_notable_scratches(min_salary: int = 6000) -> dict:
 
 TOOLS = [
     get_lineup_status,
+    get_cb_matchups,
     get_slate_weather,
     get_vegas_context,
     find_replacements,
