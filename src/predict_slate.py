@@ -54,9 +54,23 @@ def normalize_name(s: pd.Series) -> pd.Series:
 
 
 def vegas_for_slate(season: int, week: int) -> pd.DataFrame:
-    """Implied team total per team for this week."""
-    s = pd.read_parquet(RAW / "schedules.parquet")
-    s = s[s["season"].eq(season) & s["week"].eq(week)]
+    """Implied team total per team for this week.
+
+    The parquet may not exist at all. RAW is derived from __file__, so on a
+    laptop it resolves to nfl-dfs/data/raw, but `adk deploy agent_engine
+    --extra_packages src` stages only src/ at /app -- there is no /app/data,
+    and data/ is gitignored so it would not be in an image either. Reading it
+    unguarded raised FileNotFoundError inside the agent's get_vegas_context,
+    which catches only RequestException, so the whole tool call died.
+
+    The nfl_data_py fallback below already existed for an empty frame. A
+    missing file is the same situation and now takes the same path.
+    """
+    try:
+        s = pd.read_parquet(RAW / "schedules.parquet")
+        s = s[s["season"].eq(season) & s["week"].eq(week)]
+    except (FileNotFoundError, OSError):
+        s = pd.DataFrame()
     if s.empty:
         import nfl_data_py as nfl
         s = nfl.import_schedules([season])

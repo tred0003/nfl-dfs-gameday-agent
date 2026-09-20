@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -38,9 +40,50 @@ SLEEPER = "https://api.sleeper.app/v1"
 FANTASYCALC = "https://api.fantasycalc.com/values/current"
 
 ROOT = Path(__file__).resolve().parent.parent
-CACHE = ROOT / "data" / "sleeper"
 
 TIMEOUT = 45
+
+_cache_dir: Path | None = None
+
+
+def cache_dir() -> Path:
+    """Where the disk cache lives, resolved once and probed for writability.
+
+    This used to be a bare ROOT / "data" / "sleeper". ROOT comes from
+    __file__, so on a laptop that is nfl-dfs/data/sleeper -- fine. Deployed to
+    Agent Engine the code is staged under /app, which is not promised to be
+    writable, and a cache that cannot write is an exception on the first tool
+    call rather than a slow one. Same class of break as the sys.path bootstrap
+    in each agent's __init__: correct locally, fatal in the cloud.
+
+    Order: SLEEPER_CACHE_DIR if set, then the repo's data dir, then the
+    system temp dir, which always works and merely loses the cache between
+    cold starts.
+    """
+    global _cache_dir
+    if _cache_dir is not None:
+        return _cache_dir
+
+    candidates = [
+        os.environ.get("SLEEPER_CACHE_DIR"),
+        ROOT / "data" / "sleeper",
+        Path(tempfile.gettempdir()) / "sleeper_cache",
+    ]
+    for c in candidates:
+        if not c:
+            continue
+        p = Path(c)
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+            probe = p / ".writable"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except OSError:
+            continue
+        _cache_dir = p
+        return p
+
+    raise RuntimeError("no writable cache directory found")
 
 # The player dump changes slowly (names, teams, injury designations). A day is
 # Sleeper's own suggested ceiling; injury status is NOT read from here for
@@ -59,8 +102,7 @@ def _cached(name: str, ttl: float, fetch) -> dict | list:
     yesterday's values is far more useful than no memo, and unlike injury
     status these numbers do not go dangerously wrong in a day.
     """
-    CACHE.mkdir(parents=True, exist_ok=True)
-    path = CACHE / name
+    path = cache_dir() / name
 
     if path.exists() and time.time() - path.stat().st_mtime < ttl:
         return json.loads(path.read_text(encoding="utf-8"))
