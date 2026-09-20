@@ -7,12 +7,17 @@ actually asks. This module answers the part of it that free data supports.
 THREE SOURCES, because no single one is sufficient, and each is used only for
 what it is authoritative about:
 
-    is he a CB?      ids.parquet `position`
+    is he a CB?      nflverse player ids `position`
     what team NOW?   Sleeper's player endpoint
-    how good?        PFR advanced defense (data/raw/pfr/advstats_week_def_*)
+    how good?        nflverse PFR advanced defense
 
-ids.parquet carries both `pfr_id` and `sleeper_id`, which is the only reason
-these three join at all.
+The id crosswalk carries both `pfr_id` and `sleeper_id`, which is the only
+reason these three join at all.
+
+Everything is fetched from nflverse and cached, never read from data/raw/ --
+see _load_ids for the incident that forced that. data/raw/ is a frozen
+snapshot for training; grading wants current data and, more importantly, wants
+the SAME data everywhere it runs.
 
 WHY NOT ONE SOURCE:
 - nflverse weekly rosters label every defensive back "DB" in 2026. There is no
@@ -32,23 +37,17 @@ corner is thrown at deeper than a slot corner -- and that is a tendency, not an
 assignment. Any tool built on this must say so rather than implying a matchup
 is locked in.
 
-SAMPLE SIZE: 2026 PFR data lags badly (50 rows, 2 games, as of week 2), so a
-grade is overwhelmingly the prior season. That is defensible for corner
-TALENT, which is fairly stable year to year, but it is not "how he is playing
-this week" and should not be described as such.
+SAMPLE SIZE: nflverse publishes defensive stats in batches days after games,
+so early in a season a grade is mostly the PRIOR season. That is defensible
+for corner talent, which is fairly stable year to year, but it is not "how he
+is playing this week" and should not be described as such.
 """
 
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 import pandas as pd
-
-ROOT = Path(__file__).resolve().parent.parent
-PFR = ROOT / "data" / "raw" / "pfr"
-IDS = ROOT / "data" / "raw" / "ids.parquet"
-SNAPS = ROOT / "data" / "raw" / "snaps.parquet"
 
 SEASONS = (2025, 2026)
 
@@ -80,6 +79,36 @@ ADOT_BOUNDARY = 11.0
 
 NFLVERSE = "https://github.com/nflverse/nflverse-data/releases/download"
 
+# How long a fetched nflverse file stays usable. Defensive stats are published
+# in batches days after games, so an hourly refresh would buy nothing.
+FETCH_TTL = 6 * 3600
+
+
+def _cached_fetch(name: str, fetch) -> pd.DataFrame:
+    """Fetch a frame and keep it on disk, so grading costs one request a day.
+
+    The cache is an optimisation only: an unwritable directory degrades this
+    to fetching every time, never to failing. Agent Platform does not promise
+    a writable /app.
+    """
+    import time
+
+    from sleeper_client import cache_dir
+
+    path = cache_dir() / name
+    if path.exists() and time.time() - path.stat().st_mtime < FETCH_TTL:
+        try:
+            return pd.read_parquet(path)
+        except OSError:
+            pass
+
+    df = fetch()
+    try:
+        df.to_parquet(path, index=False)
+    except OSError:
+        pass
+    return df
+
 
 def _nflverse(release: str, filename: str, seasons: tuple[int, ...]) -> pd.DataFrame:
     """Read a per-season nflverse release asset straight from GitHub.
@@ -94,8 +123,10 @@ def _nflverse(release: str, filename: str, seasons: tuple[int, ...]) -> pd.DataF
     """
     frames = []
     for year in seasons:
+        fname = filename.format(year)
         try:
-            frames.append(pd.read_parquet(f"{NFLVERSE}/{release}/{filename.format(year)}"))
+            frames.append(_cached_fetch(
+                fname, lambda f=fname: pd.read_parquet(f"{NFLVERSE}/{release}/{f}")))
         except Exception:
             continue
     if not frames:
@@ -104,34 +135,43 @@ def _nflverse(release: str, filename: str, seasons: tuple[int, ...]) -> pd.DataF
 
 
 def _load_pfr_def(seasons: tuple[int, ...]) -> pd.DataFrame:
-    """PFR advanced defense, from the repo's parquets or nflverse if absent.
-
-    The three files this module reads live under data/, which is gitignored
-    and never staged into a container -- `adk deploy --extra_packages src`
-    ships src/ and nothing else. Reading them unguarded works on the laptop
-    and dies in the cloud, which is exactly how vegas_for_slate broke. Same
-    resolution: try disk, fall back to the network.
-    """
-    frames = [
-        pd.read_parquet(PFR / f"advstats_week_def_{y}.parquet")
-        for y in seasons
-        if (PFR / f"advstats_week_def_{y}.parquet").exists()
-    ]
-    if frames:
-        return pd.concat(frames, ignore_index=True)
+    """PFR advanced defense, ALWAYS from nflverse -- see _load_ids for why."""
     return _nflverse("pfr_advstats", "advstats_week_def_{}.parquet", seasons)
 
 
 def _load_ids() -> pd.DataFrame:
-    if IDS.exists():
-        return pd.read_parquet(IDS)
+    """The player id crosswalk, ALWAYS from nflverse, never the repo's copy.
+
+    ALL THREE LOADERS HERE IGNORE data/raw/ ON PURPOSE.
+
+    They used to prefer the local parquets and fall back to the network, which
+    made the same code produce different grades in different places. The repo's
+    2026 PFR file holds 50 rows across 2 games; nflverse serves 485 rows across
+    17 games and two weeks. Because a grade is a PERCENTILE within the graded
+    pool, more data changes who qualifies and therefore changes everyone's
+    number: Carlton Davis came back 83.5 on the laptop and 86.2 deployed on the
+    same afternoon, and Max Melton moved 32.0 to 42.6 -- enough to change a
+    lineup decision.
+
+    The deployed numbers were the RIGHT ones. The laptop was reading a stale
+    snapshot and quietly grading on a fifth of the season's defensive data.
+
+    A grade that depends on where it runs is not a grade, and "prefer local,
+    fall back to network" guarantees exactly that whenever local is behind.
+    Fetching always, cached for a day, costs one request and removes the whole
+    class of problem. data/raw/ stays as it is for training, which wants a
+    frozen snapshot for the opposite reason.
+    """
+    return _cached_fetch("nflverse_ids.parquet", lambda: _import_ids())
+
+
+def _import_ids() -> pd.DataFrame:
     import nfl_data_py as nfl
     return nfl.import_ids()
 
 
 def _load_snaps(seasons: tuple[int, ...]) -> pd.DataFrame:
-    if SNAPS.exists():
-        return pd.read_parquet(SNAPS)
+    """Snap counts, ALWAYS from nflverse -- see _load_ids for why."""
     return _nflverse("snap_counts", "snap_counts_{}.parquet", seasons)
 
 
