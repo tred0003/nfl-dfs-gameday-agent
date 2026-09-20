@@ -85,6 +85,58 @@ def _board() -> pd.DataFrame:
     return board
 
 
+# Which positions may fill each starting slot in this league.
+SLOT_ELIGIBILITY = {
+    "QB": {"QB"},
+    "RB": {"RB"},
+    "WR": {"WR"},
+    "TE": {"TE"},
+    "FLEX": {"RB", "WR", "TE"},
+    "SUPER_FLEX": {"QB", "RB", "WR", "TE"},
+}
+
+
+def _starting_lineup_value(
+    pool: list[tuple[float, str]], slots: list[str]
+) -> tuple[int, dict]:
+    """Best legal starting lineup this pool can field, and what fills each slot.
+
+    WHY THIS EXISTS, and why it replaced ranking on the top five:
+
+    Summing a roster's five best players is position-blind, and in a superflex
+    league with a TE premium that is not a detail. The first live landscape
+    ranked a manager first on top-five value off four elite RB and WR -- while
+    his best quarterback was worth 2,719 in a format that starts TWO of them,
+    and his best tight end 1,585 in a format that pays a bonus per TE catch.
+    The user spotted it immediately from league knowledge; the metric never
+    would have.
+
+    Filling the league's ACTUAL slots prices scarcity automatically. A second
+    quarterback you must start every week is worth what your second
+    quarterback is worth, not what your fourth running back is worth.
+
+    Greedy, strict slots before flex ones, which is why `slots` is sorted by
+    how many positions may fill it. Greedy is not provably optimal for the
+    flex tail, but it is what a manager actually does when setting a lineup
+    and it never leaves a strict slot unfilled to feed a flex.
+
+    IDP slots are skipped: FantasyCalc publishes no defensive values, so four
+    of this league's fourteen starters are invisible to any of this.
+    """
+    pool = sorted(pool, reverse=True)
+    used = [False] * len(pool)
+    total, fills = 0, {}
+
+    for slot in sorted(slots, key=lambda s: len(SLOT_ELIGIBILITY[s])):
+        for i, (value, position) in enumerate(pool):
+            if not used[i] and position in SLOT_ELIGIBILITY[slot]:
+                used[i] = True
+                total += value
+                fills[slot] = int(value)
+                break
+    return int(total), fills
+
+
 def _rows(board: pd.DataFrame, ids: list[str], starters: set[str]) -> list[dict]:
     b = board[board["player_id"].isin(ids)]
     out = [
@@ -217,11 +269,24 @@ def get_league_landscape() -> dict:
     Reporting him as the league's most valuable roster was an artifact of
     roster size.
 
-    Rank by `top5_value` instead: the five best players, which is where
-    championship equity actually sits. Use `avg_value_per_player` to judge
-    quality per slot, and `depth_value_sum` only to describe overall depth.
-    Never tell the user he "leads the league in value" -- that sentence is
-    always about the sum and is always misleading.
+    RANK BY `starting_lineup_value`: the best legal lineup the roster can
+    actually field, given this league's real slots. It is the only figure here
+    that knows the league starts TWO quarterbacks and pays a TE premium.
+
+    `top5_value` is reported for comparison but is position-blind and should
+    not be the headline. On the first live run it ranked a manager first off
+    four elite RB and WR while his best QB was worth 2,719 in a superflex
+    format -- a roster that cannot fill its own lineup was being called the
+    league's strongest.
+
+    `slot_values` shows what fills each slot, which is where a thin position
+    becomes visible. A low QB or SUPER_FLEX figure in this league is a
+    structural weakness no amount of running back depth repairs.
+
+    Use `avg_value_per_player` to judge quality per slot, and
+    `depth_value_sum` only to describe overall depth. Never tell the user he
+    "leads the league in value" -- that sentence is always about the sum and
+    is always misleading.
 
     Every value here excludes IDP, since FantasyCalc publishes none. Two teams
     with similar numbers can differ a lot in defensive strength and none of
@@ -232,18 +297,27 @@ def get_league_landscape() -> dict:
     try:
         board = _board()
         rosters = fetch_rosters(LEAGUE_ID)
+        league = fetch_league(LEAGUE_ID)
     except requests.RequestException as e:
         return _unavailable(e)
 
     off = board[board["position"].isin(["QB", "RB", "WR", "TE"])]
     age = off.set_index("player_id")["age"]
     val = board.set_index("player_id")["dynasty_value"]
+    pos = board.set_index("player_id")["position"]
+
+    # The league's own starting slots, minus the IDP ones nothing can value.
+    slots = [s for s in (league.get("roster_positions") or [])
+             if s in SLOT_ELIGIBILITY]
 
     teams = []
     for _, r in rosters.iterrows():
         ages = [age.get(p) for p in r["players"] if pd.notna(age.get(p))]
         vals = [val.get(p) for p in r["players"] if pd.notna(val.get(p))]
         top = sorted(vals, reverse=True)[:5]
+        pool = [(val.get(p), pos.get(p)) for p in r["players"]
+                if pd.notna(val.get(p))]
+        lineup_value, fills = _starting_lineup_value(pool, slots)
         teams.append({
             "owner": r["owner"],
             "record": f"{r['wins']}-{r['losses']}",
@@ -258,6 +332,8 @@ def get_league_landscape() -> dict:
             "valued_players": len(vals),
             # The ranking number. Championship equity sits in stars, and unlike
             # the sum this cannot be inflated by rostering more bodies.
+            "starting_lineup_value": lineup_value,
+            "slot_values": fills,
             "top5_value": int(sum(top)),
             "avg_value_per_player": int(sum(vals) / len(vals)) if vals else None,
             "top5_share": round(sum(top) / sum(vals), 2) if vals else None,
@@ -268,7 +344,7 @@ def get_league_landscape() -> dict:
         "status": "ok",
         # Sorted by star power, not by the sum -- so the ordering the model
         # reads first is already the one that means something.
-        "teams": sorted(teams, key=lambda t: -t["top5_value"]),
+        "teams": sorted(teams, key=lambda t: -t["starting_lineup_value"]),
     }
 
 
