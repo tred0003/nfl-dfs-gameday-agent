@@ -142,15 +142,54 @@ def format_message(alerts: pd.DataFrame, week: int, minutes_to_lock: int | None)
     return "\n".join(lines)
 
 
+# Discord rejects a message body over 2000 characters. 1900 leaves room for the
+# part marker appended below.
+DISCORD_LIMIT = 1900
+
+
+def _chunks(message: str) -> list[str]:
+    """Split a long report on line boundaries, never mid-sentence.
+
+    This used to be `message[:1900]` -- a silent truncation. That was harmless
+    for the rule-based report, which is short and bounded, but the LLM report
+    runs long exactly when it matters most: a scratch plus replacement options
+    plus weather. The replacements live at the END of that report, so the one
+    message worth reading was the one getting its tail cut off, with nothing
+    printed to say so.
+    """
+    out, buf = [], ""
+    for line in message.splitlines(keepends=True):
+        # A single line longer than the limit still has to be hard-split.
+        while len(line) > DISCORD_LIMIT:
+            if buf:
+                out.append(buf)
+                buf = ""
+            out.append(line[:DISCORD_LIMIT])
+            line = line[DISCORD_LIMIT:]
+        if len(buf) + len(line) > DISCORD_LIMIT:
+            out.append(buf)
+            buf = ""
+        buf += line
+    if buf.strip():
+        out.append(buf)
+    return out or [message]
+
+
 def send_discord(message: str) -> bool:
     url = os.environ.get("DISCORD_WEBHOOK_URL")
     if not url:
         print("no DISCORD_WEBHOOK_URL set -- printing instead:\n")
         print(message)
         return False
-    r = requests.post(url, json={"content": message[:1900]}, timeout=20)
-    r.raise_for_status()
-    print("sent to Discord")
+
+    parts = _chunks(message)
+    for i, part in enumerate(parts, 1):
+        # Only marked when there IS more than one, so the common single-message
+        # case reads clean.
+        suffix = f"\n\n_({i}/{len(parts)})_" if len(parts) > 1 else ""
+        r = requests.post(url, json={"content": part + suffix}, timeout=20)
+        r.raise_for_status()
+    print(f"sent to Discord ({len(parts)} message{'s' if len(parts) > 1 else ''})")
     return True
 
 
