@@ -356,14 +356,24 @@ def get_slate_weather() -> dict:
 def get_vegas_context() -> dict:
     """Get the implied point total for each team playing on this slate.
 
-    Implied team total is how many points the betting market expects a team to
-    score. It was the strongest non-form predictor in backtesting -- a player in
-    a 28-point offense is in a materially better spot than one in a 19-point
-    offense, regardless of talent.
+    `implied_team_total` is how many points the betting market expects THAT
+    team -- the one named in the same record -- to score. It is the only
+    number this tool returns, and it is the number to quote for any player on
+    that team. A player in a 28-point offense is in a materially better spot
+    than one in a 19-point offense, regardless of talent; it was the strongest
+    non-form predictor in backtesting.
 
     Restricted to teams on the Sunday main slate, so a team playing Thursday,
     Sunday night or Monday night does not appear -- none of its players can be
     rostered.
+
+    This used to also return `opponent_implied_total`, the OTHER team's
+    expected points, and the eval harness caught the agent quoting it as
+    Detroit's own total: 30 reported where the payload said 24.5. Nothing in
+    the agent's job needs the opposing offense's number, and the docstring
+    never explained the field, so the model had two similar numbers and no
+    stated way to tell them apart. It was removed rather than documented --
+    the most reliable fix for a field the model can misread is not to send it.
     """
     season = int(os.environ.get("SEASON", "2026"))
     week = int(os.environ.get("WEEK", "1"))
@@ -391,7 +401,6 @@ def get_vegas_context() -> dict:
             {
                 "team": r["team"],
                 "implied_team_total": round(float(r["implied_team_total"]), 2),
-                "opponent_implied_total": round(float(r["implied_opp_total"]), 2),
             }
             for _, r in v.iterrows()
         ],
