@@ -136,8 +136,11 @@ parquet had every Week 5 game and no Week 5 totals.
    `AGENT_ENGINE_ID` doesn't change:
    ```
    adk deploy agent_engine --project advisor-agent-2026 --region us-central1 `
-     --agent_engine_id 3925664979730038784 --extra_packages src gameday_agent
+     --agent_engine_id 3925664979730038784 --otel_to_cloud --extra_packages src gameday_agent
    ```
+   `--otel_to_cloud` (added 2026-10-09) keeps telemetry on. Leave it off and the
+   redeploy silently drops it: the request/response content in the agent's logs
+   goes away. The content-capture settings live in `gameday_agent/.env`.
 3. **Rebuild the client image** (it now carries `nfl_week.py` and `lineup_sheet.py`):
    ```bash
    P=advisor-agent-2026; R=us-central1

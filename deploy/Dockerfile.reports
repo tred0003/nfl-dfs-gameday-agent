@@ -1,4 +1,5 @@
-# One image, two Cloud Run jobs: gameday-report and sleeper-report. Each job
+# One image, three Cloud Run jobs: gameday-report, sleeper-report and
+# gameday-canary (Thursdays, see gameday_agent/canary.py). Each job
 # sets its own command, so the image does not pick an entrypoint.
 #
 # Why this exists: both reports used to run from Windows Task Scheduler on a
@@ -22,5 +23,5 @@ RUN pip install --no-cache-dir -r requirements-reports.txt
 COPY src/dk_client.py src/predict_slate.py src/watch_slate.py \
      src/gameday_report.py src/scoring.py \
      src/nfl_week.py src/lineup_sheet.py ./src/
-COPY gameday_agent/run_report.py ./gameday_agent/
+COPY gameday_agent/run_report.py gameday_agent/canary.py ./gameday_agent/
 COPY sleeper_agent/run_report.py ./sleeper_agent/

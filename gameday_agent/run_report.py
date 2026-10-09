@@ -105,7 +105,8 @@ def log(msg: str) -> None:
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
 
 
-def run_agent_remote(resource: str, lineup: list[str]) -> str:
+def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
+                     responses: list[dict] | None = None) -> str:
     """Call the agent deployed on Agent Platform and return its final report.
 
     This is the mode the scheduled job runs in. The agent lives in the cloud;
@@ -117,6 +118,10 @@ def run_agent_remote(resource: str, lineup: list[str]) -> str:
     The event shape differs from the in-process runner. Locally ADK yields
     Event objects with attribute access; stream_query yields plain dicts. Same
     content, different surface, so the two loops below cannot be shared.
+
+    `query` and `responses` exist for the Thursday canary (canary.py): it asks
+    a different question and needs to see what each tool RETURNED, not just
+    that it was called. The daily report passes neither.
     """
     import vertexai
     from vertexai import agent_engines
@@ -137,7 +142,7 @@ def run_agent_remote(resource: str, lineup: list[str]) -> str:
     texts, calls = [], []
     try:
         for event in agent.stream_query(user_id="scheduled", session_id=session_id,
-                                        message=QUERY):
+                                        message=query):
             # A model error arrives as an EVENT, not an exception: a dict with
             # error_code and no content. Seen on 10/9 -- a 429 from Gemini
             # landed mid-run, the loop skipped the contentless event, and the
@@ -151,6 +156,8 @@ def run_agent_remote(resource: str, lineup: list[str]) -> str:
             for part in (event.get("content", {}) or {}).get("parts", []) or []:
                 if "function_call" in part:
                     calls.append(part["function_call"]["name"])
+                if responses is not None and part.get("function_response"):
+                    responses.append(part["function_response"])
                 if part.get("text"):
                     texts.append(part["text"])
     finally:
