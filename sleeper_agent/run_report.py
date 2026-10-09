@@ -86,16 +86,32 @@ def run_agent_remote(resource: str, query: str) -> str:
     )
     agent = agent_engines.get(resource)
 
-    final, calls = "", []
+    texts, calls = [], []
     for event in agent.stream_query(user_id="scheduled", message=query):
+        # A model error arrives as an EVENT, not an exception: a dict with
+        # error_code and no content. Seen on 10/9 -- a 429 from Gemini
+        # landed mid-run, the loop skipped the contentless event, and the
+        # half-written report would have gone out as if it were finished.
+        # Raise, so the caller treats it as an agent failure (fallback/alert).
+        if event.get("error_code"):
+            raise RuntimeError(f"agent error {event['error_code']}: "
+                               f"{str(event.get('error_message', ''))[:200]}")
+        if event.get("partial"):
+            continue
         for part in (event.get("content", {}) or {}).get("parts", []) or []:
             if "function_call" in part:
                 calls.append(part["function_call"]["name"])
             if part.get("text"):
-                final = part["text"]
+                texts.append(part["text"])
 
     log(f"tools called: {', '.join(calls) or 'none'}")
-    return final.strip()
+    # Every text part, in order -- not just the last one. The model writes the
+    # report in sections BETWEEN tool calls (lineup, then weather, then
+    # matchups); keeping only the last text produced a 397-character
+    # Vegas-only "report" on 10/9 after the agent had called all five tools.
+    # Streaming drafts are excluded by skipping partial events above, which is
+    # what the old "last text wins" rule was guarding against.
+    return "\n\n".join(t.strip() for t in texts if t.strip())
 
 
 async def run_agent(query: str) -> str:
@@ -112,22 +128,33 @@ async def run_agent(query: str) -> str:
         app_name="sleeper_report", user_id="scheduled"
     )
 
-    final, calls = "", []
+    texts, calls = [], []
     async for event in runner.run_async(
         user_id="scheduled",
         session_id=session.id,
         new_message=types.Content(role="user", parts=[types.Part(text=query)]),
     ):
+        if getattr(event, "error_code", None):
+            raise RuntimeError(f"agent error {event.error_code}: "
+                               f"{str(getattr(event, 'error_message', ''))[:200]}")
+        if getattr(event, "partial", False):
+            continue
         if not (event.content and event.content.parts):
             continue
         for part in event.content.parts:
             if getattr(part, "function_call", None):
                 calls.append(part.function_call.name)
             if getattr(part, "text", None):
-                final = part.text  # last text wins -- ADK streams drafts
+                texts.append(part.text)
 
     log(f"tools called: {', '.join(calls) or 'none'}")
-    return final.strip()
+    # Every text part, in order -- not just the last one. The model writes the
+    # report in sections BETWEEN tool calls (lineup, then weather, then
+    # matchups); keeping only the last text produced a 397-character
+    # Vegas-only "report" on 10/9 after the agent had called all five tools.
+    # Streaming drafts are excluded by skipping partial events above, which is
+    # what the old "last text wins" rule was guarding against.
+    return "\n\n".join(t.strip() for t in texts if t.strip())
 
 
 def main() -> int:

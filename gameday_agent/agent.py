@@ -90,6 +90,11 @@ Format for Discord using markdown. Be direct and concrete -- name players,
 numbers and games. No preamble, no restating the question, no hedging language.
 If everything is genuinely fine, say so in two lines and stop. A short report is
 a good outcome, not a failure to find something.
+
+Call every tool you need FIRST, then write the whole report once, as your final
+message. Do not write anything between tool calls -- no partial findings, no
+"now checking the weather". Text written mid-run reaches the reader as part of
+the report, so narration of your process becomes noise in it.
 """
 
 root_agent = LlmAgent(
