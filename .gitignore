@@ -11,11 +11,28 @@ __pycache__/
 .ipynb_checkpoints/
 .env
 .venv/
+# TensorFlow lives in its own env on purpose: TF pins numpy/pandas hard, and
+# the XGBoost champion runs on pandas 3.x. One shared env means one upgrade
+# breaks the model that actually ships.
+.venv-tf/
 
 # runtime state and byproducts, not source
 *.bak
 *.log
 .adk/
+
+# One file per eval run. Regenerable, noisy in a diff, and they pile up fast.
+# eval/baseline.json and eval/human_scores.json are NOT ignored on purpose:
+# the baseline is the bar a change has to clear, and the human scores are the
+# only reason the judge's numbers mean anything. Both are worth a diff.
+gameday_agent/eval/runs/
+
+# Generated grading material. The packet is rebuilt from runs/ on demand and
+# my-scores.txt is a scratch pad; human_scores.json, the actual result of
+# doing the grading, is NOT ignored.
+gameday_agent/eval/grading-packet.html
+gameday_agent/eval/grading-packet.pdf
+gameday_agent/eval/my-scores.txt
 
 # generated per-run from customjob.train.yaml.template
 deploy/customjob.train.yaml

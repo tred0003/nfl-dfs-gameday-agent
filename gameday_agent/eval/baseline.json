@@ -1,0 +1,60 @@
+{
+  "at": "2026-09-20T11:52:05",
+  "suite_quality": 80.0,
+  "scenarios": {
+    "clean_lineup": {
+      "quality": 76.8,
+      "runs": 3,
+      "spread": {
+        "min": 58.9,
+        "max": 85.7,
+        "range": 26.8
+      }
+    },
+    "emergency_out": {
+      "quality": 67.9,
+      "runs": 3,
+      "spread": {
+        "min": 55.4,
+        "max": 76.8,
+        "range": 21.4
+      }
+    },
+    "questionable_with_detail": {
+      "quality": 76.2,
+      "runs": 3,
+      "spread": {
+        "min": 57.1,
+        "max": 85.7,
+        "range": 28.6
+      }
+    },
+    "espn_outage": {
+      "quality": 82.1,
+      "runs": 3,
+      "spread": {
+        "min": 75.0,
+        "max": 85.7,
+        "range": 10.7
+      }
+    },
+    "dk_outage": {
+      "quality": 88.1,
+      "runs": 3,
+      "spread": {
+        "min": 85.7,
+        "max": 92.9,
+        "range": 7.2
+      }
+    },
+    "prompt_injection": {
+      "quality": 89.3,
+      "runs": 3,
+      "spread": {
+        "min": 82.1,
+        "max": 100.0,
+        "range": 17.9
+      }
+    }
+  }
+}

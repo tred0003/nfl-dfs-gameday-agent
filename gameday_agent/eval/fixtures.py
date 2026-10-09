@@ -59,17 +59,20 @@ POOL_PLAYERS = [
 # tools scope themselves to the teams on the slate, so an empty games frame
 # would scope them to nothing. Every game here is a 1pm or 4pm Sunday kickoff,
 # because that is the only window the user's contest covers.
+#
+# `total` and `home_spread` drive vegas_fixture() below. A negative home_spread
+# means the home team is favoured, matching how the real feed signs it.
 SLATE_GAMES = [
-    {"game": "WAS @ PHI", "home_team": "PHI", "away_team": "WAS"},
-    {"game": "NO @ DET", "home_team": "DET", "away_team": "NO"},
-    {"game": "MIA @ LV", "home_team": "LV", "away_team": "MIA"},
-    {"game": "ATL @ PIT", "home_team": "PIT", "away_team": "ATL"},
-    {"game": "NYJ @ TEN", "home_team": "TEN", "away_team": "NYJ"},
-    {"game": "GB @ MIN", "home_team": "MIN", "away_team": "GB"},
-    {"game": "BAL @ IND", "home_team": "IND", "away_team": "BAL"},
-    {"game": "ARI @ LAC", "home_team": "LAC", "away_team": "ARI"},
-    {"game": "BUF @ HOU", "home_team": "HOU", "away_team": "BUF"},
-    {"game": "TB @ CIN", "home_team": "CIN", "away_team": "TB"},
+    {"game": "WAS @ PHI", "home_team": "PHI", "away_team": "WAS", "total": 47.5, "home_spread": -3.0},
+    {"game": "NO @ DET", "home_team": "DET", "away_team": "NO", "total": 49.0, "home_spread": -6.0},
+    {"game": "MIA @ LV", "home_team": "LV", "away_team": "MIA", "total": 42.0, "home_spread": -1.0},
+    {"game": "ATL @ PIT", "home_team": "PIT", "away_team": "ATL", "total": 40.0, "home_spread": -2.5},
+    {"game": "NYJ @ TEN", "home_team": "TEN", "away_team": "NYJ", "total": 38.5, "home_spread": -1.5},
+    {"game": "GB @ MIN", "home_team": "MIN", "away_team": "GB", "total": 45.0, "home_spread": -1.0},
+    {"game": "BAL @ IND", "home_team": "IND", "away_team": "BAL", "total": 46.5, "home_spread": 5.0},
+    {"game": "ARI @ LAC", "home_team": "LAC", "away_team": "ARI", "total": 44.0, "home_spread": -3.5},
+    {"game": "BUF @ HOU", "home_team": "HOU", "away_team": "BUF", "total": 48.0, "home_spread": 4.0},
+    {"game": "TB @ CIN", "home_team": "CIN", "away_team": "TB", "total": 47.0, "home_spread": -2.0},
 ]
 
 
@@ -79,6 +82,38 @@ def dk_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
     players["jn"] = normalize_name(players["name"])
     games = pd.DataFrame(SLATE_GAMES)
     return players, games
+
+
+def vegas_fixture() -> pd.DataFrame:
+    """Implied team totals, in the shape vegas_for_slate() returns.
+
+    This exists because the harness was quietly not reproducible. Every other
+    source here is synthetic and patched in by run_eval.py, but Vegas numbers
+    came from the REAL schedule via nfl_data_py -- a network call, or a parquet
+    on disk that changes whenever it is re-pulled. A harness whose docstring
+    promises day-to-day reproducibility should not be reading live data for
+    one of its inputs.
+
+    It was also producing nonsense. The games above are invented, so a team's
+    real-schedule opponent is not the team it faces here: the fixture had
+    Houston playing Buffalo while the payload gave Buffalo 30.0 points and
+    Houston's opponent 22.0. Both numbers were real; they described different
+    games. The AI judge grades grounding against this data, so it was marking
+    claims right or wrong against figures that did not describe the slate.
+
+    Deriving both totals from one game line fixes that by construction -- the
+    two halves of a game cannot disagree when they come from the same
+    arithmetic.
+    """
+    rows = []
+    for g in SLATE_GAMES:
+        half = g["total"] / 2
+        # A negative spread means the home team is favoured, so it gets the
+        # points added. The two implied totals sum back to the game total.
+        edge = -g["home_spread"] / 2
+        rows.append({"team": g["home_team"], "implied_team_total": half + edge})
+        rows.append({"team": g["away_team"], "implied_team_total": half - edge})
+    return pd.DataFrame(rows)
 
 
 def espn_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
