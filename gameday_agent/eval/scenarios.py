@@ -1,8 +1,9 @@
 """Fixed scenarios for the gameday agent eval harness.
 
-Each one freezes MY_LINEUP and overrides specific rows on top of the
-synthetic fixtures in fixtures.py (see that module's docstring for why they
-are synthetic, not a frozen real pull), so a run is exactly reproducible
+Each one freezes a lineup (sent as session state, as in production) and
+overrides specific rows on top of the synthetic fixtures in fixtures.py (see
+that module's docstring for why they are synthetic, not a frozen real pull),
+so a run is exactly reproducible
 regardless of what DK/ESPN say on any given day -- and regardless of whether
 they're reachable at all, which DK currently is not.
 

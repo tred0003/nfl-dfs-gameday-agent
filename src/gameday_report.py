@@ -13,9 +13,13 @@ Configuration is entirely environment variables, so the deployed job can be
 retargeted at a new week's lineup without rebuilding the image:
 
   DISCORD_WEBHOOK_URL   required to actually send; prints to stdout otherwise
-  MY_LINEUP             comma-separated player names
+  MY_LINEUP             comma-separated player names, when no lineup is passed in
   DRAFT_GROUP           pin a slate id; otherwise picks the largest Sunday prize
-  WEEK                  week number, for the message header
+  WEEK                  override the week; otherwise derived from the slate date
+
+When gameday_agent/run_report.py calls this as its fallback it passes the
+lineup it read from the Google Sheet, so the fallback checks the same roster
+the agent would have.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ if hasattr(sys.stdout, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from dk_client import fetch_draftables, list_slates, pick_main_slate  # noqa: E402
+from nfl_week import current_week  # noqa: E402
 from predict_slate import normalize_name  # noqa: E402
 from watch_slate import load_env, send_discord  # noqa: E402
 
@@ -53,12 +58,23 @@ def lineup_names() -> list[str]:
     return [n.strip() for n in raw.split(",") if n.strip()]
 
 
-def build_report(week: int, dg: int | None = None) -> str:
+def build_report(week: int | None = None, dg: int | None = None,
+                 names: list[str] | None = None) -> str:
     dg = dg or int(os.environ.get("DRAFT_GROUP") or 0) or pick_main_slate(list_slates())
     players, games = fetch_draftables(dg)
 
-    names = lineup_names()
-    lines = [f"**🏈 NFL DFS — Week {week} gameday report**"]
+    if week is None:
+        # The week is only the header here, and this is the fallback -- the
+        # thing that runs when something else already broke. A schedule
+        # lookup that fails must not take the whole report down with it.
+        try:
+            week = current_week(kickoff_utc=games["start_time_utc"].min())
+        except Exception:  # noqa: BLE001
+            week = None
+
+    names = lineup_names() if names is None else names
+    label = f"Week {week} " if week else ""
+    lines = [f"**🏈 NFL DFS — {label}gameday report**"]
 
     # ---------------------------------------------------------- your lineup
     if names:
@@ -93,7 +109,7 @@ def build_report(week: int, dg: int | None = None) -> str:
 
         my_teams = set(mine["team"].dropna())
     else:
-        lines.append("\n_No lineup configured (set MY_LINEUP)._")
+        lines.append("\n_No lineup provided._")
         my_teams = set()
 
     # -------------------------------------------------------------- weather
@@ -127,7 +143,8 @@ def build_report(week: int, dg: int | None = None) -> str:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--week", type=int, default=int(os.environ.get("WEEK", 1)))
+    p.add_argument("--week", type=int, default=None,
+                   help="override; otherwise derived from the slate date")
     p.add_argument("--dg", type=int, default=None)
     p.add_argument("--dry-run", action="store_true")
     a = p.parse_args()

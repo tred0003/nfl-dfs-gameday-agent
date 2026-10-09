@@ -1,6 +1,6 @@
 """Headless entry point: run the ADK agent once, send the report to Discord.
 
-This is what Windows Task Scheduler calls on Sunday morning. Nobody is watching
+This is what the gameday-report Cloud Run job runs every day. Nobody is watching
 it, nobody types a question, and there is no second turn -- so delivery is NOT
 the model's decision. The model writes the report; this script sends it.
 
@@ -25,13 +25,20 @@ in `adk web` -- every experiment in the dev UI would post to the real Discord
 channel. Keeping the send out here means the UI stays a safe place to poke at
 the agent and only the scheduled job actually talks to Discord.
 
+THE LINEUP COMES WITH THE REQUEST. This client reads it from a Google Sheet
+(LINEUP_SHEET_ID) and creates the agent's session with it in state, so the
+agent checks whatever the sheet says right now. It used to be MY_LINEUP baked
+into the deployment, which went three weeks stale. The week is derived from
+the slate date (src/nfl_week.py), for the same reason.
+
 Two env files are read, on purpose:
-    nfl-dfs/.env                  DISCORD_WEBHOOK_URL, AGENT_ENGINE_ID -- the
-                                  CLIENT's config, never staged into the image
-    nfl-dfs/gameday_agent/.env    MY_LINEUP, WEEK, model + project config, all
-                                  of which `adk deploy` bakes into the
-                                  deployment (so changing a lineup means a
-                                  redeploy until it moves to session state)
+    nfl-dfs/.env                  DISCORD_WEBHOOK_URL, AGENT_ENGINE_ID,
+                                  LINEUP_SHEET_ID -- the CLIENT's config,
+                                  never staged into the agent
+    nfl-dfs/gameday_agent/.env    model + project config, which `adk deploy`
+                                  bakes into the deployment. MY_LINEUP and
+                                  WEEK must NOT be in it when deploying; see
+                                  deploy/REPORTS-CLOUD.md
 
 ADK loads the second one itself when it launches the agent. Nothing loads it
 here, so this script has to -- the same gap that made hand_runner.py report an
@@ -79,13 +86,17 @@ def _load_agent_env() -> None:
 
 _load_agent_env()
 
+from lineup_sheet import EXPECTED_SLOTS, LineupError, read_lineup  # noqa: E402
 from watch_slate import load_env, send_discord  # noqa: E402
 
+# Must match gameday_agent/slate.py LINEUP_STATE_KEY. Not imported from there:
+# that would import the agent package, which the scheduled image does not ship.
+LINEUP_STATE_KEY = "my_lineup"
 
 QUERY = "Check my lineup for this Sunday and tell me if anything needs my attention."
 
 # A run that hangs on a wedged HTTP call must not sit there until the next one
-# starts. Task Scheduler will not kill it for us.
+# starts. The Cloud Run task timeout is the backstop, not the plan.
 TIMEOUT_SECONDS = 300
 
 
@@ -94,7 +105,7 @@ def log(msg: str) -> None:
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
 
 
-def run_agent_remote(resource: str) -> str:
+def run_agent_remote(resource: str, lineup: list[str]) -> str:
     """Call the agent deployed on Agent Platform and return its final report.
 
     This is the mode the scheduled job runs in. The agent lives in the cloud;
@@ -116,19 +127,35 @@ def run_agent_remote(resource: str) -> str:
     )
     agent = agent_engines.get(resource)
 
+    # A fresh session per run, carrying this run's lineup in state. The
+    # agent's lineup tools read state before they look at env, so this is
+    # what makes a sheet edit take effect with no redeploy.
+    session = agent.create_session(user_id="scheduled",
+                                   state={LINEUP_STATE_KEY: lineup})
+    session_id = session["id"] if isinstance(session, dict) else session.id
+
     final, calls = "", []
-    for event in agent.stream_query(user_id="scheduled", message=QUERY):
-        for part in (event.get("content", {}) or {}).get("parts", []) or []:
-            if "function_call" in part:
-                calls.append(part["function_call"]["name"])
-            if part.get("text"):
-                final = part["text"]
+    try:
+        for event in agent.stream_query(user_id="scheduled", session_id=session_id,
+                                        message=QUERY):
+            for part in (event.get("content", {}) or {}).get("parts", []) or []:
+                if "function_call" in part:
+                    calls.append(part["function_call"]["name"])
+                if part.get("text"):
+                    final = part["text"]
+    finally:
+        # Managed sessions persist and bill per event. One run, one session,
+        # then gone. A failed delete is not worth failing the report over.
+        try:
+            agent.delete_session(user_id="scheduled", session_id=session_id)
+        except Exception as e:  # noqa: BLE001
+            log(f"could not delete session {session_id}: {e}")
 
     log(f"tools called: {', '.join(calls) or 'none'}")
     return final.strip()
 
 
-async def run_agent() -> str:
+async def run_agent(lineup: list[str]) -> str:
     """Drive the ADK agent IN THIS PROCESS and return its final report.
 
     Used with --local, for testing a code change before deploying it. The
@@ -146,7 +173,8 @@ async def run_agent() -> str:
 
     runner = InMemoryRunner(agent=root_agent, app_name="gameday_report")
     session = await runner.session_service.create_session(
-        app_name="gameday_report", user_id="scheduled"
+        app_name="gameday_report", user_id="scheduled",
+        state={LINEUP_STATE_KEY: lineup},
     )
 
     final, tool_calls = "", []
@@ -189,14 +217,34 @@ def main() -> int:
     resource = os.environ.get("AGENT_ENGINE_ID", "").strip()
     remote = bool(resource) and not a.local
 
+    # Read the lineup BEFORE anything else, and stop if it cannot be read.
+    #
+    # The tradeoff, made on purpose: an unreadable sheet means NO report
+    # today, not a report about some other roster. The fallback below exists
+    # for when the agent breaks -- it still checks the right players. There is
+    # no equivalent for "we do not know the players": a stale roster reads
+    # exactly like a real one ("all 9 active"), and that is the failure this
+    # whole change exists to remove. A missing report trips the alert and gets
+    # fixed; a confidently wrong one went unnoticed for three weeks.
+    try:
+        lineup = read_lineup(os.environ.get("LINEUP_SHEET_ID", "").strip())
+    except LineupError as e:
+        log(f"LINEUP UNAVAILABLE, not running: {e}")
+        return 1
+    log(f"lineup from sheet: {len(lineup)} players")
+    if len(lineup) != EXPECTED_SLOTS:
+        # Worth a line in the log, not worth stopping for -- a half-edited
+        # sheet still names real players, and the report will show who.
+        log(f"note: expected {EXPECTED_SLOTS} players, sheet has {len(lineup)}")
+
     try:
         if remote:
             log(f"calling deployed agent {resource.rsplit('/', 1)[-1]}")
-            report = run_agent_remote(resource)
+            report = run_agent_remote(resource, lineup)
         else:
             why = "--local" if a.local else "AGENT_ENGINE_ID unset"
             log(f"running agent in-process ({why})")
-            report = asyncio.run(asyncio.wait_for(run_agent(), TIMEOUT_SECONDS))
+            report = asyncio.run(asyncio.wait_for(run_agent(lineup), TIMEOUT_SECONDS))
         if not report:
             raise RuntimeError("agent returned an empty report")
         log(f"agent produced {len(report)} characters")
@@ -210,7 +258,7 @@ def main() -> int:
         # no Agent Platform quota, so it survives most things that kill the LLM.
         log("falling back to the rule-based report")
         from gameday_report import build_report
-        report = build_report(int(os.environ.get("WEEK", 1)))
+        report = build_report(names=lineup)
 
     if a.dry_run:
         log("dry run -- not sending")

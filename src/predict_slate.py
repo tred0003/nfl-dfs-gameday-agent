@@ -71,6 +71,13 @@ def vegas_for_slate(season: int, week: int) -> pd.DataFrame:
         s = s[s["season"].eq(season) & s["week"].eq(week)]
     except (FileNotFoundError, OSError):
         s = pd.DataFrame()
+    # Rows with no lines are as useless as no rows. The schedule lists every
+    # game months ahead but the lines only arrive that week, so a parquet
+    # pulled on 9/17 has all of Week 5's games and none of its totals -- and
+    # the laptop reported "no Vegas lines for week 5" while the live file had
+    # them. Same staleness lesson as WEEK itself: present is not current.
+    if not s.empty and s["total_line"].isna().all():
+        s = pd.DataFrame()
     if s.empty:
         import nfl_data_py as nfl
         s = nfl.import_schedules([season])

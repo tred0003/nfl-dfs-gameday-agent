@@ -56,6 +56,7 @@ import pandas as pd  # noqa: E402
 import requests  # noqa: E402
 
 import gameday_agent.tools as tools_mod  # noqa: E402
+from gameday_agent.slate import LINEUP_STATE_KEY  # noqa: E402
 from gameday_agent.agent import root_agent  # noqa: E402
 from gameday_agent.eval.fixtures import (  # noqa: E402
     dk_fixture, espn_fixture, vegas_fixture,
@@ -161,7 +162,12 @@ async def _run_scenario(scenario: Scenario) -> Trace:
         injuries = _apply_espn_overrides(injuries, scenario)
         vegas = vegas_fixture()
 
-    os.environ["MY_LINEUP"] = ",".join(scenario.lineup)
+    # The lineup goes in through session state, the way the scheduled client
+    # sends it -- not MY_LINEUP. With the env var set, a broken state path
+    # would pass every scenario by quietly falling back to it, which is the
+    # one regression this harness most needs to catch. So the env var is
+    # removed outright, and a lineup tool that ignores state gets nothing.
+    os.environ.pop("MY_LINEUP", None)
 
     tools_mod.slate = _raise if scenario.dk_down else (lambda: (players, games))
     tools_mod.espn_injuries = _raise if scenario.espn_down else (lambda: injuries)
@@ -177,7 +183,8 @@ async def _run_scenario(scenario: Scenario) -> Trace:
 
     runner = InMemoryRunner(agent=root_agent, app_name="gameday_eval")
     session = await runner.session_service.create_session(
-        app_name="gameday_eval", user_id="eval"
+        app_name="gameday_eval", user_id="eval",
+        state={LINEUP_STATE_KEY: list(scenario.lineup)},
     )
     content = types.Content(role="user", parts=[types.Part(text=QUERY)])
 

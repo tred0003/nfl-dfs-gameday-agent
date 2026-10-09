@@ -105,6 +105,32 @@ def espn_scoreboard() -> pd.DataFrame:
     return df
 
 
-def my_lineup_names() -> list[str]:
-    """The user's rostered players, from the MY_LINEUP env var."""
+# Session-state key the scheduled client writes the lineup under. One name,
+# shared by the writer (run_report.py) and the reader (here).
+LINEUP_STATE_KEY = "my_lineup"
+
+
+def my_lineup_names(tool_context=None) -> list[str]:
+    """The user's rostered players: this request's session state, else MY_LINEUP.
+
+    Session state is the production path. The scheduled client reads the
+    lineup from a Google Sheet and creates the session with it, so the lineup
+    arrives WITH the request instead of living in the deployment.
+
+    MY_LINEUP used to be the only path, and `adk deploy` bakes gameday_agent/.env
+    into the deployment -- so the lineup was frozen at whatever it was on deploy
+    day. It was last set 9/20, and every daily report for three weeks checked
+    that roster while the user had moved on. Changing a lineup meant a
+    four-minute redeploy from a laptop, which in practice meant never.
+
+    The env var stays as the fallback for `adk web` and hand-run tools, where
+    there is no client to supply state. It should NOT be present in the .env
+    that gets deployed -- if it is, a request that somehow arrives without state
+    silently checks a stale roster again instead of failing.
+    """
+    state = getattr(tool_context, "state", None) if tool_context is not None else None
+    if state is not None:
+        names = state.get(LINEUP_STATE_KEY)
+        if names:
+            return [str(n).strip() for n in names if str(n).strip()]
     return [n.strip() for n in os.environ.get("MY_LINEUP", "").split(",") if n.strip()]

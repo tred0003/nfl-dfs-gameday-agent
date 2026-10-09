@@ -71,14 +71,92 @@ gcloud run jobs update sleeper-report --image $IMG --project $P --region $R
 
 Test without posting: `gcloud run jobs execute sleeper-report --args=sleeper_agent/run_report.py,--dry-run --wait`
 
-## Still on the laptop (Phase 2)
+## Phase 2: nothing about the week or the lineup lives in the deployment
 
-The gameday agent's `WEEK` and `MY_LINEUP` are **baked into its deployment**.
-Changing either one means a redeploy from the laptop, and they had not been
-changed since 9/20. The deployed agent still says `WEEK = 2`, so every daily
-report since then checked a stale lineup and quoted Week 2 Vegas totals, and
-every run exited 0. Plan: work out the week from the DK slate date, read the
-lineup from a Google Sheet in the client, and send it with the request.
+**The incident.** The gameday agent's `WEEK` and `MY_LINEUP` were baked into
+its deployment: `adk deploy agent_engine` forwards every line of
+`gameday_agent/.env` as a deployment env var. Changing either meant a
+redeploy from the laptop, and neither had changed since 9/20. On 10/9 the
+deployed agent still said `WEEK = 2`, so every daily report for three weeks
+checked a stale lineup and quoted Week 2 Vegas totals, and every run exited 0.
+Logs, metrics and traces all looked healthy. It was confidently wrong.
+
+**The design now.**
+
+```
+Google Sheet "DFS Lineup" ──read (Viewer)──► Cloud Run client ──create_session(state={"my_lineup": [...]})──► deployed agent
+                                                     │                                                         │
+                                       unreadable/empty → exit 1 → alert              lineup tools read state first
+                                                                                       week derived from the slate date
+```
+
+| Piece | Where | Behaviour |
+|---|---|---|
+| Week | `src/nfl_week.py` | The nflverse schedule week whose games span the slate's first kickoff, in **ET**. Between weeks (Tue/Wed) it's the *next* week. `WEEK` is an override only, used for replays and the eval harness |
+| Lineup source | `src/lineup_sheet.py` | Sheet `<SHEET_ID>`, column B, through ADC (the job's SA is a Viewer on the sheet) |
+| Lineup delivery | `gameday_agent/run_report.py` | A new session per run with `state={"my_lineup": [...]}`, deleted afterwards |
+| Lineup read | `gameday_agent/slate.py` `my_lineup_names(tool_context)` | Session state first, then `MY_LINEUP` env (only for `adk web`) |
+| Fallback report | `src/gameday_report.py` `build_report(names=...)` | Checks the same sheet lineup, and derives the week itself |
+
+**Tradeoff, chosen on purpose:** if the sheet can't be read or is empty, the
+client sends **no report** and exits 1, so the alert fires. The rule-based
+fallback covers "the agent broke" but still checks the right players. Nothing
+can cover "we don't know the players", and a stale roster reads exactly like
+a real one ("all 9 active"). A missing report gets noticed; a wrong one went
+unnoticed for three weeks.
+
+**Also fixed in passing:** `vegas_for_slate()` now treats a local schedule
+whose rows have no lines as missing, and falls back to live data. The 9/17
+parquet had every Week 5 game and no Week 5 totals.
+
+### Verified (2026-10-09, before deploy)
+
+- `nfl_week`: 10/9 gives 5, Mon 10/12 gives 5, Tue 10/13 gives 6, a Sunday-night
+  kickoff stored as Monday UTC gives 5, `WEEK=3` overrides, and it works without
+  the parquet through the nflverse CSV.
+- Sheet read as `agent-reports@` (impersonated) returns the 9 players. An empty
+  ID or a bad ID raises a readable `LineupError`. The laptop's own ADC gets 403
+  "insufficient scopes", which is expected (it has no Sheets scope).
+- `run_report.py --local --dry-run` with `MY_LINEUP` and `WEEK` blanked: the
+  lineup came only through session state, and the agent reported on the sheet's
+  players.
+- Eval harness `--no-judge`: 6/6 scenarios PASS, now passing the lineup through
+  session state with `MY_LINEUP` removed. Run one scenario at a time because of
+  Gemini 429s.
+- Deployed agent: `create_session(state=...)` returns a dict with `id`, the state
+  survives `get_session`, and `delete_session` works.
+
+### Deploy steps still to run (in order)
+
+1. **Remove `MY_LINEUP` and `WEEK` from `gameday_agent/.env`.** Delete or
+   comment them out. Don't leave them blank: an empty value is a 400 at deploy.
+   While they're present they get baked in again, and a request without state
+   would silently fall back to the stale roster.
+2. **Redeploy the agent in place**, keeping the same resource ID so
+   `AGENT_ENGINE_ID` doesn't change:
+   ```
+   adk deploy agent_engine --project advisor-agent-2026 --region us-central1 `
+     --agent_engine_id 3925664979730038784 --extra_packages src gameday_agent
+   ```
+3. **Rebuild the client image** (it now carries `nfl_week.py` and `lineup_sheet.py`):
+   ```bash
+   P=advisor-agent-2026; R=us-central1
+   IMG=$R-docker.pkg.dev/$P/agent-reports/reports:$(git rev-parse --short HEAD)
+   gcloud builds submit . --project $P --region $R --config deploy/cloudbuild.reports.yaml \
+     --service-account=projects/$P/serviceAccounts/report-builder@$P.iam.gserviceaccount.com \
+     --substitutions=_IMAGE=$IMG
+   ```
+4. **Point the job at the new image and the sheet, and drop the baked values:**
+   ```bash
+   gcloud run jobs update gameday-report --project $P --region $R --image $IMG \
+     --update-env-vars LINEUP_SHEET_ID=<SHEET_ID> \
+     --remove-env-vars WEEK,MY_LINEUP
+   gcloud run jobs update sleeper-report --project $P --region $R --image $IMG
+   ```
+5. **Dry-run in the cloud** with `--args=gameday_agent/run_report.py,--dry-run,--no-fallback`,
+   and check the log shows `lineup from sheet: 9 players` and Week 5 Vegas totals.
+6. Optional cleanup: remove the `iam.serviceAccountTokenCreator` grant your
+   user has on `agent-reports@`. It was added only for testing.
 
 Windows tasks "NFL DFS Gameday Report" and "Sleeper Dynasty Memo" are
 **disabled, not deleted**, so rolling back is a single click.
