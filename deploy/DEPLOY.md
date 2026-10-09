@@ -1,5 +1,7 @@
 # Deploying the gameday report to Google Cloud
 
+> **Superseded 2026-10-09** by `REPORTS-CLOUD.md`. This plan (rule-based report as a Cloud Run job) was never built; the agents replaced it.
+
 Goal: at **12:00 PM ET every Sunday**, a container wakes up, pulls the live
 DraftKings slate, and posts an availability / weather / news report to Discord.
 Your laptop is closed.

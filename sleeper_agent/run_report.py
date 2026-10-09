@@ -53,7 +53,6 @@ _load_agent_env()
 
 from watch_slate import load_env, send_discord  # noqa: E402
 
-from sleeper_agent.agent import root_agent  # noqa: E402
 
 QUERY = (
     "Give me my dynasty strategy read for right now. Am I a buyer or a seller, "
@@ -100,6 +99,11 @@ def run_agent_remote(resource: str, query: str) -> str:
 
 
 async def run_agent(query: str) -> str:
+    # Imported here, not at the top: the scheduled job only CALLS the deployed
+    # agent, and a top-level import dragged ADK, the tools and every data
+    # dependency into a client that needs none of them. The cloud image
+    # stays small, and only --local pays for the import.
+    from sleeper_agent.agent import root_agent
     from google.adk.runners import InMemoryRunner
     from google.genai import types
 
@@ -170,7 +174,12 @@ def main() -> int:
         print("-" * 60)
         return 0
 
-    send_discord(memo)
+    # send_discord() prints and returns False when no webhook is set. Fine
+    # at a terminal; on a schedule it is a silent non-delivery that exits 0.
+    # A run that delivered nothing has failed, so say so with the exit code.
+    if not send_discord(memo):
+        log("NOT DELIVERED: no DISCORD_WEBHOOK_URL")
+        return 1
     return 0
 
 

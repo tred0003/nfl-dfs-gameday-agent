@@ -1,0 +1,25 @@
+# One image, two Cloud Run jobs: gameday-report and sleeper-report. Each job
+# sets its own command, so the image does not pick an entrypoint.
+#
+# Why this exists: both reports used to run from Windows Task Scheduler on a
+# laptop. Twice that was the failure -- asleep at 12:30 on 9/29 (ran 3.5h
+# late), and on 10/6 Smart App Control blocked a pandas DLL and the job died
+# before it ever called the agent. The agents were always in the cloud; the
+# alarm clock and the delivery were not.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+COPY deploy/requirements-reports.txt .
+RUN pip install --no-cache-dir -r requirements-reports.txt
+
+# The src/ modules the clients and the gameday fallback import, and the two
+# client scripts. Not the agent packages: the clients call the DEPLOYED agents
+# (lazy import keeps --local working on a laptop without shipping them here).
+COPY src/dk_client.py src/predict_slate.py src/watch_slate.py \
+     src/gameday_report.py src/scoring.py ./src/
+COPY gameday_agent/run_report.py ./gameday_agent/
+COPY sleeper_agent/run_report.py ./sleeper_agent/
