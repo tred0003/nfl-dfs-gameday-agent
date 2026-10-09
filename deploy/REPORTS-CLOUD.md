@@ -27,15 +27,15 @@ All in project `advisor-agent-2026`, region `us-central1`.
 |---|---|---|
 | Image | `us-central1-docker.pkg.dev/advisor-agent-2026/agent-reports/reports` | `deploy/Dockerfile.reports`; one image, both jobs; no ADK inside |
 | Build | `deploy/cloudbuild.reports.yaml` | runs as `report-builder@` (logWriter, artifactregistry.writer, read on the cloudbuild bucket) |
-| Jobs | `gameday-report`, `sleeper-report` | 1 retry each; 600s / 900s timeout |
-| Schedules | `gameday-report-schedule` `30 12 * * *`, `sleeper-report-schedule` `30 12 * * 2` | America/New_York, same times the laptop used |
+| Jobs | `gameday-report`, `sleeper-report`, `gameday-canary` | 1 retry each; 600s / 900s / 600s timeout |
+| Schedules | `gameday-report-schedule` `30 12 * * *`, `sleeper-report-schedule` `30 12 * * 2`, `gameday-canary-schedule` `0 10 * * 4` | America/New_York; the two reports keep the laptop's times |
 | Secret | `discord-webhook` | mounted as `DISCORD_WEBHOOK_URL` |
 | Alert | "Scheduled agent report FAILED" | `run.googleapis.com/job/completed_execution_count`, `result=failed` > 0 |
 
 ## Three identities, three jobs
 
 - `report-builder@`: may build and push the image. Nothing else.
-- `report-scheduler@`: may **start** the two jobs (`run.invoker` on each job, not project-wide).
+- `report-scheduler@`: may **start** the three jobs (`run.invoker` on each job, not project-wide).
 - `agent-reports@`: what the job runs as. May call the agents (`aiplatform.user`) and read **one** secret.
 
 Splitting them is the point. If the job's identity leaks, it cannot rebuild
@@ -179,3 +179,21 @@ The first Phase 2 dry run exposed two older bugs, both "wrong report, exit 0":
    arrived mid-run with no content and was skipped, so a half-written report would
    have gone out. Clients now raise on error events (gameday falls back, dynasty fails
    visibly and alerts).
+
+## Thursday canary (added 2026-10-09)
+
+`gameday-canary` runs `gameday_agent/canary.py` every Thursday 10:00 ET, three
+days before the Sunday report matters. Same image, identity and secret as
+`gameday-report`. It asks the deployed agent to call all six tools and fails
+unless each returned `status: "ok"` with rows where rows are expected -- no
+fallback, because the daily report's fallback is exactly what would hide a
+broken agent. It posts a ✅/❌ verdict to Discord; a failed execution trips the
+existing alert (its filter covers every Cloud Run job in the project).
+
+First scheduled run (manual trigger, 10/9 18:54 UTC): attempt 1 hit a Gemini
+**429**, posted ❌ and exited 1; the automatic retry passed 6/6 two minutes
+later, so the execution succeeded and no alert fired. Same 429 as the 16:34
+daily run -- the canary's first finding is that quota, not tools, is the
+flakiest dependency.
+
+Test without posting: `gcloud run jobs execute gameday-canary --args=gameday_agent/canary.py,--dry-run --wait`
