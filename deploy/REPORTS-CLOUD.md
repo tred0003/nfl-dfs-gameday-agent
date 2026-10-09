@@ -160,3 +160,19 @@ parquet had every Week 5 game and no Week 5 totals.
 
 Windows tasks "NFL DFS Gameday Report" and "Sleeper Dynasty Memo" are
 **disabled, not deleted**, so rolling back is a single click.
+
+## Phase 2 — DEPLOYED 2026-10-09 (commits ec77d3d, 31f8db8)
+
+Live: agent redeployed in place (same resource ID), job image `reports:31f8db8`,
+gameday job has `LINEUP_SHEET_ID` and no `WEEK`/`MY_LINEUP`. Cloud dry run:
+`lineup from sheet: 9 players`, derived week 5, and all six implied totals in the
+report match the Week 5 lines exactly (SF 21.25 — the old baked Week 2 value was 29.0).
+
+The first Phase 2 dry run exposed two older bugs, both "wrong report, exit 0":
+1. **Last text wins.** The model writes sections between tool calls; the client
+   kept only the final one and sent a 397-character Vegas-only report. Clients now
+   join every non-partial text part, and the agent is told to write once, at the end.
+2. **A model 429 is an event, not an exception.** `error_code: _ResourceExhaustedError`
+   arrived mid-run with no content and was skipped, so a half-written report would
+   have gone out. Clients now raise on error events (gameday falls back, dynasty fails
+   visibly and alerts).
