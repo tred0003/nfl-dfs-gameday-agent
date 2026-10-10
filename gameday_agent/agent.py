@@ -12,11 +12,28 @@ from __future__ import annotations
 import os
 
 from google.adk.agents import LlmAgent
+from google.adk.models import Gemini
 from google.genai import types
 
 from .tools import TOOLS
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+
+# Gemini on Agent Platform is pay-as-you-go on SHARED capacity, so a 429 means
+# "busy right now", not "over your quota" -- it clears in seconds. The genai
+# SDK's default with no retry_options is to never retry, so one 429 used to
+# end the whole run: 2026-10-09 16:34 (daily report fell back to rule-based)
+# and 18:54 (canary failed, passed on the job-level retry two minutes later).
+# Backoff here keeps the retry inside the one Gemini call that failed instead
+# of re-running every tool and every earlier call. Worst case adds ~30 s
+# (2+4+8+16, jittered, capped at 30) -- far inside the client's 300 s timeout.
+RETRY = types.HttpRetryOptions(
+    attempts=5,                       # including the first call
+    initial_delay=2.0,
+    max_delay=30.0,
+    exp_base=2.0,
+    http_status_codes=[429, 500, 503, 504],
+)
 
 INSTRUCTION = """\
 You are a daily fantasy sports analyst monitoring one user's DraftKings NFL
@@ -112,7 +129,7 @@ the report, so narration of your process becomes noise in it.
 
 root_agent = LlmAgent(
     name="gameday_agent",
-    model=MODEL,
+    model=Gemini(model=MODEL, retry_options=RETRY),
     description=(
         "Checks a DraftKings NFL lineup for late-breaking injury, weather and "
         "Vegas changes before Sunday kickoff, and proposes replacements."
