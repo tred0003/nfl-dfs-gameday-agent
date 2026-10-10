@@ -1,4 +1,4 @@
-"""The six tools the agent can call.
+"""The tools the agent can call (news tools live in news.py).
 
 Ported from src/agent.py with one deliberate change: every tool returns a dict
 carrying a `status`, not a bare list.
@@ -802,6 +802,8 @@ def get_value_picks() -> dict:
     }
 
 
+from .news import get_team_news, search_news  # noqa: E402  (news imports tools lazily)
+
 TOOLS = [
     get_lineup_status,
     get_cb_matchups,
@@ -810,4 +812,6 @@ TOOLS = [
     find_replacements,
     get_notable_scratches,
     get_value_picks,
+    get_team_news,
+    search_news,
 ]

@@ -61,6 +61,8 @@ EXPECTED = {
     "find_replacements": "options",
     "get_notable_scratches": None,
     "get_value_picks": "picks",
+    "get_team_news": None,      # zero claims on a quiet week is legitimate
+    "search_news": "sources",   # grounded search must come back with sources
 }
 
 # Statuses that count as working, beyond "ok". The projection job runs Friday
@@ -75,7 +77,8 @@ ALSO_OK = {"get_value_picks": {"not_ready"}}
 CANARY_QUERY = (
     "This is a scheduled health check, not a real report. Call each of these "
     "tools exactly once: get_lineup_status, get_cb_matchups, get_slate_weather, "
-    "get_vegas_context, get_notable_scratches, get_value_picks, and "
+    "get_vegas_context, get_notable_scratches, get_value_picks, get_team_news, "
+    "search_news with query 'NFL injury news this week', and "
     "find_replacements with "
     "position WR and max_salary 5000. Then reply with one short line per tool "
     "saying whether it returned data."
