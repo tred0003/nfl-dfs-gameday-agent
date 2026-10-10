@@ -258,8 +258,17 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
-def verify(claims: list[dict], articles: list[dict], teams: list[str]) -> tuple[list[dict], int]:
-    """Keep claims whose quote is really in the cited article. Pure code."""
+def verify(claims: list[dict], articles: list[dict], teams: list[str],
+           team_of: dict[str, str] | None = None) -> tuple[list[dict], int]:
+    """Keep claims whose quote is really in the cited article. Pure code.
+
+    `team_of` (normalized name -> team, from the DK slate) overrides the team
+    the extractor wrote. The extractor tags by the article's team: a Saints
+    site story mentioning Justin Jefferson came back as a Saints claim. A
+    player the slate places on a team we did not ask about is dropped -- for
+    a Vikings DST that is exactly the Vikings' own receivers.
+    """
+    team_of = team_of or {}
     kept, dropped = [], 0
     for c in claims:
         i = c.get("article")
@@ -271,6 +280,11 @@ def verify(claims: list[dict], articles: list[dict], teams: list[str]) -> tuple[
             dropped += 1
             continue
         a = articles[i]
+        known = team_of.get(_norm(re.sub(r"\b(jr|sr|ii|iii|iv)\b\.?", "", c["player"], flags=re.I)))
+        if known is not None:
+            if known not in teams:
+                continue                      # real, but about a team we were not asked about
+            team = known
         kept.append({
             "player": c["player"], "team": team if team in teams else a["team"],
             "kind": c["kind"], "claim": c["claim"], "quote": c["quote"],
@@ -301,7 +315,13 @@ def get_team_news(tool_context: ToolContext = None) -> dict:
     coach_comment, other), a one-sentence claim, the exact quote it rests on,
     the source and a link. Every claim has been checked in code: its quote
     appears word for word in the article it cites. `is_my_player` marks claims
-    about a rostered player; the rest are about teammates.
+    about a rostered player. `team_role` says why that team was read:
+      "my_players_team"  -- the user's player or a teammate; a teammate out
+                            means more work for the user's player.
+      "my_dst_opponent"  -- the offense the user's DST faces; injuries there
+                            HELP the user's defense.
+    News about the DST's own team (its receivers, its QB) does not affect the
+    defense and is not fetched for it.
 
     The QUOTE is verified; the `claim` sentence is the extractor's summary and
     is not. If the two disagree, the quote is what happened -- report that.
@@ -324,7 +344,21 @@ def get_team_news(tool_context: ToolContext = None) -> dict:
 
     matched, _ = resolve_lineup(names, players)
     mine = players[players["name"].isin({m["name"] for m in matched})].drop_duplicates("name")
-    teams = sorted({ALIASES.get(t, t) for t in mine["team"].dropna()} & set(TEAMS))
+    # Skill players: read their own team. A DST: read the team it FACES. The
+    # first live run fetched the Vikings' own news for a Vikings DST and the
+    # agent wrote that Jefferson being questionable "could make the Saints'
+    # offense easier to defend" -- he plays for Minnesota.
+    roles: dict[str, str] = {}
+    for _, r in mine.iterrows():
+        team = ALIASES.get(r["team"], r["team"])
+        if r["position"] == "DST":
+            sides = [ALIASES.get(t, t) for t in str(r["game"]).replace("@", " ").split()]
+            opp = next((t for t in sides if t != team), None)
+            if opp:
+                roles.setdefault(opp, "my_dst_opponent")
+        else:
+            roles[team] = "my_players_team"
+    teams = sorted(set(roles) & set(TEAMS))
     if not teams:
         return {"status": "error", "message": "None of the rostered players are on this "
                 "slate, so there are no teams to read news for."}
@@ -365,13 +399,17 @@ def get_team_news(tool_context: ToolContext = None) -> dict:
                 "message": f"News was fetched but could not be read ({type(e).__name__}: "
                            f"{str(e)[:150]}). Say news could not be checked."}
 
-    claims, dropped = verify(raw, articles, teams)
+    team_of = {_norm(re.sub(r"\b(jr|sr|ii|iii|iv)\b\.?", "", n, flags=re.I)): ALIASES.get(t, t)
+               for n, t in players.loc[players["position"].ne("DST"), ["name", "team"]]
+               .drop_duplicates("name").itertuples(index=False)}
+    claims, dropped = verify(raw, articles, teams, team_of)
     mine_names = {n.lower() for n in mine["name"]}
     for c in claims:
         c["is_my_player"] = c["player"].lower() in mine_names
+        c["team_role"] = roles.get(c["team"], "my_players_team")
     return {
         "status": "ok",
-        "teams": teams,
+        "teams": {t: roles[t] for t in teams},
         "articles_read": len(articles),
         "claims": claims,
         # How many extracted claims failed the quote check and were dropped.
