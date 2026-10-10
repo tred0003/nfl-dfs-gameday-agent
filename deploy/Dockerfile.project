@@ -1,0 +1,25 @@
+# The project-slate Cloud Run job (src/project_slate.py): refresh this season's
+# data, project the DK main slate with the registered @champion model, append
+# the rows to BigQuery. Runs in fantasy-football-ml-503718, next to the model.
+#
+# All of src/ is copied, not a hand-picked list: predict_week pulls in most of
+# the pipeline at import time, and a missing module here is a 4-minute-deep
+# failure in the cloud instead of an error at build time. data/ is NOT copied --
+# the job pulls it from gs://.../raw/ at start, so the image never goes stale
+# against the data.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+COPY deploy/requirements-project.txt .
+RUN pip install --no-cache-dir -r requirements-project.txt
+
+COPY src/ ./src/
+
+# Fail the BUILD, not the 4 a.m. run, if an import is missing.
+RUN python -c "import sys; sys.path.insert(0, 'src'); import project_slate"
+
+ENTRYPOINT ["python", "src/project_slate.py"]
