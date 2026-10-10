@@ -60,7 +60,14 @@ EXPECTED = {
     "get_vegas_context": "teams",
     "find_replacements": "options",
     "get_notable_scratches": None,
+    "get_value_picks": "picks",
 }
+
+# Statuses that count as working, beyond "ok". The projection job runs Friday
+# evening and Sunday 11:00, so on a Thursday this slate has no projections yet
+# and the tool says "not_ready" -- correct, and still proof the BigQuery read
+# and the cross-project permission work. "error" still fails.
+ALSO_OK = {"get_value_picks": {"not_ready"}}
 
 # Explicit, because the normal question lets the model choose its tools and the
 # canary's whole point is that it must not. find_replacements gets fixed
@@ -68,7 +75,8 @@ EXPECTED = {
 CANARY_QUERY = (
     "This is a scheduled health check, not a real report. Call each of these "
     "tools exactly once: get_lineup_status, get_cb_matchups, get_slate_weather, "
-    "get_vegas_context, get_notable_scratches, and find_replacements with "
+    "get_vegas_context, get_notable_scratches, get_value_picks, and "
+    "find_replacements with "
     "position WR and max_salary 5000. Then reply with one short line per tool "
     "saying whether it returned data."
 )
@@ -88,6 +96,9 @@ def check(responses: list[dict]) -> list[tuple[str, bool, str]]:
             continue
         resp = by_name[tool]
         status = resp.get("status")
+        if status in ALSO_OK.get(tool, set()):
+            rows.append((tool, True, f"{status} (expected before the Friday run)"))
+            continue
         if status != "ok":
             msg = str(resp.get("message") or resp)[:150]
             rows.append((tool, False, f"status={status!r}: {msg}"))

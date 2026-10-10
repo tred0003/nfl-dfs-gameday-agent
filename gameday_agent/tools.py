@@ -35,6 +35,7 @@ from google.adk.tools import ToolContext
 from nfl_week import current_week
 from predict_slate import TEAM_FIXES, normalize_name, vegas_for_slate
 
+from .slate import _draft_group as slate_draft_group
 from .slate import espn_injuries, espn_scoreboard, my_lineup_names, slate
 
 
@@ -672,6 +673,125 @@ def get_notable_scratches(min_salary: int = 6000) -> dict:
     }
 
 
+# Written by the project-slate Cloud Run job in the ML project; this agent only
+# reads it. The query runs as a job in that project, which is the one place the
+# agent's identity has bigquery.jobUser -- plus READER on this one dataset.
+PROJECTIONS_TABLE = os.environ.get(
+    "PROJECTIONS_TABLE", "fantasy-football-ml-503718.dfs.projections")
+VALUE_PICKS_PER_POS = {"QB": 5, "RB": 5, "WR": 5, "TE": 5, "DST": 3}
+
+
+def get_value_picks() -> dict:
+    """Get the best salary values on this week's slate, from the ML model.
+
+    The agent does NOT run the model. A scheduled job (Friday evening and
+    Sunday 11:00 ET) projects the whole slate with the registered XGBoost
+    model and stores the result; this reads the latest run for this slate.
+
+    Returns the top 5 QB, RB, WR and TE by `value` and the top 3 defenses.
+
+    `value` = projection minus what the salary implies a typical player at
+    that price scores. Positive means the model likes him more than DK priced
+    him. `ceiling` is the model's 85th percentile, not a promise.
+
+    DEFENSES HAVE NO MODEL. Their projection is DK's average points scaled by
+    the Vegas line, a rule, and they are ranked by projected points per
+    $1,000. Say so whenever you list them -- never present a DST pick as a
+    model output.
+
+    `depth_chart` says where he sits among his OWN team's players at his
+    position: "top of depth chart", "behind 1 teammate(s)", and so on, or
+    "unknown". A pick who is not top of the depth chart -- a backup QB above
+    all -- is usually not a real value: the model is pricing a player who may
+    not start. Say so on that pick's line rather than recommending him.
+
+    `projected_at` is when the numbers were made. Injury news after that time
+    is not in them -- say how old they are.
+
+    status "not_ready" means this slate has not been projected yet (normal
+    before Friday evening); say that plainly and do not invent picks.
+    """
+    try:
+        from google.cloud import bigquery
+
+        dg = slate_draft_group()
+        client = bigquery.Client(project=PROJECTIONS_TABLE.split(".")[0])
+        q = f"""
+            SELECT * FROM `{PROJECTIONS_TABLE}`
+            WHERE draft_group_id = @dg AND run_id = (
+                SELECT run_id FROM `{PROJECTIONS_TABLE}`
+                WHERE draft_group_id = @dg ORDER BY run_ts DESC LIMIT 1)
+        """
+        cfg = bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("dg", "INT64", dg)])
+        df = client.query(q, job_config=cfg).to_dataframe()
+    except Exception as e:  # noqa: BLE001 -- any read failure is reported, not raised
+        return {
+            "status": "error",
+            "message": f"Projections could not be read ({type(e).__name__}: "
+                       f"{str(e)[:200]}). Do not list value picks.",
+        }
+
+    if df.empty:
+        return {
+            "status": "not_ready",
+            "draft_group_id": dg,
+            "message": "This slate has not been projected yet. The projection "
+                       "job runs Friday evening and Sunday 11:00 ET.",
+        }
+
+    run_ts = pd.to_datetime(df["run_ts"].iloc[0], utc=True)
+    age_h = (pd.Timestamp.now(tz="UTC") - run_ts).total_seconds() / 3600
+    live = df.dropna(subset=["projection"])  # ruled-out players carry no projection
+    skill = live[live["position"].ne("DST")].dropna(subset=["value"])
+    dst = live[live["position"].eq("DST")].assign(
+        pts_per_1k=lambda d: d["projection"] / d["salary"] * 1000)
+
+    # depth_rank in the table is a within-team-position PERCENTILE, lower is
+    # higher on the chart (3 QBs -> 0.33 / 0.67 / 1.0). A raw 1.0 means LAST,
+    # not first, which is exactly backwards from how anyone reads "rank 1" --
+    # so the model is never shown the number, only what it means.
+    ranked = df.dropna(subset=["depth_rank"])
+    def depth_chart(r) -> str:
+        if pd.isna(r["depth_rank"]):
+            return "unknown"
+        mates = ranked[ranked["team"].eq(r["team"]) & ranked["position"].eq(r["position"])]
+        ahead = int((mates["depth_rank"] < r["depth_rank"]).sum())
+        return "top of depth chart" if ahead == 0 else f"behind {ahead} teammate(s)"
+
+    def row(r, extra: dict | None = None) -> dict:
+        return {
+            "name": r["name"],
+            "team": r["team"],
+            "opponent": r["opp_team"],
+            "salary": int(r["salary"]),
+            "projection": round(float(r["projection"]), 1),
+            "ceiling": round(float(r["ceiling"]), 1) if pd.notna(r["ceiling"]) else None,
+            "depth_chart": depth_chart(r) if r["position"] != "DST" else "n/a",
+            "injury_status": _s(r["status"]),
+            **(extra or {}),
+        }
+
+    picks = {
+        pos: [row(r, {"value": round(float(r["value"]), 1)})
+              for _, r in skill[skill["position"].eq(pos)].nlargest(n, "value").iterrows()]
+        for pos, n in VALUE_PICKS_PER_POS.items() if pos != "DST"
+    }
+    picks["DST"] = [row(r, {"pts_per_1k": round(float(r["pts_per_1k"]), 2)})
+                    for _, r in dst.nlargest(VALUE_PICKS_PER_POS["DST"], "pts_per_1k").iterrows()]
+
+    return {
+        "status": "ok",
+        "week": int(df["week"].iloc[0]),
+        "draft_group_id": dg,
+        "projected_at": run_ts.isoformat(),
+        "hours_old": round(age_h, 1),
+        "model": df.loc[df["position"].ne("DST"), "method"].iloc[0],
+        "dst_method": "rule: DK average points x Vegas implied total (no model)",
+        "picks": picks,
+    }
+
+
 TOOLS = [
     get_lineup_status,
     get_cb_matchups,
@@ -679,4 +799,5 @@ TOOLS = [
     get_vegas_context,
     find_replacements,
     get_notable_scratches,
+    get_value_picks,
 ]

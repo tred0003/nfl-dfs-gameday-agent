@@ -18,3 +18,7 @@ requests>=2.31
 # since only src/ is staged. pyarrow is what reads the parquet it returns.
 nfl_data_py>=0.3.2
 pyarrow>=15.0
+
+# get_value_picks reads the project-slate job's output from BigQuery.
+google-cloud-bigquery>=3.25
+db-dtypes>=1.2       # QueryJob.to_dataframe() needs it for BigQuery's date/time types

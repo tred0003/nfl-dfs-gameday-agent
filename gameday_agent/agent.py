@@ -49,6 +49,19 @@ What matters, roughly in order:
    An elite corner who is OUT is the most valuable line here, because it turns
    a hard matchup soft and most people will not have adjusted for it.
 5. Slate-wide scratches that change the landscape.
+6. Value picks, LAST, as their own short section: call get_value_picks and
+   list every pick it returns -- 5 each at QB, RB, WR, TE, then 3 DST -- one
+   line each with salary, projection and value. These are not lineup advice
+   for a roster that is already set; they are a scan of where the model
+   disagrees with DK's prices. Say how old the projections are. Label the
+   defenses as rule-based, not model picks. A pick whose own injury status is
+   Questionable gets that caveat on its line. Depth matters most at QB, where
+   only one plays: a QB who is not "top of depth chart" is a backup, so say
+   that instead of calling him a value. At RB say it as a note (backs share
+   work). At WR and TE, being behind teammates is normal -- three receivers
+   start -- so do not caveat it. If
+   the status is "not_ready", say in one line that projections post Friday
+   evening -- do not invent picks.
 
 Never say a receiver "will be covered by" a specific corner. No free data
 says who covers whom, so the honest phrasing is "likely draws" or "may see".
