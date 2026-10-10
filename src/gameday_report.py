@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from dk_client import fetch_draftables, list_slates, pick_main_slate  # noqa: E402
 from nfl_week import current_week  # noqa: E402
-from predict_slate import normalize_name  # noqa: E402
+from predict_slate import resolve_lineup  # noqa: E402
 from watch_slate import load_env, send_discord  # noqa: E402
 
 # Availability tags, worst first. "D" (Doubtful) is nearer to Out than to
@@ -78,11 +78,9 @@ def build_report(week: int | None = None, dg: int | None = None,
 
     # ---------------------------------------------------------- your lineup
     if names:
-        want = {normalize_name(pd.Series([n]))[0]: n for n in names}
-        players["jn"] = normalize_name(players["name"])
-        mine = players[players["jn"].isin(want)].copy()
-
-        missing = set(want) - set(mine["jn"])
+        matched, missing = resolve_lineup(names, players)
+        mine = players[players["name"].isin({m["name"] for m in matched})] \
+            .drop_duplicates("name").copy()
         flagged = mine[mine["status"].isin(SEVERITY)].copy()
 
         if flagged.empty:
@@ -105,7 +103,11 @@ def build_report(week: int | None = None, dg: int | None = None,
                 lines.append(f"• {r['name']} ({r['position']}, {r['team']})")
 
         if missing:
-            lines.append(f"\n_Not found on this slate: {', '.join(want[m] for m in missing)}_")
+            lines.append(f"\n⚠️ **Not found on this slate: {', '.join(missing)}**")
+        for m in matched:
+            if m["also_possible"]:
+                lines.append(f"_Read \"{m['entry']}\" as {m['name']} (highest salary); "
+                             f"also fits: {', '.join(m['also_possible'])}_")
 
         my_teams = set(mine["team"].dropna())
     else:

@@ -53,6 +53,60 @@ def normalize_name(s: pd.Series) -> pd.Series:
     return out
 
 
+def resolve_lineup(entries: list[str], players: pd.DataFrame) -> tuple[list[dict], list[str]]:
+    """Match what the user typed in the lineup sheet to rows on the DK slate.
+
+    The sheet is edited on a phone, so it should accept "J. Jefferson" or
+    "J Jefferson" instead of the full name. Each entry is tried in order:
+
+      1. exact name after normalize_name ("Justin Jefferson", "Vikings")
+      2. a team abbreviation, meaning that team's DST ("MIN", "MIN DST")
+      3. first initial + last name ("J. Jefferson", "A Brown" -> A.J. Brown)
+
+    When the initial + last name fits more than one player, the HIGHEST-PRICED
+    one wins: a roster spot is far more likely to be the $8,000 Jefferson than
+    a $3,000 one. The other candidates are returned in `also_possible`, so a
+    wrong guess is visible in the report rather than silent.
+
+    Returns (matches, unmatched). Each match is
+    {"entry", "name", "guessed", "also_possible"}; `name` is the DK name.
+    """
+    p = players.drop_duplicates("name").copy()
+    p["jn"] = normalize_name(p["name"])
+    p = p.sort_values("salary", ascending=False)
+
+    matches, unmatched = [], []
+    for entry in entries:
+        key = normalize_name(pd.Series([entry]))[0]
+        hit = p[p["jn"].eq(key)]
+        guessed = False
+
+        if hit.empty:
+            abbr = re.sub(r"\s*(dst|d/st|def)\s*$", "", entry.strip(), flags=re.I).upper()
+            hit = p[p["position"].eq("DST") & p["team"].eq(abbr)]
+
+        if hit.empty:
+            parts = key.split()
+            if len(parts) >= 2 and len(parts[0]) == 1:
+                initial, last = parts[0], " ".join(parts[1:])
+                hit = p[p["jn"].str.endswith(" " + last) & p["jn"].str.startswith(initial)
+                        & p["position"].ne("DST")]
+                guessed = True
+
+        if hit.empty:
+            unmatched.append(entry)
+            continue
+        best = hit.iloc[0]
+        matches.append({
+            "entry": entry,
+            "name": best["name"],
+            "guessed": guessed,
+            "also_possible": [f"{r['name']} ({r['position']} {r['team']}, ${int(r['salary'])})"
+                              for _, r in hit.iloc[1:].iterrows()],
+        })
+    return matches, unmatched
+
+
 def vegas_for_slate(season: int, week: int) -> pd.DataFrame:
     """Implied team total per team for this week.
 

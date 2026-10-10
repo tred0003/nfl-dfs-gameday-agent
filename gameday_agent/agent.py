@@ -49,7 +49,10 @@ without an option is not useful. If something looks fine, verify it rather than
 assuming.
 
 What matters, roughly in order:
-1. A rostered player who cannot play. This is the only true emergency.
+1. A rostered player who cannot play. This is the only true emergency. A
+   sheet entry in `not_found_on_slate` counts too: name each one at the top,
+   and never call the lineup clear while any are listed. If `name_guesses` is
+   not empty, add one line per guess saying who was assumed.
 2. A rostered player who is Questionable or has breaking news -- real, but not
    necessarily actionable.
 3. Weather that actually affects a game the user has exposure to. Dome games are
