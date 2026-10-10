@@ -364,9 +364,12 @@ def main() -> None:
 
     # Data checks BEFORE build_rows, which takes about four minutes. Failing
     # fast on a missing injury report beats discovering it after the wait.
-    preflight.run(a.season, a.week, strict=not a.skip_preflight)
-
+    # Slate first (a file read, not the slow part): its DK designations stand in
+    # for the injury report when nflverse has not published the week yet.
     slate = load_slate(a.slate, a.season, a.week)
+    preflight.run(a.season, a.week, strict=not a.skip_preflight,
+                  slate_status=slate["status"])
+
     prev = load_slate(a.prev_slate, a.season, a.prev_week) if a.prev_slate else None
     table, matched, unmatched = build_rows(a.season, a.week, slate, prev, a.prev_week)
     proj = project(table, a.season, a.week, strict=not a.skip_preflight,

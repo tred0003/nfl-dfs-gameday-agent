@@ -102,15 +102,30 @@ def check_vegas(season: int, week: int, r: Result) -> None:
         r.add(OK, "vegas lines", f"{len(g)} games, all priced")
 
 
-def check_injuries(season: int, week: int, r: Result) -> None:
-    """No report is NOT the same as nobody hurt -- but fillna(0) makes it look that way."""
+def check_injuries(season: int, week: int, r: Result,
+                   slate_status: pd.Series | None = None) -> None:
+    """No report is NOT the same as nobody hurt -- but fillna(0) makes it look that way.
+
+    `slate_status` is the DK slate's own designation column. When the slate
+    carries one, predict_week.build_rows uses it AS the target week's injury
+    report (the `override`), so a missing nflverse week is not fatal then --
+    nflverse posts late, often after a Friday cloud run, and DK's designations
+    are the official ones. Zero players ruled out on the slate still fails:
+    that is the same "everyone healthy" trap from a different source.
+    """
     p = RAW / "injuries.parquet"
     if not p.exists():
         r.add(FATAL, "injury report", "injuries.parquet missing")
         return
     inj = pd.read_parquet(p)
     wk = inj[(inj.season == season) & (inj.week == week)]
-    if wk.empty:
+    ruled = (slate_status.isin(["OUT", "O", "IR", "D"]).sum()
+             if slate_status is not None else 0)
+    if wk.empty and ruled:
+        r.add(OK, "injury report",
+              f"nflverse has no {season} week {week} yet; using the DK slate's "
+              f"designations instead ({ruled} OUT/IR/Doubtful)")
+    elif wk.empty:
         have = inj[inj.season == season]["week"].max() if (inj.season == season).any() else None
         r.add(FATAL, "injury report",
               f"nothing for {season} week {week}"
@@ -245,11 +260,11 @@ def check_pool(pool: pd.DataFrame, r: Result) -> None:
 
 def run(season: int, week: int, table: pd.DataFrame | None = None,
         features: list[str] | None = None, pool: pd.DataFrame | None = None,
-        strict: bool = True) -> Result:
+        strict: bool = True, slate_status: pd.Series | None = None) -> Result:
     """Run every applicable check. Raises SystemExit on FATAL when strict."""
     r = Result()
     check_vegas(season, week, r)
-    check_injuries(season, week, r)
+    check_injuries(season, week, r, slate_status)
     check_participation(season, r)
     if table is not None and features:
         check_features(table, features, r)
