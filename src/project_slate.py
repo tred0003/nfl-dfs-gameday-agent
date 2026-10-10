@@ -53,6 +53,7 @@ import dk_client  # noqa: E402
 import fetch_nflverse  # noqa: E402
 import nfl_week  # noqa: E402
 import predict_week  # noqa: E402
+import suggest_lineup  # noqa: E402
 
 PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "fantasy-football-ml-503718")
 REGION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
@@ -221,6 +222,9 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="no GCS pushes, no BigQuery write")
     ap.add_argument("--local-data", action="store_true",
                     help="use data/raw as it is: no GCS pull, no nflverse refresh")
+    ap.add_argument("--post-lineups", action="store_true",
+                    help="after writing, post suggested lineups to Discord "
+                         "(Thursday and Sunday schedules; not Friday)")
     a = ap.parse_args()
     run_ts = datetime.now(timezone.utc)
     run_id = f"{run_ts:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:6]}"
@@ -256,8 +260,17 @@ def main() -> int:
         out.parent.mkdir(parents=True, exist_ok=True)
         rows.to_csv(out, index=False)
         log(f"dry run -- not written to BigQuery. rows -> {out}")
+        if a.post_lineups:
+            suggest_lineup.post(rows, dry_run=True)
         return 0
     write_bq(rows)
+    if a.post_lineups:
+        # After the write, so a failed post never costs the projections. A
+        # failed post still exits 1 so the job alert fires.
+        if not suggest_lineup.post(rows):
+            log("lineups NOT posted: no DISCORD_WEBHOOK_URL")
+            return 1
+        log("suggested lineups posted to Discord")
     return 0
 
 

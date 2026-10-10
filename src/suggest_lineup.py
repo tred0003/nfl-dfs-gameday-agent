@@ -36,12 +36,37 @@ SLOTS = ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DST"]
 
 
 def latest_run() -> pd.DataFrame:
+    """The newest run for THIS week's main slate.
+
+    Filtered on draft group, not just newest: on a Thursday before the job has
+    run, the newest row in the table is last week's slate, and a lineup of
+    players who already played would post without complaint.
+    """
     from google.cloud import bigquery
+    from dk_client import list_slates, pick_main_slate
+    dg = pick_main_slate(list_slates())
     sql = f"""
         SELECT * FROM `{TABLE}`
-        WHERE run_id = (SELECT run_id FROM `{TABLE}` ORDER BY run_ts DESC LIMIT 1)
+        WHERE run_id = (SELECT run_id FROM `{TABLE}` WHERE draft_group_id = @dg
+                        ORDER BY run_ts DESC LIMIT 1)
     """
-    return bigquery.Client(project=PROJECT).query(sql).to_dataframe()
+    cfg = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("dg", "INT64", dg)])
+    return bigquery.Client(project=PROJECT).query(sql, job_config=cfg).to_dataframe()
+
+
+def post(pool: pd.DataFrame, n: int = 3, dry_run: bool = False) -> bool:
+    """Solve and post. Called by project_slate.py right after it writes a run,
+    so the scheduled post never races the projections it depends on."""
+    lineups = optimize(playable(pool).dropna(subset=["projection"]), "projection",
+                       n_lineups=n)
+    if not lineups:
+        raise RuntimeError("optimizer found no valid lineup")
+    msg = fmt(lineups, pool)
+    if dry_run:
+        print(msg)
+        return True
+    return send_discord(msg)
 
 
 def playable(pool: pd.DataFrame) -> pd.DataFrame:
@@ -93,16 +118,8 @@ def main() -> int:
     load_env()
     pool = latest_run()
     if pool.empty:
-        raise SystemExit(f"no projections in {TABLE} yet")
-    lineups = optimize(playable(pool).dropna(subset=["projection"]), "projection",
-                       n_lineups=a.n)
-    if not lineups:
-        raise SystemExit("optimizer found no valid lineup")
-    msg = fmt(lineups, pool)
-    if a.dry_run:
-        print(msg)
-        return 0
-    return 0 if send_discord(msg) else 1
+        raise SystemExit(f"no projections for this week's slate in {TABLE} yet")
+    return 0 if post(pool, a.n, a.dry_run) else 1
 
 
 if __name__ == "__main__":
