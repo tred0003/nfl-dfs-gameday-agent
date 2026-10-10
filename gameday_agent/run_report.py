@@ -87,6 +87,7 @@ def _load_agent_env() -> None:
 _load_agent_env()
 
 from lineup_sheet import EXPECTED_SLOTS, LineupError, read_lineup  # noqa: E402
+from report_check import check as check_report, correct as correct_report  # noqa: E402
 from watch_slate import load_env, send_discord  # noqa: E402
 
 # Must match gameday_agent/slate.py LINEUP_STATE_KEY. Not imported from there:
@@ -178,7 +179,7 @@ def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
     return "\n\n".join(t.strip() for t in texts if t.strip())
 
 
-async def run_agent(lineup: list[str]) -> str:
+async def run_agent(lineup: list[str], responses: list[dict] | None = None) -> str:
     """Drive the ADK agent IN THIS PROCESS and return its final report.
 
     Used with --local, for testing a code change before deploying it. The
@@ -216,6 +217,9 @@ async def run_agent(lineup: list[str]) -> str:
         for part in event.content.parts:
             if getattr(part, "function_call", None):
                 tool_calls.append(part.function_call.name)
+            fr = getattr(part, "function_response", None)
+            if responses is not None and fr:
+                responses.append({"name": fr.name, "response": fr.response})
             if getattr(part, "text", None):
                 texts.append(part.text)
 
@@ -269,17 +273,30 @@ def main() -> int:
         # sheet still names real players, and the report will show who.
         log(f"note: expected {EXPECTED_SLOTS} players, sheet has {len(lineup)}")
 
+    # What each tool RETURNED, kept so report_check can hold the report to it.
+    responses: list[dict] = []
     try:
         if remote:
             log(f"calling deployed agent {resource.rsplit('/', 1)[-1]}")
-            report = run_agent_remote(resource, lineup)
+            report = run_agent_remote(resource, lineup, responses=responses)
         else:
             why = "--local" if a.local else "AGENT_ENGINE_ID unset"
             log(f"running agent in-process ({why})")
-            report = asyncio.run(asyncio.wait_for(run_agent(lineup), TIMEOUT_SECONDS))
+            report = asyncio.run(asyncio.wait_for(run_agent(lineup, responses),
+                                                  TIMEOUT_SECONDS))
         if not report:
             raise RuntimeError("agent returned an empty report")
         log(f"agent produced {len(report)} characters")
+
+        # Fact-check before delivery. A failed check does not block the post:
+        # the facts the model missed go on top, and the rest of its report
+        # stays. "REPORT CHECK FAILED" is the line to build a log metric on.
+        problems = check_report(report, responses)
+        if problems:
+            log(f"REPORT CHECK FAILED ({len(problems)}): " + " | ".join(problems))
+            report = correct_report(report, problems)
+        else:
+            log("report check passed")
     except Exception as e:
         log(f"agent failed: {type(e).__name__}: {e}")
         if a.no_fallback:

@@ -23,5 +23,5 @@ RUN pip install --no-cache-dir -r requirements-reports.txt
 COPY src/dk_client.py src/predict_slate.py src/watch_slate.py \
      src/gameday_report.py src/scoring.py \
      src/nfl_week.py src/lineup_sheet.py ./src/
-COPY gameday_agent/run_report.py gameday_agent/canary.py ./gameday_agent/
+COPY gameday_agent/run_report.py gameday_agent/canary.py gameday_agent/report_check.py ./gameday_agent/
 COPY sleeper_agent/run_report.py ./sleeper_agent/
