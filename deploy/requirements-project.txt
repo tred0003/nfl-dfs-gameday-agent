@@ -1,0 +1,22 @@
+# The project-slate Cloud Run job (src/project_slate.py): refresh data, build
+# features, score with the registered @champion artifact, write to BigQuery.
+#
+# The three model-path pins match requirements-serve.txt and model_card.json.
+# The serving image proved this laptop and the container agree to 0.000e+00;
+# letting these float is how that stops being true without anyone noticing.
+xgboost==3.2.0
+pandas==3.0.5
+numpy==2.4.6
+
+# Feature builders and the pipeline modules they import at top level
+pyarrow==25.0.0
+scikit-learn==1.9.0
+scipy==1.17.1
+pulp==3.3.2           # optimize.py, imported by predict_week at module load
+nfl_data_py>=0.3.2    # fetch_nflverse.update -- this season's stats/injuries/snaps
+requests>=2.31
+tzdata                # zoneinfo on a slim image has no system tz database
+
+google-cloud-storage==3.13.0
+google-cloud-bigquery>=3.25
+google-auth>=2.30

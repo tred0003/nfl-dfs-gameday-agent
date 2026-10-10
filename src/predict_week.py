@@ -131,7 +131,15 @@ def match_player_ids(slate: pd.DataFrame, weekly: pd.DataFrame, season: int) -> 
 
 # ------------------------------------------------------------------ features
 def build_rows(season: int, week: int, slate: pd.DataFrame,
-               prev_slate: pd.DataFrame | None, prev_week: int | None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+               prev_slate: pd.DataFrame | None, prev_week: int | None,
+               history: dict[int, pd.DataFrame] | None = None,
+               ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """`history` maps earlier weeks of THIS season to their DK slates, for salary
+    history the FantasyData CSVs do not cover. The cloud job (project_slate.py)
+    passes every slate it has saved; `prev_slate` is the one-week CLI form of
+    the same thing. Salary features shift by ROW, not by week, so a missing week
+    does not leave a gap -- it silently turns a 1-week change into a longer one.
+    """
     weekly = pd.read_parquet(RAW / "weekly.parquet")
     weekly[["season", "week"]] = weekly[["season", "week"]].astype("int64")
     # nothing from the target week or later -- as if it were before kickoff
@@ -160,9 +168,14 @@ def build_rows(season: int, week: int, slate: pd.DataFrame,
         })
 
     salaries = [matched.assign(season=season, week=week)[["player_id", "season", "week", "position", "salary"]]]
+    history = dict(history or {})
     if prev_slate is not None:
-        pm = match_player_ids(prev_slate, past, season).dropna(subset=["player_id"])
-        salaries.append(pm.assign(season=season, week=prev_week)[["player_id", "season", "week", "position", "salary"]])
+        history[prev_week] = prev_slate
+    for wk, hs in sorted(history.items()):
+        if wk >= week:
+            continue
+        pm = match_player_ids(hs, past, season).dropna(subset=["player_id"])
+        salaries.append(pm.assign(season=season, week=wk)[["player_id", "season", "week", "position", "salary"]])
 
     print("building features (base, batch 2, batch 3)...", flush=True)
     base = features.build(weekly_aug)
@@ -342,6 +355,51 @@ def project(table: pd.DataFrame, season: int, week: int,
     return target
 
 
+def build_pool(season: int, week: int, slate: pd.DataFrame,
+               prev: pd.DataFrame | None = None, prev_week: int | None = None, *,
+               history: dict[int, pd.DataFrame] | None = None,
+               model_dir: str | None = None, strict: bool = True,
+               ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Slate in, one projected row per player out: skill players from the model,
+    DST from the DK-FPPG x Vegas rule, ruled-out players blanked, `value` set.
+
+    Shared by main() and the cloud job (project_slate.py) so the two cannot
+    drift apart: the projections the agent reads are this function's output,
+    not a re-implementation of it.
+    """
+    # Data checks BEFORE build_rows, which takes about four minutes. Failing
+    # fast on a missing injury report beats discovering it after the wait.
+    # The slate's DK designations stand in for the injury report when nflverse
+    # has not published the week yet.
+    preflight.run(season, week, strict=strict, slate_status=slate["status"])
+
+    table, matched, unmatched = build_rows(season, week, slate, prev, prev_week, history)
+    proj = project(table, season, week, strict=strict, model_dir=model_dir)
+
+    skill = slate[slate["position"].isin(SKILL)].merge(
+        matched[["name", "team", "position", "player_id"]], on=["name", "team", "position"], how="left")
+    skill = skill.merge(proj[["player_id", "projection", "ceiling", "salary_implied_pts",
+                              "dkp_blended", "depth_rank"]],
+                        on="player_id", how="left")
+    dst = slate[slate["position"].eq("DST")].copy()
+    if dst["fd_projection"].notna().all():
+        dst["projection"] = dst["fd_projection"]  # FantasyData file: use its DST projection
+    else:
+        dst = project_dk_vegas(dst, season, week)[slate.columns.tolist() + ["projection"]]
+    pool = pd.concat([skill, dst], ignore_index=True)
+
+    # ruled out: DK status if the slate has one, else the official injury report
+    report = pd.read_parquet(RAW / "injuries.parquet")
+    report = report[report["season"].eq(season) & report["week"].eq(week)
+                    & report["report_status"].isin(["Out", "Doubtful"])]
+    ruled_out = pool["status"].isin(["OUT", "O", "IR", "D"]) | pool["player_id"].isin(report["gsis_id"])
+    pool.loc[ruled_out, "projection"] = np.nan
+    print(f"injury report for week {week}: {len(report)} Out/Doubtful"
+          + ("" if len(report) else " -- NOT PUBLISHED YET. Re-pull injuries and rerun before lock."))
+    pool["value"] = pool["projection"] - pool["salary_implied_pts"]
+    return pool, unmatched
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--season", type=int, required=True)
@@ -362,40 +420,10 @@ def main() -> None:
                          "print -- you just proceed knowing what is absent.")
     a = ap.parse_args()
 
-    # Data checks BEFORE build_rows, which takes about four minutes. Failing
-    # fast on a missing injury report beats discovering it after the wait.
-    # Slate first (a file read, not the slow part): its DK designations stand in
-    # for the injury report when nflverse has not published the week yet.
     slate = load_slate(a.slate, a.season, a.week)
-    preflight.run(a.season, a.week, strict=not a.skip_preflight,
-                  slate_status=slate["status"])
-
     prev = load_slate(a.prev_slate, a.season, a.prev_week) if a.prev_slate else None
-    table, matched, unmatched = build_rows(a.season, a.week, slate, prev, a.prev_week)
-    proj = project(table, a.season, a.week, strict=not a.skip_preflight,
-                   model_dir=a.model_dir)
-
-    skill = slate[slate["position"].isin(SKILL)].merge(
-        matched[["name", "team", "position", "player_id"]], on=["name", "team", "position"], how="left")
-    skill = skill.merge(proj[["player_id", "projection", "ceiling", "salary_implied_pts",
-                              "dkp_blended", "depth_rank"]],
-                        on="player_id", how="left")
-    dst = slate[slate["position"].eq("DST")].copy()
-    if dst["fd_projection"].notna().all():
-        dst["projection"] = dst["fd_projection"]  # FantasyData file: use its DST projection
-    else:
-        dst = project_dk_vegas(dst, a.season, a.week)[slate.columns.tolist() + ["projection"]]
-    pool = pd.concat([skill, dst], ignore_index=True)
-
-    # ruled out: DK status if the slate has one, else the official injury report
-    report = pd.read_parquet(RAW / "injuries.parquet")
-    report = report[report["season"].eq(a.season) & report["week"].eq(a.week)
-                    & report["report_status"].isin(["Out", "Doubtful"])]
-    ruled_out = pool["status"].isin(["OUT", "O", "IR", "D"]) | pool["player_id"].isin(report["gsis_id"])
-    pool.loc[ruled_out, "projection"] = np.nan
-    print(f"injury report for week {a.week}: {len(report)} Out/Doubtful"
-          + ("" if len(report) else " -- NOT PUBLISHED YET. Re-pull injuries and rerun before lock."))
-    pool["value"] = pool["projection"] - pool["salary_implied_pts"]
+    pool, unmatched = build_pool(a.season, a.week, slate, prev, a.prev_week,
+                                 model_dir=a.model_dir, strict=not a.skip_preflight)
 
     LINEUPS.mkdir(parents=True, exist_ok=True)
     stem = f"{a.season}_wk{a.week:02d}_v3"
