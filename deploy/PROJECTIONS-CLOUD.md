@@ -78,3 +78,38 @@ P=fantasy-football-ml-503718
 gcloud run jobs execute project-slate --project $P --region us-central1 --wait
 gcloud run jobs execute project-slate --project $P --region us-central1 --args=--dry-run --wait   # no writes
 ```
+
+## Suggested lineups to Discord (live 2026-10-12)
+
+`project_slate.py --post-lineups` posts right after the BigQuery write, so the
+post can never race the data it reads. Schedule:
+
+| Scheduler | When (ET) | Posts lineups? |
+|---|---|---|
+| `project-slate-thu` | Thu 09:00 (before the 10:00 canary) | yes |
+| `project-slate-fri` | Fri 19:00 | no |
+| `project-slate-sun` | Sun 11:00 ("could change") | yes |
+
+The flag rides in the scheduler body as a Cloud Run v2 override:
+`{"overrides":{"containerOverrides":[{"args":["--post-lineups"]}]}}`.
+
+Three things had to be true, and each failed once:
+
+1. **Cross-project secret.** The webhook lives in `advisor-agent-2026`; the job
+   runs in the ML project. The SA `project-slate@` got `secretAccessor` on it,
+   and the job mounts it as `DISCORD_WEBHOOK_URL`. gcloud rejected the
+   `projects/<name>/secrets/...` form ("not a valid secret name"); the
+   **project number** form worked: `projects/389876399573/secrets/discord-webhook:latest`.
+2. **Overrides need their own role.** `roles/run.invoker` lets a scheduler run a
+   job but NOT pass args. First trigger returned PERMISSION_DENIED (scheduler
+   status code 7) and the job never started. Fix: grant the scheduler SA
+   `roles/run.jobsExecutorWithOverrides` on the job only. Note this broke the
+   Sunday schedule too until the grant landed, since both now send a body.
+3. **Verified by a live trigger**, not by reading config: execution
+   `project-slate-k5x8b` ran with the arg, appended 513 rows, logged
+   "suggested lineups posted to Discord", exit 0.
+
+Known gap seen in that run: Monday's slate had no injury report yet ("0
+Out/Doubtful -- NOT PUBLISHED YET"), so the Thursday post for a fresh week
+leans on DK's own OUT/IR designations. Expected, but worth a caveat line in the
+post later.
