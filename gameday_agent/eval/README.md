@@ -33,6 +33,7 @@ numbers instead of one.
 | `rubric.py` | what "good" means, extracted from the agent's prompt so it can be scored |
 | `judge.py` | the LLM judge: a stronger model at temperature 0, scoring against the rubric |
 | `align.py` | **checks the judge against a human.** Without this the quality scores mean nothing |
+| `seeded.py` | checks the judge against **planted defects**: real reports broken one known way, so the right answer needs no grader |
 | `scoring.py` | trace, scorecard, baseline, and the gate |
 | `hand_runner.py` | the agent loop written out with no ADK, for reading |
 | `baseline.json` | the bar a change has to clear. Committed |
