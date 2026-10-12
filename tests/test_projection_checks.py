@@ -173,5 +173,34 @@ class PostGate(unittest.TestCase):
         send.assert_not_called()
 
 
+class WriteGate(unittest.TestCase):
+    """gate_write() keeps a bad run out of BigQuery, which the agent's value
+    picks read -- a bad table is worse than a missing one."""
+
+    ps = sl     # gate_write lives in suggest_lineup so tests skip the ML imports
+
+    def scrambled(self) -> pd.DataFrame:
+        p = healthy_pool()
+        p["projection"] = np.random.default_rng(1).permutation(p["projection"].to_numpy())
+        return p
+
+    def test_healthy_run_may_be_written(self):
+        with mock.patch.object(sl, "send_discord") as send:
+            self.assertTrue(self.ps.gate_write(healthy_pool(), notify=True))
+        send.assert_not_called()
+
+    def test_bad_run_is_refused_and_discord_told(self):
+        with mock.patch.object(sl, "send_discord", return_value=True) as send:
+            self.assertFalse(self.ps.gate_write(self.scrambled(), notify=True))
+        self.assertEqual(send.call_count, 1)
+        self.assertIn("withheld", send.call_args[0][0])
+
+    def test_bad_friday_run_is_refused_silently(self):
+        """Friday has no Discord post; the exit-1 alert is its only signal."""
+        with mock.patch.object(sl, "send_discord") as send:
+            self.assertFalse(self.ps.gate_write(self.scrambled(), notify=False))
+        send.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

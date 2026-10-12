@@ -72,6 +72,24 @@ def withhold(findings: list[Finding], dry_run: bool) -> None:
     raise ProjectionCheckFailed(why)
 
 
+def gate_write(rows: pd.DataFrame, notify: bool) -> bool:
+    """False if the run fails the pool sanity checks and must not be appended.
+
+    The lineup post is gated on the same checks, but the BigQuery table also
+    feeds the agent's get_value_picks tool, so a bad run has to stay out of the
+    table, not just out of Discord. notify=True also tells Discord (Thursday and
+    Sunday runs); the Friday run is silent and relies on the exit-1 alert.
+    """
+    found = check_pool(rows)
+    if not blockers(found):
+        return True
+    try:
+        withhold(found, dry_run=not notify)
+    except ProjectionCheckFailed:
+        pass    # withhold already printed the reasons
+    return False
+
+
 def post(pool: pd.DataFrame, n: int = 3, dry_run: bool = False) -> bool:
     """Solve and post. Called by project_slate.py right after it writes a run,
     so the scheduled post never races the projections it depends on."""

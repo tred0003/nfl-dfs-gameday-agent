@@ -113,3 +113,35 @@ Known gap seen in that run: Monday's slate had no injury report yet ("0
 Out/Doubtful -- NOT PUBLISHED YET"), so the Thursday post for a fresh week
 leans on DK's own OUT/IR designations. Expected, but worth a caveat line in the
 post later.
+
+## Sanity gate (2026-10-12, commits 69e1dab + write gate)
+
+`src/projection_checks.py` sits between the model and everything downstream.
+Two gates, same checks:
+
+1. **Before the BigQuery write** (`suggest_lineup.gate_write`, called from
+   `project_slate.main`). A run that fails is NOT appended: `dfs.projections`
+   also feeds the agent's `get_value_picks`, so a bad run in the table is worse
+   than a missing one. Thursday/Sunday (`--post-lineups`) also post a "withheld"
+   notice to Discord; Friday is silent and relies on the exit-1 job alert.
+2. **Before the Discord post** (`suggest_lineup.post`): pool checks again, then
+   per-lineup checks on the solved entries (9 players, legal positions, under the
+   cap, no duplicates, nobody ruled out, 60-200 projected pts).
+
+Blocks: <150 projected rows, projection outside 0-50, salary-vs-projection
+Spearman < 0.35, mixed week/model_version. Warns (rides under the lineups): a
+healthy player at $6,000+ with no projection (the Hollywood Brown name-match miss);
+unprojected OUT players are ignored. Calibrated on the real 10/12 run: 368
+projected, range 1.7-23.5, Spearman 0.72, lineups ~137 pts, zero findings.
+
+- **Tests:** `python -m unittest discover -s tests` -> 22 offline cases. Each breaks
+  one thing in a synthetic healthy slate and asserts which check fires; the real
+  optimizer solves the lineups. Run with `-W ignore` to hide pulp deprecation noise.
+- **Verified in the cloud:** image `project-slate:69e1dab`, dry run
+  `project-slate-vfwpm` (no false alarm on the live Week 6 pool, exit 0).
+  The BLOCK path has only been exercised by tests, not by a cloud run;
+  Thursday 09:00 is its first real use. The write gate is committed after 69e1dab
+  and needs one more image build to go live.
+- **Laptop gotcha:** Smart App Control blocks sklearn's `_target_encoder_fast` DLL, so
+  `import project_slate` fails locally (same class as the 10/6 pandas DLL). That is
+  why `gate_write` lives in `suggest_lineup.py`: it imports without the ML stack.

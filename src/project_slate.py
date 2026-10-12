@@ -263,6 +263,9 @@ def main() -> int:
         if a.post_lineups:
             suggest_lineup.post(rows, dry_run=True)
         return 0
+    if not suggest_lineup.gate_write(rows, notify=a.post_lineups):
+        log("SANITY CHECK FAILED: not writing this run to BigQuery")
+        return 1
     write_bq(rows)
     if a.post_lineups:
         # After the write, so a failed post never costs the projections. A
