@@ -28,6 +28,8 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from optimize import optimize  # noqa: E402
+from projection_checks import (Finding, blockers, check_lineups,  # noqa: E402
+                               check_pool, warnings)
 from watch_slate import load_env, send_discord  # noqa: E402
 
 PROJECT = os.environ.get("ML_PROJECT", "fantasy-football-ml-503718")
@@ -55,14 +57,37 @@ def latest_run() -> pd.DataFrame:
     return bigquery.Client(project=PROJECT).query(sql, job_config=cfg).to_dataframe()
 
 
+class ProjectionCheckFailed(RuntimeError):
+    """The projections or a solved lineup failed a sanity check; nothing was posted."""
+
+
+def withhold(findings: list[Finding], dry_run: bool) -> None:
+    """Tell Discord why there is no lineup, then fail the job so the alert fires.
+    A silent skip would look identical to 'the schedule did not run'."""
+    why = "\n".join(f"- {f.check}: {f.message}" for f in blockers(findings))
+    msg = f"**🛑 Suggested lineups withheld — projection sanity check failed**\n{why}"
+    print(msg)
+    if not dry_run:
+        send_discord(msg)
+    raise ProjectionCheckFailed(why)
+
+
 def post(pool: pd.DataFrame, n: int = 3, dry_run: bool = False) -> bool:
     """Solve and post. Called by project_slate.py right after it writes a run,
     so the scheduled post never races the projections it depends on."""
+    findings = check_pool(pool)
+    if blockers(findings):
+        withhold(findings, dry_run)
     lineups = optimize(playable(pool).dropna(subset=["projection"]), "projection",
                        n_lineups=n)
     if not lineups:
         raise RuntimeError("optimizer found no valid lineup")
+    findings += check_lineups(lineups)
+    if blockers(findings):
+        withhold(findings, dry_run)
     msg = fmt(lineups, pool)
+    if warnings(findings):
+        msg += "\n\n" + "\n".join(f"⚠️ {f.message}" for f in warnings(findings))
     if dry_run:
         print(msg)
         return True

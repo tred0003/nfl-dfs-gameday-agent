@@ -267,7 +267,12 @@ def main() -> int:
     if a.post_lineups:
         # After the write, so a failed post never costs the projections. A
         # failed post still exits 1 so the job alert fires.
-        if not suggest_lineup.post(rows):
+        try:
+            sent = suggest_lineup.post(rows)
+        except suggest_lineup.ProjectionCheckFailed:
+            log("SANITY CHECK FAILED: lineups withheld (details above)")
+            return 1
+        if not sent:
             log("lineups NOT posted: no DISCORD_WEBHOOK_URL")
             return 1
         log("suggested lineups posted to Discord")
