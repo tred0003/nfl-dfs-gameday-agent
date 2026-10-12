@@ -34,6 +34,7 @@ numbers instead of one.
 | `judge.py` | the LLM judge: a stronger model at temperature 0, scoring against the rubric |
 | `align.py` | **checks the judge against a human.** Without this the quality scores mean nothing |
 | `seeded.py` | checks the judge against **planted defects**: real reports broken one known way, so the right answer needs no grader |
+| `claims.py` | checks `news.check_claims` on labeled claim/quote pairs: wrong summaries replaced, good ones kept |
 | `scoring.py` | trace, scorecard, baseline, and the gate |
 | `hand_runner.py` | the agent loop written out with no ADK, for reading |
 | `baseline.json` | the bar a change has to clear. Committed |
@@ -113,6 +114,24 @@ programmatic check passed on that run; the judge caught it on grounding.
 
 Still open. The tool hands the model two similar numbers per team and the
 docstring does not say which one answers the question.
+
+**5. A blind spot in the judge, found by planting defects.** `seeded.py`
+breaks real reports one known way and checks that the judge's score drops.
+First run: 47/51 caught, no false alarms. Every miss was the same shape:
+`get_team_news` checks that each quote is really in the article, but not
+that the extractor's one-line claim says what the quote says. Plant a claim
+that inverts its quote ("expected to play" becomes "not expected to play"),
+let the report repeat it, and the judge scored grounded **4, 4, 4** -- the
+report matched its tool result exactly, so there was nothing to object to.
+
+A judge grounds the report against the evidence; it cannot catch a defect
+*inside* the evidence. So the fix went upstream: `news.check_claims` asks a
+second, narrow question of every claim -- does this quote support,
+contradict, or not state it? -- and code replaces anything short of
+"supports" with the quote itself. If that call fails, every claim becomes
+its quote. `claims.py`: 21/21 bad summaries replaced, 15/15 good ones kept,
+over 3 repeats. Re-judged through the fixed tool, the two missed cases went
+from 0/3 and 2/3 to 3/3 each.
 
 ## The instrument has its own noise floor
 
