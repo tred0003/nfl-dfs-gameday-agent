@@ -33,7 +33,9 @@ import asyncio
 import os
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -55,6 +57,7 @@ if hasattr(sys.stdout, "reconfigure"):
 import pandas as pd  # noqa: E402
 import requests  # noqa: E402
 
+import gameday_agent.news as news_mod  # noqa: E402
 import gameday_agent.tools as tools_mod  # noqa: E402
 from gameday_agent.slate import LINEUP_STATE_KEY  # noqa: E402
 from gameday_agent.agent import root_agent  # noqa: E402
@@ -99,6 +102,38 @@ def _apply_espn_overrides(injuries: pd.DataFrame, scenario: Scenario) -> pd.Data
         inj = pd.concat([inj, pd.DataFrame([row])], ignore_index=True)
 
     return inj
+
+
+# news.py binds its own slate/_gather/_client. Kept so a scenario that patches
+# them cannot leak its fake articles into the next scenario.
+_NEWS_ORIGINALS = (news_mod.slate, news_mod._gather, news_mod._client)
+
+
+def _news_articles(scenario: Scenario) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    return [{k: v for k, v in a.items() if k != "hours_ago"}
+            | {"published": now - timedelta(hours=a.get("hours_ago", 1))}
+            for a in scenario.news_articles]
+
+
+class _FakeSearchClient:
+    """Answers Google-grounded calls with the scenario's text; passes every
+    other call (news extraction, claim check) to the real client, so those
+    defenses run for real against the planted article."""
+
+    def __init__(self, real, answer: str):
+        self._real, self._answer = real, answer
+        self.models = self
+
+    def generate_content(self, **kw):
+        config = kw.get("config")
+        if any(getattr(t, "google_search", None) for t in (getattr(config, "tools", None) or [])):
+            web = SimpleNamespace(title="Fixture search result",
+                                  uri="https://example.com/eval-fixture")
+            meta = SimpleNamespace(grounding_chunks=[SimpleNamespace(web=web)])
+            return SimpleNamespace(text=self._answer,
+                                   candidates=[SimpleNamespace(grounding_metadata=meta)])
+        return self._real.models.generate_content(**kw)
 
 
 def _raise(*_a, **_kw):
@@ -178,6 +213,15 @@ async def _run_scenario(scenario: Scenario) -> Trace:
     # describe a game that is not on this fixture slate.
     tools_mod.vegas_for_slate = lambda *_a, **_kw: vegas
 
+    news_mod.slate, news_mod._gather, news_mod._client = _NEWS_ORIGINALS
+    if scenario.news_articles is not None:
+        articles = _news_articles(scenario)
+        news_mod.slate = tools_mod.slate
+        news_mod._gather = lambda *_a, **_kw: ([dict(a) for a in articles], [])
+    if scenario.search_answer is not None:
+        real = _NEWS_ORIGINALS[2]
+        news_mod._client = lambda: _FakeSearchClient(real(), scenario.search_answer)
+
     from google.adk.runners import InMemoryRunner
     from google.genai import types
 
@@ -186,7 +230,7 @@ async def _run_scenario(scenario: Scenario) -> Trace:
         app_name="gameday_eval", user_id="eval",
         state={LINEUP_STATE_KEY: list(scenario.lineup)},
     )
-    content = types.Content(role="user", parts=[types.Part(text=QUERY)])
+    content = types.Content(role="user", parts=[types.Part(text=scenario.query or QUERY)])
 
     trace = Trace()
     started = time.perf_counter()
@@ -290,7 +334,7 @@ async def _run_all(names, repeat: int, use_judge: bool, verbose: bool,
 
             verdict = None
             if use_judge:
-                verdict = judge(QUERY, trace.tool_calls, trace.tool_results,
+                verdict = judge(scenario.query or QUERY, trace.tool_calls, trace.tool_results,
                                 trace.final_text)
 
             result = build_result(scenario.name, trace, failures,
