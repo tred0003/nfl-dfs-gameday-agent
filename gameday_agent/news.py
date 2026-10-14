@@ -90,6 +90,13 @@ _CONTENT = "{http://purl.org/rss/1.0/modules/content/}encoded"
 # ----------------------------------------------------------------- fetching
 def _plain(text: str | None) -> str:
     text = re.sub(r"<[^>]+>", " ", html.unescape(text or ""))
+    # ProFootballTalk's RSS opens every item with its video player's ad config
+    # -- ~1,200 characters of JSON ("adManagerUrl", "profileId", ...) -- so the
+    # extractor, which reads the first TEXT_CHARS, saw ~600 characters of the
+    # actual story. Found 2026-10-14 when the injection screen flagged that
+    # machine config as text aimed at an automated reader: all 30 PFT items
+    # carried it. Flat JSON objects are dropped; prose has no use for them.
+    text = re.sub(r'\{"[^{}]{20,}\}', " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
