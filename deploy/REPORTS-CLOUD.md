@@ -1,5 +1,10 @@
 # Scheduled agent reports — off the laptop (built 2026-10-09)
 
+> **2026-10-15: the Sleeper dynasty agent was removed** to keep the project on
+> the DFS system. Its job, schedule and Agent Engine deployment are deleted;
+> the code is at git tag `archive/sleeper-agent`. Sleeper mentions below that
+> describe 9/29–10/9 are history, kept as written.
+
 Both agents (gameday, Sleeper dynasty) were always deployed on Agent Engine.
 What lived on the laptop was the **alarm clock** (Windows Task Scheduler) and
 the **thin client** that calls the agent and posts to Discord. That is where
@@ -25,17 +30,17 @@ All in project `advisor-agent-2026`, region `us-central1`.
 
 | Piece | Name | Notes |
 |---|---|---|
-| Image | `us-central1-docker.pkg.dev/advisor-agent-2026/agent-reports/reports` | `deploy/Dockerfile.reports`; one image, both jobs; no ADK inside |
+| Image | `us-central1-docker.pkg.dev/advisor-agent-2026/agent-reports/reports` | `deploy/Dockerfile.reports`; one image, every job; no ADK inside |
 | Build | `deploy/cloudbuild.reports.yaml` | runs as `report-builder@` (logWriter, artifactregistry.writer, read on the cloudbuild bucket) |
-| Jobs | `gameday-report`, `sleeper-report`, `gameday-canary` | 1 retry each; 600s / 900s / 600s timeout |
-| Schedules | `gameday-report-schedule` `30 12 * * *`, `sleeper-report-schedule` `30 12 * * 2`, `gameday-canary-schedule` `0 10 * * 4` | America/New_York; the two reports keep the laptop's times |
+| Jobs | `gameday-report`, `gameday-canary` | 1 retry each; 600s / 600s timeout |
+| Schedules | `gameday-report-schedule` `30 12 * * *`, `gameday-canary-schedule` `0 10 * * 4` | America/New_York; the report keeps the laptop's time |
 | Secret | `discord-webhook` | mounted as `DISCORD_WEBHOOK_URL` |
 | Alert | "Scheduled agent report FAILED" | `run.googleapis.com/job/completed_execution_count`, `result=failed` > 0 |
 
 ## Three identities, three jobs
 
 - `report-builder@`: may build and push the image. Nothing else.
-- `report-scheduler@`: may **start** the three jobs (`run.invoker` on each job, not project-wide).
+- `report-scheduler@`: may **start** the jobs (`run.invoker` on each job, not project-wide).
 - `agent-reports@`: what the job runs as. May call the agents (`aiplatform.user`) and read **one** secret.
 
 Splitting them is the point. If the job's identity leaks, it cannot rebuild
@@ -66,10 +71,10 @@ gcloud builds submit . --project $P --region $R --config deploy/cloudbuild.repor
   --service-account=projects/$P/serviceAccounts/report-builder@$P.iam.gserviceaccount.com \
   --substitutions=_IMAGE=$IMG
 gcloud run jobs update gameday-report --image $IMG --project $P --region $R
-gcloud run jobs update sleeper-report --image $IMG --project $P --region $R
+gcloud run jobs update gameday-canary --image $IMG --project $P --region $R
 ```
 
-Test without posting: `gcloud run jobs execute sleeper-report --args=sleeper_agent/run_report.py,--dry-run --wait`
+Test without posting: `gcloud run jobs execute gameday-report --args=gameday_agent/run_report.py,--dry-run --wait`
 
 ## Phase 2: nothing about the week or the lineup lives in the deployment
 

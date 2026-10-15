@@ -182,9 +182,6 @@ loosening the tolerance until everything passes.
 
 ## Still missing
 
-- `sleeper_agent` has no eval at all, and its `league_name` field is
-  commissioner-controlled text reaching the model with no injection defense
-  in its instruction. Same class of hole, narrower vector.
 - Nothing evaluates the **deployed** agent. Everything here runs in-process,
   so it grades the code rather than the thing that answers on Sunday.
 - No CI. The gate returns the right exit code and nothing calls it.
