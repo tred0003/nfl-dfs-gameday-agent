@@ -181,6 +181,37 @@ def build_replay_scenarios(season: int, week: int, count: int) -> list[Scenario]
     return out
 
 
+# Seconds to wait before each retry of a scenario that hit a Gemini 429.
+RETRY_WAITS = (30, 60, 120)
+
+
+def _is_quota_error(exc: BaseException) -> bool:
+    """True for a Gemini 429 anywhere in the chain. ADK re-raises the genai
+    ClientError as its own private _ResourceExhaustedError, so the class is
+    not something to import -- the code on the original error is."""
+    while exc is not None:
+        if getattr(exc, "code", None) == 429 or "RESOURCE_EXHAUSTED" in str(exc):
+            return True
+        exc = exc.__cause__
+    return False
+
+
+async def _run_with_retry(scenario: Scenario) -> Trace:
+    """A 429 is the quota talking, not the agent. The first cloud run passed
+    three scenarios and then lost the whole suite to one, so a quota error
+    reruns the scenario from scratch (new session, nothing carried over)
+    after a wait. Anything else, and a 429 that outlasts the waits, still
+    fails the run."""
+    for wait in (*RETRY_WAITS, None):
+        try:
+            return await _run_scenario(scenario)
+        except Exception as e:
+            if wait is None or not _is_quota_error(e):
+                raise
+            print(f"  Gemini 429 -- retrying {scenario.name} in {wait}s")
+            await asyncio.sleep(wait)
+
+
 async def _run_scenario(scenario: Scenario) -> Trace:
     if scenario.replay:
         from gameday_agent.eval.replay import replay_slate
@@ -329,7 +360,7 @@ async def _run_all(names, repeat: int, use_judge: bool, verbose: bool,
         print(f"\n=== {scenario.name} ===")
         print(f"    {scenario.description}")
         for i in range(repeat):
-            trace = await _run_scenario(scenario)
+            trace = await _run_with_retry(scenario)
             failures = [msg for check in scenario.checks if (msg := check(trace))]
 
             verdict = None
