@@ -55,8 +55,13 @@ CLAIM_CHECK_MODEL = os.environ.get("CLAIM_CHECK_MODEL", MODEL)
 # Engine in us-central1; its model calls go to the global endpoint, which
 # routes each one to a region with spare capacity. us-central1's shared pool
 # is what produced the 429s that outlasted every retry (eval, 2026-10-15).
-# Its own variable on purpose: `adk deploy` drops GOOGLE_CLOUD_LOCATION from
-# .env whenever --region is passed, so setting that one would do nothing.
+# Its own variable on purpose: GOOGLE_CLOUD_LOCATION means "where the agent
+# lives" to more than the genai client. Agent Engine's ADK template falls back
+# to it for the agent's resource ID and its telemetry's cloud.region
+# (vertexai/agent_engines/templates/adk.py), so pointing it at "global" would
+# mislabel the agent to fix the model. (An earlier version of this comment
+# said `adk deploy` drops it from .env. Wrong: it only stops it choosing the
+# deploy region; the value still reaches the running agent.)
 # Set GEMINI_LOCATION=us-central1 to roll back. agent.py and injection.py
 # (through _client) use the same value.
 GEMINI_LOCATION = os.environ.get("GEMINI_LOCATION", "global")

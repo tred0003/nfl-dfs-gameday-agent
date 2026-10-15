@@ -1,0 +1,56 @@
+# Deploy the gameday agent from the pipeline, not the laptop (trigger
+# `nfl-dfs-deploy`, manual only, runs as agent-deployer@).
+#
+# Why: both laptop deploy paths have failed on Windows itself -- Smart App
+# Control blocked a pandas DLL on 10/6 and the whole ffml python.exe on 10/15.
+# A clean container from the committed code is also more honest: what ships
+# is exactly what is in git, not whatever else sits in the working folder.
+#
+# Order is the point. The agent is only redeployed if the unit tests AND the
+# eval gate pass on this exact commit; a failed step stops the build.
+# Redeployed IN PLACE (same resource ID), so AGENT_ENGINE_ID in the clients
+# does not change.
+#
+#   gcloud builds triggers run nfl-dfs-deploy --project advisor-agent-2026 \
+#     --region us-central1 --branch master
+substitutions:
+  _AGENT_ENGINE_ID: '3925664979730038784'
+steps:
+  - id: unit-tests
+    name: python:3.11-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install --quiet --no-cache-dir --root-user-action=ignore -r deploy/requirements-ci.txt
+        python -m unittest discover -s tests
+
+  - id: eval-gate
+    name: python:3.11-slim
+    entrypoint: bash
+    env:
+      - GOOGLE_GENAI_USE_VERTEXAI=TRUE
+      - GOOGLE_CLOUD_PROJECT=$PROJECT_ID
+      - GOOGLE_CLOUD_LOCATION=us-central1
+    args:
+      - -c
+      - |
+        pip install --quiet --no-cache-dir --root-user-action=ignore -r gameday_agent/requirements.txt
+        python gameday_agent/eval/run_eval.py --no-judge
+
+  - id: deploy
+    name: python:3.11-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install --quiet --no-cache-dir --root-user-action=ignore -r gameday_agent/requirements.txt
+        cp gameday_agent/deploy.env gameday_agent/.env
+        # --otel_to_cloud keeps telemetry on; a redeploy without it silently
+        # drops it (REPORTS-CLOUD.md, Phase 2).
+        adk deploy agent_engine --project $PROJECT_ID --region us-central1 \
+          --agent_engine_id ${_AGENT_ENGINE_ID} --otel_to_cloud \
+          --extra_packages src gameday_agent
+timeout: 3600s
+options:
+  logging: CLOUD_LOGGING_ONLY
