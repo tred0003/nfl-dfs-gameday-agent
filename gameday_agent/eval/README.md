@@ -180,10 +180,26 @@ quality. That is the honest state of the instrument, not a defect in it, and
 it is the argument for adding scenarios with a narrower job rather than
 loosening the tolerance until everything passes.
 
+## CI (2026-10-15)
+
+Two Cloud Build triggers in `advisor-agent-2026`, both running as `ci-runner@`
+(log writer + Gemini caller, nothing else), connected to the private GitHub
+repo `tred0003/nfl-dfs`:
+
+| Trigger | When | What | Cost |
+|---|---|---|---|
+| `nfl-dfs-ci` | every push to `master` | `deploy/cloudbuild.ci.yaml`: compile every folder, 22 unit tests | free |
+| `nfl-dfs-eval` | on demand | `deploy/cloudbuild.eval.yaml`: this harness, `--no-judge` | Gemini calls |
+
+The eval is not on push because it costs money per run and a Gemini 429
+would fail a build for reasons unrelated to the commit. It calls the
+`global` endpoint and reruns a scenario after a 429 (`RETRY_WAITS`).
+
+    gcloud builds triggers run nfl-dfs-eval --project advisor-agent-2026 --region us-central1 --branch master
+
 ## Still missing
 
 - Nothing evaluates the **deployed** agent. Everything here runs in-process,
   so it grades the code rather than the thing that answers on Sunday.
-- No CI. The gate returns the right exit code and nothing calls it.
 - Stages 6 and 7: no tracing on the Agent Runtime deployments, and no path
   from a real Sunday run back into `scenarios.py`.
