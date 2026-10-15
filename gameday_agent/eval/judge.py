@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 
 from google.genai import types
 
+from ..news import GEMINI_LOCATION
 from .rubric import CRITERIA, to_percent
 
 # Deliberately not the agent's model. Override to compare judges, or to check
@@ -181,7 +182,7 @@ def _client():
         _CLIENT = genai.Client(
             vertexai=True,
             project=os.environ.get("GOOGLE_CLOUD_PROJECT", "advisor-agent-2026"),
-            location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
+            location=GEMINI_LOCATION,   # same endpoint as the agent it grades
         )
     return _CLIENT
 

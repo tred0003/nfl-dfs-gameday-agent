@@ -15,6 +15,7 @@ from google.adk.agents import LlmAgent
 from google.adk.models import Gemini
 from google.genai import types
 
+from .news import GEMINI_LOCATION
 from .tools import TOOLS
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
@@ -142,7 +143,8 @@ the report, so narration of your process becomes noise in it.
 
 root_agent = LlmAgent(
     name="gameday_agent",
-    model=Gemini(model=MODEL, retry_options=RETRY),
+    model=Gemini(model=MODEL, retry_options=RETRY,
+                 client_kwargs={"location": GEMINI_LOCATION}),
     description=(
         "Checks a DraftKings NFL lineup for late-breaking injury, weather and "
         "Vegas changes before Sunday kickoff, and proposes replacements."

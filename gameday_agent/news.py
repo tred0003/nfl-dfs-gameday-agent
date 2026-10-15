@@ -50,6 +50,16 @@ from .slate import my_lineup_names, slate
 
 MODEL = os.environ.get("NEWS_MODEL", os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
 CLAIM_CHECK_MODEL = os.environ.get("CLAIM_CHECK_MODEL", MODEL)
+
+# Where Gemini calls go -- NOT where the agent runs. The agent stays on Agent
+# Engine in us-central1; its model calls go to the global endpoint, which
+# routes each one to a region with spare capacity. us-central1's shared pool
+# is what produced the 429s that outlasted every retry (eval, 2026-10-15).
+# Its own variable on purpose: `adk deploy` drops GOOGLE_CLOUD_LOCATION from
+# .env whenever --region is passed, so setting that one would do nothing.
+# Set GEMINI_LOCATION=us-central1 to roll back. agent.py and injection.py
+# (through _client) use the same value.
+GEMINI_LOCATION = os.environ.get("GEMINI_LOCATION", "global")
 NEWS_HOURS = int(os.environ.get("NEWS_HOURS", "48"))
 PER_TEAM = 10            # newest articles kept per team, after de-duplication
 TEXT_CHARS = 1800        # per article, sent to extraction
@@ -256,7 +266,8 @@ def _client():
         from google.genai import types
         retry = types.HttpRetryOptions(attempts=5, initial_delay=2.0, max_delay=30.0,
                                        exp_base=2.0, http_status_codes=[429, 500, 503, 504])
-        _CLIENT = genai.Client(http_options=types.HttpOptions(retry_options=retry))
+        _CLIENT = genai.Client(location=GEMINI_LOCATION,
+                               http_options=types.HttpOptions(retry_options=retry))
     return _CLIENT
 
 

@@ -22,15 +22,15 @@ steps:
     env:
       - GOOGLE_GENAI_USE_VERTEXAI=TRUE
       - GOOGLE_CLOUD_PROJECT=$PROJECT_ID
-      # global, not us-central1: Gemini on Vertex draws on capacity shared
-      # across every customer in a region, and the first two cloud runs lost
-      # prompt_injection to a us-central1 429 that outlasted four minutes of
-      # retries. The global endpoint routes each call to a region with room.
-      - GOOGLE_CLOUD_LOCATION=global
+      # us-central1, matching the deployed agent. Gemini calls go to the
+      # global endpoint because the CODE says so (GEMINI_LOCATION in news.py),
+      # not because of this line -- leaving it at the region is what proves it.
+      - GOOGLE_CLOUD_LOCATION=us-central1
     args:
       - -c
       - |
         pip install --quiet --no-cache-dir --root-user-action=ignore -r gameday_agent/requirements.txt
+        python -c "from gameday_agent.agent import root_agent; from gameday_agent.news import _client; locs = {root_agent.model.api_client._api_client.location, _client()._api_client.location}; print('gemini endpoint:', locs); assert locs == {'global'}, locs"
         python gameday_agent/eval/run_eval.py ${_EVAL_ARGS}
 timeout: 1800s
 options:
