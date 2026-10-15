@@ -44,13 +44,50 @@ steps:
     args:
       - -c
       - |
-        pip install --quiet --no-cache-dir --root-user-action=ignore -r gameday_agent/requirements.txt
+        set -o pipefail
+        # The adk CLI imports vertexai to deploy; the agent's own requirements
+        # do not include it (the laptop env happened to). Same pin as
+        # requirements-reports.txt and the laptop's 10/9 deploy.
+        pip install --quiet --no-cache-dir --root-user-action=ignore \
+          -r gameday_agent/requirements.txt "google-cloud-aiplatform[agent_engines]==1.162.0"
         cp gameday_agent/deploy.env gameday_agent/.env
+        date -u +%Y-%m-%dT%H:%M:%SZ > /workspace/deploy_started
         # --otel_to_cloud keeps telemetry on; a redeploy without it silently
         # drops it (REPORTS-CLOUD.md, Phase 2).
         adk deploy agent_engine --project $PROJECT_ID --region us-central1 \
           --agent_engine_id ${_AGENT_ENGINE_ID} --otel_to_cloud \
-          --extra_packages src gameday_agent
+          --extra_packages src gameday_agent 2>&1 | tee /workspace/deploy.log
+        # `adk deploy` prints "Deploy failed: ..." and still exits 0. The first
+        # pipeline run (1f966f3c) went green having deployed nothing.
+        if grep -q "Deploy failed" /workspace/deploy.log; then exit 1; fi
+
+  # Do not trust the deploy's own word: read the live agent back and fail
+  # unless it was updated during this build and carries deploy.env's settings.
+  - id: verify-deployed
+    name: python:3.11-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install --quiet --no-cache-dir --root-user-action=ignore google-auth requests
+        python - <<'PY'
+        import google.auth, google.auth.transport.requests as tr
+        creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        s = tr.AuthorizedSession(creds)
+        url = ("https://us-central1-aiplatform.googleapis.com/v1/projects/$PROJECT_ID"
+               "/locations/us-central1/reasoningEngines/${_AGENT_ENGINE_ID}")
+        eng = s.get(url).json()
+        started = open("/workspace/deploy_started").read().strip()
+        env = {e["name"]: e.get("value") for e in eng["spec"]["deploymentSpec"].get("env", [])}
+        want = dict(l.split("=", 1) for l in open("gameday_agent/deploy.env").read().splitlines()
+                    if l.strip() and not l.startswith("#") and "=" in l)
+        want.pop("GOOGLE_CLOUD_PROJECT", None)   # adk keeps these out of the agent's env
+        print("updateTime", eng["updateTime"], "deploy started", started)
+        assert eng["updateTime"] >= started, "agent was not updated by this build"
+        wrong = {k: (env.get(k), v) for k, v in want.items() if env.get(k) != v}
+        assert not wrong, f"deployed env differs from deploy.env: {wrong}"
+        print("verified: agent updated in this build, env matches deploy.env")
+        PY
 timeout: 3600s
 options:
   logging: CLOUD_LOGGING_ONLY
