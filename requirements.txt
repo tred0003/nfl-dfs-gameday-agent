@@ -4,6 +4,7 @@ numpy>=1.24
 pyarrow>=15.0
 requests>=2.31
 scikit-learn>=1.4
+scipy>=1.11           # pandas' spearman corr (projection_checks); was only arriving via sklearn
 xgboost>=2.0
 pulp>=2.8            # lineup optimizer (integer program)
 matplotlib>=3.8

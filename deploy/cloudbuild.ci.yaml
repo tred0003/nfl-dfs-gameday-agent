@@ -1,0 +1,29 @@
+# CI: runs on every push to master (trigger `nfl-dfs-ci`, advisor-agent-2026).
+#
+# Free on purpose. Byte-compiling every source folder catches a syntax error
+# in a file no test imports; the unit tests are the sanity gate between the
+# model and Discord/BigQuery, solved by the real optimizer on a synthetic
+# slate. Nothing here calls Gemini or reads data/, so a push can never cost
+# money or hit a 429. The agent evals live in cloudbuild.eval.yaml.
+#
+# Run by hand, same as the trigger does:
+#   gcloud builds submit . --project advisor-agent-2026 --region us-central1 \
+#     --config deploy/cloudbuild.ci.yaml \
+#     --service-account=projects/advisor-agent-2026/serviceAccounts/ci-runner@advisor-agent-2026.iam.gserviceaccount.com
+steps:
+  - id: compile
+    name: python:3.11-slim
+    entrypoint: python
+    args: ['-m', 'compileall', '-q', 'src', 'gameday_agent', 'news_rag', 'tests', 'tf_sequence', 'gcp_lab', 'research', 'deploy']
+
+  - id: unit-tests
+    name: python:3.11-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install --quiet --no-cache-dir --root-user-action=ignore -r deploy/requirements-ci.txt
+        python -m unittest discover -s tests -v
+timeout: 600s
+options:
+  logging: CLOUD_LOGGING_ONLY

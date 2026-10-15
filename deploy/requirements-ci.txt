@@ -1,0 +1,13 @@
+# What the push-triggered CI build installs: only what tests/ imports.
+# The tests run the real optimizer (pulp) against a synthetic slate, so no
+# data, no credentials and no model calls -- which is what makes it safe and
+# free to run on every push. The Gemini-backed agent evals are a separate,
+# on-demand build (cloudbuild.eval.yaml) with the agent's own requirements.
+pandas>=2.0
+numpy>=1.24
+pulp>=2.8
+# projection_checks.check_pool calls Series.corr(method="spearman"), which
+# imports scipy at call time. Nothing imports scipy by name, so CI's first run
+# was the first place it was ever missing (14 of 22 tests errored).
+scipy>=1.11
+requests>=2.31

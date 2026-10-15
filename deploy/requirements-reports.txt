@@ -1,5 +1,5 @@
-# The scheduled CLIENTS for both deployed agents (Cloud Run jobs). Not the
-# agents' own dependencies -- those ship with each agent to Agent Engine.
+# The scheduled CLIENT for the deployed gameday agent (Cloud Run jobs). Not the
+# agents' own dependencies -- those ship with the agent to Agent Engine.
 #
 # A client asks the deployed agent, takes the answer, posts it to Discord.
 # It never imports ADK. The gameday client's rule-based fallback is the one

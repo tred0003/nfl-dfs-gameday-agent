@@ -1,0 +1,33 @@
+# The agent eval gate, on demand (trigger `nfl-dfs-eval`, manual only).
+#
+# Drives the real ADK agent against the synthetic fixtures in
+# gameday_agent/eval/fixtures.py, so it needs no data/ and no DK access --
+# but every scenario makes real Gemini calls. That is why it is not on the
+# push trigger: it costs money per run and Gemini 429s would fail builds
+# for reasons that have nothing to do with the commit.
+#
+# The exit code is the gate (run_eval.py): a failed check, or quality more
+# than the tolerance below eval/baseline.json, fails the build.
+#
+#   gcloud builds triggers run nfl-dfs-eval --project advisor-agent-2026 \
+#     --region us-central1 --branch master
+#   # with the LLM judge (scores quality against the baseline; costs more):
+#   ... --substitutions _EVAL_ARGS=
+substitutions:
+  _EVAL_ARGS: '--no-judge'
+steps:
+  - id: agent-eval
+    name: python:3.11-slim
+    entrypoint: bash
+    env:
+      - GOOGLE_GENAI_USE_VERTEXAI=TRUE
+      - GOOGLE_CLOUD_PROJECT=$PROJECT_ID
+      - GOOGLE_CLOUD_LOCATION=us-central1
+    args:
+      - -c
+      - |
+        pip install --quiet --no-cache-dir --root-user-action=ignore -r gameday_agent/requirements.txt
+        python gameday_agent/eval/run_eval.py ${_EVAL_ARGS}
+timeout: 1800s
+options:
+  logging: CLOUD_LOGGING_ONLY
