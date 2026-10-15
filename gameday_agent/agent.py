@@ -15,6 +15,7 @@ from google.adk.agents import LlmAgent
 from google.adk.models import Gemini
 from google.genai import types
 
+from .guards import collect_warnings, prepend_warnings, reset_warnings
 from .news import GEMINI_LOCATION
 from .tools import TOOLS
 
@@ -44,8 +45,9 @@ Your report goes to Discord and interrupts someone spending time with family.
 That is the constraint that should shape everything you write. Earn the
 interruption or keep it short.
 
-Investigate in whatever order makes sense. Start with the lineup. If a player is
-OUT or Doubtful, find replacements before you report the problem -- a warning
+Investigate in whatever order makes sense. Start with the lineup. A player who
+is OUT or Doubtful comes back with `replacement_options` already attached --
+name at least two of them, with salary, alongside the problem. A warning
 without an option is not useful. If something looks fine, verify it rather than
 assuming.
 
@@ -153,4 +155,9 @@ root_agent = LlmAgent(
     tools=TOOLS,
     # A status report should not be creative. Same value as the raw-SDK build.
     generate_content_config=types.GenerateContentConfig(temperature=0.2),
+    # The injection warning goes on top of the report every time, in code --
+    # see guards.py for the eval run that showed the instruction alone is 80%.
+    before_agent_callback=reset_warnings,
+    after_tool_callback=collect_warnings,
+    after_model_callback=prepend_warnings,
 )
