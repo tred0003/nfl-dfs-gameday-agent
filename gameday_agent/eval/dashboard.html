@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Eval</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --sunk: #f7f8fa; --text: #14161b; --muted: #5d6471; --faint: #8a919c;
+    --line: #e1e4e9; --accent: #2563eb; --accent-soft: #e8efff; --on-accent: #ffffff;
+    --ok: #15803d; --ok-soft: #e7f5ec; --warn: #a16207; --warn-soft: #fdf3d8;
+    --bad: #c2262e; --bad-soft: #fde9ea; --say: #6d3fc0; --say-soft: #f3edfd;
+    --k: #7c3aed; --s: #0f766e; --n: #b45309; --b: #be185d;
+    --shadow: 0 1px 2px rgba(16,24,40,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1014; --card: #161920; --sunk: #12151b; --text: #e7e9ee; --muted: #9ba3b0; --faint: #6f7783;
+      --line: #262b35; --accent: #5b8cff; --accent-soft: #17223a; --on-accent: #0e1014;
+      --ok: #4ade80; --ok-soft: #12261a; --warn: #fbbf24; --warn-soft: #2a220c;
+      --bad: #f87171; --bad-soft: #2c1416; --say: #c4a5ff; --say-soft: #211a33;
+      --k: #c4a5ff; --s: #5eead4; --n: #fbbf24; --b: #f9a8d4; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  code, .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
+
+  .top { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); }
+  .top-in { max-width: 1240px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .brand { font-weight: 700; font-size: 15px; }
+  .brand span { color: var(--muted); font-weight: 500; }
+  nav { display: flex; gap: 4px; }
+  nav a { padding: 6px 12px; border-radius: 8px; color: var(--muted); font-weight: 550; }
+  nav a.on { background: var(--accent-soft); color: var(--accent); }
+  nav a:hover { text-decoration: none; color: var(--text); }
+  .top .meta { margin-left: auto; color: var(--faint); font-size: 12px; }
+
+  main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 64px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+  h2 { font-size: 15px; margin: 0; }
+  h3 { font-size: 13px; margin: 0; }
+  .muted { color: var(--muted); } .faint { color: var(--faint); } .small { font-size: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 16px; }
+  .card-h { padding: 14px 16px 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .card-b { padding: 0 16px 16px; }
+  .say { margin: 0 16px 16px; background: var(--say-soft); border-radius: 8px; padding: 9px 12px; font-size: 12.5px; }
+  .say b { color: var(--say); }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow); }
+  .tile .v { font-size: 22px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .tile .l { font-size: 12px; color: var(--muted); }
+
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; background: var(--sunk); }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.click { cursor: pointer; } tr.click:hover td { background: var(--accent-soft); }
+
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .ok { background: var(--ok-soft); color: var(--ok); } .bad { background: var(--bad-soft); color: var(--bad); }
+  .warn { background: var(--warn-soft); color: var(--warn); } .neutral { background: var(--sunk); color: var(--muted); border: 1px solid var(--line); }
+  .dot { display: inline-block; width: 16px; text-align: center; font-weight: 700; }
+  .dot.y { color: var(--ok); } .dot.miss { color: var(--bad); } .dot.n { color: var(--faint); }
+
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 0 16px 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: var(--card); color: var(--muted); padding: 6px 12px; font: inherit; font-weight: 550; cursor: pointer; }
+  .seg button.on { background: var(--accent-soft); color: var(--accent); }
+  input[type=search] { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--card); color: var(--text); font: inherit; min-width: 220px; }
+
+  /* report detail */
+  .back { display: inline-block; margin-bottom: 10px; font-size: 13px; }
+  .head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .chip { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; font-size: 12px; }
+  .chip b { font-variant-numeric: tabular-nums; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .submitted { display: flex; flex-wrap: wrap; gap: 6px; }
+  .submitted span { background: var(--sunk); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; font-size: 12.5px; }
+  .submitted span.miss { background: var(--bad-soft); border-color: transparent; color: var(--bad); }
+  .bar { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 4px; min-width: 60px; }
+  .bar > div { height: 100%; background: var(--accent); }
+
+  .tool { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+  .tool > summary { list-style: none; cursor: pointer; padding: 10px 12px; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+  .tool > summary::-webkit-details-marker { display: none; }
+  .tool[open] > summary { background: var(--sunk); border-bottom: 1px solid var(--line); }
+  .tool .idx { width: 24px; height: 24px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 12px; display: grid; place-items: center; }
+  .tool .nm { font-weight: 650; } .tool .ab { color: var(--muted); font-size: 12px; }
+  .tool .args { font-size: 12px; color: var(--muted); }
+  .tool-b { padding: 10px 12px 12px; }
+  .viewbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+
+  .json { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px; line-height: 1.55; }
+  .json details { margin-left: 14px; } .json > details { margin-left: 0; }
+  .json summary { cursor: pointer; color: var(--muted); }
+  .json .row { margin-left: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .jk { color: var(--k); } .js { color: var(--s); } .jn { color: var(--n); } .jb { color: var(--b); } .jz { color: var(--faint); }
+  pre.raw { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 480px; overflow: auto; background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin: 0; font-size: 12px; }
+  .jtable { max-height: 480px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .jtable table td { font-size: 12.5px; white-space: nowrap; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+  .jtable th { position: sticky; top: 0; }
+
+  .check { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .check:last-child { border-bottom: 0; }
+  .check .ic { font-weight: 800; } .check .ic.p { color: var(--ok); } .check .ic.f { color: var(--bad); }
+  .check .rule { font-weight: 600; } .check .det { color: var(--muted); font-size: 12.5px; }
+  .check .prob { color: var(--bad); font-size: 12.5px; }
+
+  .report { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; padding: 14px; max-height: 640px; overflow-y: auto; }
+  .notice { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 9px 12px; font-size: 12.5px; margin-bottom: 12px; }
+
+  /* grading */
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+  .sticky { position: sticky; top: 64px; }
+  .crit { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .crit .q { font-size: 13px; margin: 3px 0 6px; }
+  .anchors { font-size: 12px; color: var(--muted); display: grid; gap: 2px; margin-bottom: 8px; }
+  .btns { display: flex; gap: 6px; }
+  .btns button { width: 40px; height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
+  .btns button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  textarea { width: 100%; min-height: 60px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); color: var(--text); font: inherit; padding: 8px; }
+  .primary { background: var(--accent); color: var(--on-accent); border: 1px solid var(--accent); padding: 9px 16px; border-radius: 8px; font: inherit; font-weight: 650; cursor: pointer; }
+  .primary:disabled { opacity: .45; cursor: default; }
+  td.d0 { color: var(--ok); font-weight: 700; } td.d1 { color: var(--warn); font-weight: 700; } td.d2 { color: var(--bad); font-weight: 700; }
+  .progress { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+  .progress > div { height: 100%; background: var(--accent); }
+  .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="top"><div class="top-in">
+  <div class="brand">Gameday agent <span>· evaluation</span></div>
+  <nav>
+    <a href="#overview" data-v="overview">Overview</a>
+    <a href="#reports" data-v="reports">Reports</a>
+    <a href="#grade" data-v="grade">Grade</a>
+  </nav>
+  <div class="meta" id="meta"></div>
+</div></div>
+
+<main>
+  <section id="v-overview" hidden></section>
+  <section id="v-reports" hidden></section>
+  <section id="v-report" hidden></section>
+  <section id="v-grade" hidden></section>
+</main>
+
+<script>
+/* ============================== helpers ============================== */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+const num = (x, d = 0) => x == null ? "–" : Number(x).toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
+const pct = (x) => x == null ? "–" : `${Math.round(x * 100)}%`;
+const usd = (x) => x == null ? "–" : (x < 0.1 ? `${(x * 100).toFixed(2)}¢` : `$${x.toFixed(3)}`);
+const avg = (xs) => { xs = xs.filter(x => x != null); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
+const get = async (u) => { const r = await fetch(u); const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status); return d; };
+const SHORT = { get_lineup_status: "LU", get_cb_matchups: "CB", get_slate_weather: "WX", get_vegas_context: "VG",
+  get_team_news: "NW", get_notable_scratches: "SC", get_value_picks: "VP", find_replacements: "FR", search_news: "SN" };
+let M = null;  // /api/meta
+
+function card(title, body, opts = {}) {
+  return `<div class="card">${title ? `<div class="card-h"><h2>${title}</h2>${opts.right || ""}</div>` : ""}
+    ${opts.raw ? body : `<div class="card-b">${body}</div>`}${opts.say ? `<div class="say"><b>Say it like this:</b> ${opts.say}</div>` : ""}</div>`;
+}
+const tile = (v, l) => `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+const statusPill = (s) => s === "ok" ? `<span class="pill ok">ok</span>` : s == null ? `<span class="pill neutral">–</span>` : `<span class="pill bad">${esc(s)}</span>`;
+
+/* ============================== router =============================== */
+async function route() {
+  const h = location.hash.replace(/^#/, "") || "overview";
+  const [view, ...rest] = h.split("/");
+  document.querySelectorAll("main > section").forEach(s => s.hidden = true);
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on",
+    a.dataset.v === (view === "report" ? "reports" : view)));
+  const sec = $(`v-${view}`) || $("v-overview");
+  sec.hidden = false;
+  sec.innerHTML = `<div class="empty">Loading…</div>`;
+  try {
+    if (view === "reports") await showReports(sec);
+    else if (view === "report") await showReport(sec, rest[0], rest.slice(1).map(decodeURIComponent));
+    else if (view === "grade") await showGrade(sec);
+    else await showOverview(sec);
+  } catch (e) { sec.innerHTML = `<div class="card"><div class="empty">Couldn't load: ${esc(e.message)}</div></div>`; }
+  window.scrollTo({ top: 0 });
+}
+window.addEventListener("hashchange", route);
+
+/* ============================== overview ============================= */
+async function showOverview(sec) {
+  const O = await get("/api/overview");
+  const rows = O.latest.rows;
+  const cp = rows.reduce((a, r) => a + Number(r.checks.split("/")[0]), 0), ct = rows.reduce((a, r) => a + Number(r.checks.split("/")[1]), 0);
+  const within = O.alignment.rows.filter(r => r.n).map(r => r.within1);
+  sec.innerHTML = `
+    <div class="head"><div><h1>Overview</h1>
+      <div class="muted small">Latest eval run <b>${esc(O.latest.run)}</b> (${esc(O.latest.at)}). Fixtures are synthetic and fixed, so runs compare.</div></div></div>
+    <div class="tiles">
+      ${tile(`${cp}/${ct}`, "scenario checks passed")}
+      ${tile(num(avg(rows.map(r => r.quality)), 1), `judge quality /100 · baseline ${num(O.baseline_quality, 1)}`)}
+      ${tile(`${rows.filter(r => r.core_used === 7).length}/${rows.length}`, "reports that used all 7 core tools")}
+      ${tile(num(avg(rows.map(r => r.tool_count)), 1), "tool calls per report")}
+      ${tile(num(avg(rows.map(r => r.tokens_total))), "tokens per report")}
+      ${tile(usd(avg(rows.map(r => r.cost_usd))), "agent cost per report")}
+      ${tile(usd(avg(O.latest.judge_costs)), "judge cost per report")}
+      ${tile(within.length ? pct(avg(within)) : "–", `you vs judge, within 1 · ${O.alignment.items} graded`)}
+    </div>
+    ${card("Latest eval run · click a scenario to open it", `<div class="scroll"><table>
+      <thead><tr><th>Scenario</th><th class="num">Checks</th><th class="num">Fact-check</th><th class="num">Quality</th>
+      ${M.tools.map(t => `<th class="num" title="${t}">${SHORT[t]}</th>`).join("")}
+      <th class="num">Calls</th><th class="num">Tokens</th><th class="num">Cost</th></tr></thead>
+      <tbody>${rows.map(r => evalGridRow(r)).join("")}</tbody></table></div>
+      <div class="faint small" style="margin-top:8px">${M.tools.map(t => `${SHORT[t]} ${t}`).join(" · ")}. ✗ = core tool not called · · = optional tool not needed.</div>`,
+      { say: `three numbers, never averaged. <i>Checks</i> are hard assertions on the text and the tool trace; <i>Quality</i> is an LLM judge (Gemini 2.5 Pro, temperature 0) on a 5-part rubric; <i>Trajectory</i> is what the agent did. A report can score 100 and still be broken: one early run invented three replacement receivers that read perfectly, and only the trace (no <code>find_replacements</code> call) caught it.` })}
+    <div class="cols">
+      ${card("Is the judge any good?", alignTable(O),
+        { say: `I graded reports blind, then compared. Agreement within one point per criterion, and bias (judge minus me). Disagreement is usually a rubric bug, so I rewrite the anchor, not argue with the judge. Separately, planted defects (<code>seeded.py</code>): 47/51 caught.` })}
+      ${card("Latest production reports", prodMini(O),
+        { right: `<a class="small" href="#reports">All reports →</a>`,
+          say: `every live report is fact-checked before delivery by five code rules (<code>report_check.py</code>), with a rule-based fallback if the agent fails, and stored per user with its tools, tokens and cost.` })}
+    </div>
+    ${card("Run history", `<div class="scroll"><table><thead><tr><th>Run</th><th class="num">Reports</th><th class="num">Checks</th>
+      <th class="num">Clean</th><th class="num">Quality</th><th class="num">Avg tools</th><th class="num">Avg secs</th>
+      <th class="num">Avg tokens</th><th class="num">Avg cost</th></tr></thead><tbody>
+      ${O.history.map(h => `<tr><td class="mono">${esc(h.run)}</td><td class="num">${h.reports}</td><td class="num">${h.checks_passed}/${h.checks_total}</td>
+        <td class="num">${h.clean}/${h.reports}</td><td class="num">${num(h.quality, 1)}</td><td class="num">${num(h.avg_tools, 1)}</td>
+        <td class="num">${num(h.avg_seconds, 1)}</td><td class="num">${num(h.avg_tokens)}</td><td class="num">${usd(h.avg_cost)}</td></tr>`).join("")}
+      </tbody></table></div>`, { say: `the instrument has a noise floor: identical code and fixtures spread up to ~28 quality points over three runs, so the gate tolerance is 10, one run never gates on quality, and only low-spread scenarios gate at all.` })}`;
+  sec.querySelectorAll("tr[data-href]").forEach(tr => tr.onclick = () => location.hash = tr.dataset.href);
+}
+
+function evalGridRow(r) {
+  const [stem, sc] = r.id.split("/");
+  return `<tr class="click" data-href="report/eval/${encodeURIComponent(stem)}/${encodeURIComponent(sc)}">
+    <td><b>${esc(r.who)}</b></td>
+    <td class="num"><span class="pill ${r.checks_ok ? "ok" : "bad"}">${r.checks}</span></td>
+    <td class="num">${r.rc_total ? `<span class="pill ${r.rc_passed === r.rc_total ? "ok" : "bad"}">${r.rc_passed}/${r.rc_total}</span>` : "–"}</td>
+    <td class="num">${num(r.quality, 1)}</td>
+    ${toolDots(r)}
+    <td class="num">${r.tool_count ?? "–"}</td><td class="num">${num(r.tokens_total)}</td><td class="num">${usd(r.cost_usd)}</td></tr>`;
+}
+function toolDots(r) {
+  const used = new Set(r.tools_called || []);
+  return M.tools.map(t => {
+    const core = M.core_tools.includes(t);
+    const on = r.tools_called ? used.has(t) : null;
+    if (on === null) return `<td class="num"><span class="dot n">?</span></td>`;
+    return `<td class="num"><span class="dot ${on ? "y" : core ? "miss" : "n"}" title="${t}">${on ? "✓" : core ? "✗" : "·"}</span></td>`;
+  }).join("");
+}
+
+function alignTable(O) {
+  const A = O.alignment;
+  const sub = A.items < M.min_useful
+    ? `${A.items} report(s) graded by both. Under ${M.min_useful} this isn't a measurement yet. <a href="#grade">Grade some →</a>`
+    : `${A.items} report(s) graded by both. Aligned = within one point ≥70% of the time, no bias of a point or more.`;
+  return `<div class="muted small" style="margin-bottom:8px">${sub}</div><div class="scroll"><table>
+    <thead><tr><th>Criterion</th><th class="num">n</th><th class="num">Exact</th><th class="num">Within 1</th><th class="num">Bias</th><th>Verdict</th></tr></thead>
+    <tbody>${A.rows.map(r => `<tr><td>${esc(r.name)}</td><td class="num">${r.n}</td><td class="num">${pct(r.exact)}</td>
+      <td class="num">${pct(r.within1)}</td><td class="num">${r.bias == null ? "–" : (r.bias > 0 ? "+" : "") + r.bias.toFixed(1)}</td>
+      <td>${r.n ? `<span class="pill ${r.flagged ? "bad" : "ok"}">${esc(r.verdict)}</span>` : `<span class="faint">not scored</span>`}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function prodMini(O) {
+  if (O.prod_error) return `<div class="muted small">Couldn't read Firestore: ${esc(O.prod_error)}</div>`;
+  if (!O.prod.length) return `<div class="muted small">No stored reports yet.</div>`;
+  return `<div class="scroll"><table><thead><tr><th>Date</th><th>User</th><th>Source</th><th class="num">Fact-check</th><th class="num">Tools</th><th class="num">Cost</th></tr></thead><tbody>
+    ${O.prod.map(p => `<tr class="click" onclick="location.hash='report/prod/${encodeURIComponent(p.who)}/${encodeURIComponent(p.date)}'">
+      <td>${esc(p.date)}</td><td><b>${esc(p.who)}</b></td><td>${srcPill(p.source)}</td><td class="num">${rcPill(p)}</td>
+      <td class="num">${p.core_used}/7</td><td class="num">${usd(p.cost_usd)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+const srcPill = (s) => s === "agent" ? `<span class="pill ok">agent</span>` : s === "fallback" ? `<span class="pill warn">fallback</span>` : `<span class="pill neutral">${esc(s)}</span>`;
+const rcPill = (p) => p.rc_total ? `<span class="pill ${p.rc_passed === p.rc_total ? "ok" : "bad"}">${p.rc_passed}/${p.rc_total}</span>`
+  : p.problems ? `<span class="pill bad">${p.problems} fixed</span>` : `<span class="pill neutral">–</span>`;
+
+/* ============================== reports ============================== */
+let REPORTS = null, FILTER = "all", QUERY = "";
+async function showReports(sec) {
+  REPORTS = await get("/api/reports");
+  sec.innerHTML = `
+    <div class="head"><div><h1>Reports</h1><div class="muted small">Every live report from Firestore and every scenario of every eval run. Click one to open it.</div></div></div>
+    <div class="card"><div class="card-h"><h2 id="rep-count"></h2></div>
+      <div class="toolbar">
+        <div class="seg" id="rep-seg">
+          <button data-f="all">All</button><button data-f="prod">Production</button><button data-f="eval">Eval runs</button>
+        </div>
+        <input type="search" id="rep-q" placeholder="Filter by user, scenario, date…">
+      </div>
+      ${REPORTS.prod_error ? `<div class="notice" style="margin:0 16px 12px">Couldn't read Firestore: ${esc(REPORTS.prod_error)}</div>` : ""}
+      <div class="scroll"><table>
+        <thead><tr><th>Date</th><th>Who / scenario</th><th>Type</th><th class="num">Checks</th><th class="num">Fact-check</th>
+        <th class="num">Quality</th><th class="num">Core tools</th><th class="num">Calls</th><th class="num">Tokens</th><th class="num">Cost</th></tr></thead>
+        <tbody id="rep-body"></tbody></table></div></div>`;
+  $("rep-seg").querySelectorAll("button").forEach(b => b.onclick = () => { FILTER = b.dataset.f; drawReports(); });
+  $("rep-q").oninput = (e) => { QUERY = e.target.value.toLowerCase(); drawReports(); };
+  $("rep-q").value = QUERY;
+  drawReports();
+}
+function drawReports() {
+  $("rep-seg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.f === FILTER));
+  let rows = [...(FILTER !== "eval" ? REPORTS.prod : []), ...(FILTER !== "prod" ? REPORTS.eval : [])];
+  if (QUERY) rows = rows.filter(r => `${r.who} ${r.date} ${r.id} ${r.label}`.toLowerCase().includes(QUERY));
+  $("rep-count").textContent = `${rows.length} report${rows.length === 1 ? "" : "s"}`;
+  $("rep-body").innerHTML = rows.map(r => {
+    const href = `report/${r.kind}/${r.id.split("/").map(encodeURIComponent).join("/")}`;
+    return `<tr class="click" data-href="${href}">
+      <td class="mono small">${esc(r.date)}</td>
+      <td><b>${esc(r.who)}</b>${r.kind === "eval" ? `<div class="faint small">${esc(r.id.split("/")[0])}</div>` : ""}</td>
+      <td>${r.kind === "prod" ? srcPill(r.source) : `<span class="pill neutral">eval</span>`}</td>
+      <td class="num">${r.checks ? `<span class="pill ${r.checks_ok ? "ok" : "bad"}">${r.checks}</span>` : "–"}</td>
+      <td class="num">${rcPill(r)}</td><td class="num">${num(r.quality, 1)}</td>
+      <td class="num">${r.has_trace || r.kind === "prod" ? `${r.core_used}/7` : "–"}</td>
+      <td class="num">${r.tool_count ?? "–"}</td><td class="num">${num(r.tokens_total)}</td><td class="num">${usd(r.cost_usd)}</td></tr>`;
+  }).join("") || `<tr><td colspan="10" class="empty">Nothing matches.</td></tr>`;
+  $("rep-body").querySelectorAll("tr[data-href]").forEach(tr => tr.onclick = () => location.hash = tr.dataset.href);
+}
+
+/* ============================ report detail ========================== */
+async function showReport(sec, kind, parts) {
+  const R = CURRENT = await get(`/api/report/${kind}/${parts.map(encodeURIComponent).join("/")}`);
+  const t = R.tokens || {};
+  const totalTok = t.input != null ? t.input + t.output + t.thinking : null;
+  const L = R.lineup;
+  const missing = new Set(L.not_found || []);
+
+  const lineupCard = card("Lineup", `
+    ${L.submitted.length ? `<h3 style="margin-bottom:6px">Submitted <span class="faint small">(${L.submitted.length} names, exactly as entered)</span></h3>
+      <div class="submitted">${L.submitted.map(n => `<span class="${missing.has(n) ? "miss" : ""}">${esc(n)}</span>`).join("")}</div>`
+      : `<h3 style="margin-bottom:6px">Submitted <span class="faint small">(not saved for this run; names below are what the lineup tool matched)</span></h3>`}
+    ${L.not_found.length ? `<div class="notice" style="margin-top:10px">${L.not_found.length} name(s) didn't match anyone on the slate: ${L.not_found.map(esc).join(", ")}.
+      ${Object.keys(L.name_guesses || {}).length ? `Guesses: ${Object.entries(L.name_guesses).map(([k, v]) => `${esc(k)} → ${esc(Array.isArray(v) ? v.join(" / ") : v)}`).join("; ")}` : ""}</div>` : ""}
+    <h3 style="margin:14px 0 6px">As matched on the slate ${statusPill(L.status)} <span class="faint small">from get_lineup_status</span></h3>
+    ${L.players.length ? `<div class="scroll"><table><thead><tr><th>Player</th><th>Pos</th><th>Team</th><th>Game</th><th class="num">Salary</th><th>Status</th></tr></thead><tbody>
+      ${L.players.map(p => { const st = String(p.injury_status ?? "None");
+        const cls = ["O", "OUT", "IR", "D", "DOUBTFUL"].includes(st.toUpperCase()) ? "bad" : st.toUpperCase() === "Q" ? "warn" : "ok";
+        return `<tr><td><b>${esc(p.name)}</b>${p.injury_detail ? `<div class="faint small">${esc(p.injury_detail)}</div>` : ""}</td>
+        <td>${esc(p.position)}</td><td>${esc(p.team)}</td><td class="small">${esc(p.game)}</td><td class="num">${p.salary ? "$" + num(p.salary) : "–"}</td>
+        <td><span class="pill ${cls}">${st === "None" ? "active" : esc(st)}</span></td></tr>`; }).join("")}
+      </tbody></table></div>` : `<div class="muted small">${L.message ? esc(L.message) : "No lineup tool result."}</div>`}
+    ${L.players.length ? `<div class="faint small" style="margin-top:6px">Total salary $${num(L.players.reduce((a, p) => a + (p.salary || 0), 0))} of $50,000.</div>` : ""}`);
+
+  const mc = R.model_calls || [];
+  const maxCost = Math.max(...mc.map(c => c.cost_usd || 0), 0.000001);
+  const costCard = card("Cost", `
+    <div class="tiles" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));margin-bottom:12px">
+      ${tile(usd(R.cost_usd), "agent, this report")}
+      ${R.judge_cost_usd != null ? tile(usd(R.judge_cost_usd), "judge, this report") : ""}
+      ${tile(num(totalTok), "tokens total")}
+      ${tile(num(t.model_calls ?? mc.length), "model calls")}
+    </div>
+    ${mc.length ? `<div class="scroll"><table><thead><tr><th>#</th><th>What the call did</th><th class="num">Input</th><th class="num">Output</th><th class="num">Thinking</th><th class="num">Cost</th></tr></thead><tbody>
+      ${mc.map((c, i) => `<tr><td>${i + 1}</td><td>${c.requested_tools.length ? `Asked for ${c.requested_tools.length} tool(s): <span class="small">${c.requested_tools.map(x => `<code>${esc(x)}</code>`).join(" ")}</span>` : ""}
+        ${c.wrote_text ? `${c.requested_tools.length ? "<br>" : ""}Wrote report text` : ""}${!c.requested_tools.length && !c.wrote_text ? "<span class='faint'>no content</span>" : ""}</td>
+        <td class="num">${num(c.input)}</td><td class="num">${num(c.output)}</td><td class="num">${num(c.thinking)}</td>
+        <td class="num">${usd(c.cost_usd)}<div class="bar"><div style="width:${Math.round(100 * (c.cost_usd || 0) / maxCost)}%"></div></div></td></tr>`).join("")}
+      </tbody></table></div>`
+      : `<div class="muted small">${t.input != null ? "Totals only: this report was saved before per-call costs were recorded." : "No token data: saved before 10/16."}</div>`}
+    <div class="faint small" style="margin-top:8px">${R.model || "gemini-2.5-flash"} at $${M.prices[R.model || "gemini-2.5-flash"]?.input}/1M input, $${M.prices[R.model || "gemini-2.5-flash"]?.output}/1M output (thinking billed as output), checked ${M.prices_checked}.
+      Tools cost nothing per call in tokens: the model pays to read their results on the next call. Gemini calls made inside a tool aren't counted.</div>`);
+
+  const toolsCard = card(`Tool calls · ${R.tool_calls.length}`, R.tool_calls.length ? R.tool_calls.map((c, i) => toolBlock(c, i)).join("")
+    : `<div class="muted small">${R.legacy ? "This report was stored before tool calls were recorded (10/16)." : "No tools were called."}</div>`,
+    { right: R.tool_calls.length ? `<span class="small"><a href="javascript:void 0" onclick="toggleAll(true)">Expand all</a> · <a href="javascript:void 0" onclick="toggleAll(false)">Collapse</a></span>` : "" });
+
+  const rc = R.report_check || [];
+  const checksCard = card("Checks", `
+    <h3>report_check.py <span class="faint small">· runs on every live report before it's delivered</span></h3>
+    <div style="margin-bottom:12px">${rc.length ? rc.map(c => `<div class="check"><div class="ic ${c.passed ? "p" : "f"}">${c.passed ? "✓" : "✗"}</div>
+      <div><div class="rule">${esc(c.rule)}</div><div class="det">${esc(c.detail)}</div>
+      ${(c.problems || []).map(p => `<div class="prob">→ ${esc(p)}</div>`).join("")}</div></div>`).join("")
+      : `<div class="muted small">Not recorded for this report.</div>`}</div>
+    ${R.scenario_checks ? `<h3>Scenario checks <span class="faint small">· this eval scenario's own assertions</span></h3>
+      <div class="check"><div class="ic ${R.scenario_checks.failures.length ? "f" : "p"}">${R.scenario_checks.failures.length ? "✗" : "✓"}</div>
+      <div><div class="rule">${R.scenario_checks.passed}/${R.scenario_checks.total} passed</div>
+      ${R.scenario_checks.failures.map(f => `<div class="prob">→ ${esc(f)}</div>`).join("")}</div></div>` : ""}
+    ${R.judge ? `<h3 style="margin-top:12px">LLM judge · ${num(R.judge.quality, 1)}/100</h3>
+      <table><tbody>${M.criteria.map(c => `<tr><td>${esc(c.name)}</td><td class="num"><b>${R.judge.scores[c.key] ?? "–"}</b>/5</td><td class="small muted">${esc(R.judge.reasons[c.key] || "")}</td></tr>`).join("")}</tbody></table>`
+      : R.judge_hidden ? `<div class="notice" style="margin-top:12px">The judge scored this report. Its scores stay hidden until you grade it yourself, so you aren't anchored. <a href="#grade">Grade it →</a></div>` : ""}`,
+    { say: `the fact-check is five rules over facts the tools already computed: the lineup tool ran; every unmatched name is named; every OUT/IR/Doubtful player is named; every injection warning is copied verbatim; and no "all clear" while any of that is true. If one fails, the report still goes out, with a correction block on top. Tone and judgment calls are the LLM judge's job, not a rule's.` });
+
+  const corrected = R.agent_text && R.agent_text !== R.text;
+  const reportCard = card("The report", `
+    ${R.agent_error ? `<div class="notice">${R.source === "fallback" ? "The agent failed, so this is the rule-based fallback. " : ""}${esc(R.agent_error)}</div>` : ""}
+    ${corrected ? `<div class="seg" style="margin-bottom:10px"><button class="on" data-t="sent">As delivered</button><button data-t="agent">Agent's original</button></div>` : ""}
+    <div class="report" id="rep-text">${md(R.text || "(empty)")}</div>`);
+
+  sec.innerHTML = `
+    <a class="back" href="#reports">← All reports</a>
+    <div class="head"><div>
+      <h1>${esc(R.title)}</h1><div class="muted">${esc(R.subtitle)}</div>
+      <div class="chips">
+        <span class="chip">${R.kind === "prod" ? srcPill(R.source) : `<span class="pill neutral">eval</span>`}</span>
+        <span class="chip">When <b>${esc(R.when)}</b></span>
+        <span class="chip">Model <b>${esc(R.model || "–")}</b></span>
+        ${R.agent ? `<span class="chip">Agent <b class="mono">${esc(R.agent)}</b></span>` : ""}
+        <span class="chip">Took <b>${num(R.elapsed_s, 1)}s</b></span>
+        <span class="chip">Tools <b>${R.tool_calls.length}</b></span>
+        <span class="chip">Cost <b>${usd(R.cost_usd)}</b></span>
+      </div></div></div>
+    <div class="cols">${lineupCard}${costCard}</div>
+    ${toolsCard}
+    <div class="cols">${checksCard}${reportCard}</div>`;
+
+  if (corrected) sec.querySelectorAll(".seg button[data-t]").forEach(b => b.onclick = () => {
+    sec.querySelectorAll(".seg button[data-t]").forEach(x => x.classList.toggle("on", x === b));
+    $("rep-text").innerHTML = md(b.dataset.t === "agent" ? R.agent_text : R.text);
+  });
+  sec.querySelectorAll(".viewbar").forEach(bindViewbar);
+  if (location.search.includes("expand")) toggleAll(true);
+}
+
+function toolBlock(c, i) {
+  const res = c.result;
+  const status = res && typeof res === "object" ? res.status : null;
+  const size = c.result_chars ?? JSON.stringify(res ?? null).length;
+  const args = c.args && Object.keys(c.args).length ? Object.entries(c.args).map(([k, v]) => `${esc(k)}=${esc(JSON.stringify(v))}`).join(", ") : "no arguments";
+  const tableable = firstTable(res);
+  return `<details class="tool">
+    <summary><span class="idx">${i + 1}</span>
+      <span><span class="nm">${esc(c.name)}</span> <span class="args mono">(${args})</span><div class="ab">${esc(M.tool_about[c.name] || "")}</div></span>
+      <span>${statusPill(status)} <span class="faint small">${num(size)} chars${c.truncated ? " · truncated" : ""}</span></span></summary>
+    <div class="tool-b">
+      <div class="viewbar" data-i="${i}">
+        <div class="seg">${tableable ? `<button data-m="table" class="on">Table</button>` : ""}<button data-m="tree" ${tableable ? "" : `class="on"`}>Tree</button><button data-m="raw">Raw JSON</button></div>
+        ${tableable ? `<span class="faint small">Table shows <code>${esc(tableable.key)}</code> (${tableable.rows.length} rows). Tree shows everything.</span>` : ""}
+      </div>
+      <div class="view"></div>
+    </div></details>`;
+}
+let CURRENT = null;  // the report on screen; the JSON views render from it
+function bindViewbar(bar) {
+  const i = Number(bar.dataset.i);
+  const block = bar.parentElement.querySelector(".view");
+  const details = bar.closest("details");
+  const render = (mode) => {
+    const res = currentResults()[i];
+    bar.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.m === mode));
+    if (mode === "raw") block.innerHTML = `<pre class="raw">${esc(typeof res === "string" ? res : JSON.stringify(res, null, 2))}</pre>`;
+    else if (mode === "table") { const t = firstTable(res); block.innerHTML = jsonTable(t.rows); }
+    else block.innerHTML = `<div class="json">${jtree(res, null, 0)}</div>`;
+  };
+  bar.querySelectorAll("button").forEach(b => b.onclick = () => render(b.dataset.m));
+  details.addEventListener("toggle", () => { if (details.open && !block.innerHTML) render(bar.querySelector("button.on").dataset.m); });
+}
+function currentResults() { return CURRENT.tool_calls.map(c => c.result); }
+function toggleAll(open) { document.querySelectorAll("details.tool").forEach(d => d.open = open); }
+
+/* JSON rendering: the biggest list of records becomes a table; anything else is a tree. */
+function firstTable(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  let best = null;
+  for (const [k, val] of Object.entries(v)) {
+    if (Array.isArray(val) && val.length && val.every(x => x && typeof x === "object" && !Array.isArray(x))) {
+      if (!best || val.length > best.rows.length) best = { key: k, rows: val };
+    }
+  }
+  return best;
+}
+function cell(x) {
+  if (x == null) return `<span class="jz">null</span>`;
+  if (typeof x === "object") return `<span class="mono small">${esc(JSON.stringify(x))}</span>`;
+  if (typeof x === "number") return `<span class="jn">${esc(x)}</span>`;
+  return esc(x);
+}
+function jsonTable(rows) {
+  // Identity columns first (who/what the row is), then the rest as they come.
+  const FIRST = ["name", "player", "position", "team", "opponent", "game", "salary", "status", "injury_status"];
+  const all = [...new Set(rows.flatMap(r => Object.keys(r)))];
+  const keys = [...FIRST.filter(k => all.includes(k)), ...all.filter(k => !FIRST.includes(k))];
+  return `<div class="jtable"><table><thead><tr>${keys.map(k => `<th>${esc(k)}</th>`).join("")}</tr></thead><tbody>
+    ${rows.map(r => `<tr>${keys.map(k => `<td title="${esc(typeof r[k] === "object" ? JSON.stringify(r[k]) : r[k])}">${cell(r[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+function jtree(v, key, depth) {
+  const k = key == null ? "" : `<span class="jk">${esc(key)}</span>: `;
+  if (v === null || v === undefined) return `<div class="row">${k}<span class="jz">null</span></div>`;
+  if (typeof v === "string") return `<div class="row">${k}<span class="js">"${esc(v)}"</span></div>`;
+  if (typeof v === "number") return `<div class="row">${k}<span class="jn">${v}</span></div>`;
+  if (typeof v === "boolean") return `<div class="row">${k}<span class="jb">${v}</span></div>`;
+  const isArr = Array.isArray(v);
+  const entries = isArr ? v.map((x, i) => [i, x]) : Object.entries(v);
+  const label = isArr ? `[${entries.length}]` : `{${entries.length}}`;
+  if (!entries.length) return `<div class="row">${k}<span class="jz">${isArr ? "[]" : "{}"}</span></div>`;
+  return `<details ${depth < 1 ? "open" : ""}><summary>${k}<span class="faint">${label}</span></summary>${entries.map(([kk, vv]) => jtree(vv, kk, depth + 1)).join("")}</details>`;
+}
+
+/* ============================== grading ============================== */
+let current = null, picked = {};
+async function showGrade(sec) {
+  const [O, N] = await Promise.all([get("/api/overview"), get("/api/grade/next")]);
+  current = N.item; picked = {};
+  const need = M.min_useful;
+  sec.innerHTML = `
+    <div class="head"><div><h1>Grade reports</h1>
+      <div class="muted small">You've graded ${O.graded}. ${O.to_grade} judged report(s) waiting.
+        ${O.graded < need ? `Grade at least ${need} before the comparison means anything.` : "Enough for a first read on the judge; more is better."}</div>
+      <div class="progress" style="width:280px"><div style="width:${Math.min(100, O.graded / need * 100)}%"></div></div></div></div>
+    <div class="say" style="margin:0 0 16px"><b>Why blind:</b> an LLM judge gives a confident number for anything. Its score only means something once a human grades the same reports independently, so the judge's scores stay on the server until you save yours.</div>
+    ${!current ? card("", `<div class="empty">Nothing left to grade. Run <code>python gameday_agent/eval/run_eval.py</code> for fresh reports.</div>`) : `
+    <div class="grid2">
+      <div class="card sticky"><div class="card-h"><div><h2>${esc(current.scenario)}</h2><div class="muted small">${esc(current.desc)}</div></div>
+        <a class="small" href="${current.detail_link}" target="_blank">Open full report ↗</a></div>
+        <div class="card-b"><div class="report" style="max-height:62vh">${md(current.report || "(empty report)")}</div>
+        <div class="faint small" style="margin-top:8px">Tools called: ${current.tool_calls.map(c => `<code>${esc(c.name)}</code>`).join(" ")}</div></div></div>
+      <div>
+        <div class="card" id="g-form"><div class="card-h"><h2>Your scores</h2><span class="faint small">${N.remaining} left</span></div><div class="card-b">
+          ${M.criteria.map(c => `<div class="crit" data-key="${c.key}"><h3>${esc(c.name)} <span class="faint small">weight ${c.weight}</span></h3>
+            <div class="q">${esc(c.question)}</div>
+            <div class="anchors"><span><b>1</b> = ${esc(c.anchor_1)}</span><span><b>5</b> = ${esc(c.anchor_5)}</span></div>
+            <div class="btns">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-n="${n}">${n}</button>`).join("")}</div></div>`).join("")}
+          <label class="small muted" for="g-note">Note (optional): why you scored it that way</label>
+          <textarea id="g-note"></textarea>
+          <div style="margin-top:10px"><button class="primary" id="g-save" disabled>Save and reveal the judge</button></div>
+        </div></div>
+        <div class="card" id="g-reveal" hidden></div>
+      </div>
+    </div>`}`;
+  if (!current) return;
+  sec.querySelectorAll(".crit").forEach(box => box.querySelectorAll("button").forEach(b => b.onclick = () => {
+    picked[box.dataset.key] = Number(b.dataset.n);
+    box.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    $("g-save").disabled = Object.keys(picked).length !== M.criteria.length;
+  }));
+  $("g-save").onclick = async () => {
+    $("g-save").disabled = true;
+    const r = await fetch("/api/grade", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: current.id, scores: picked, note: $("g-note").value }) });
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || "save failed"); $("g-save").disabled = false; return; }
+    $("g-form").hidden = true;
+    const rv = $("g-reveal"); rv.hidden = false;
+    rv.innerHTML = `<div class="card-h"><h2>You vs the judge</h2><span class="small">You <b>${d.yours_percent.toFixed(1)}</b> · Judge <b>${d.judge_percent.toFixed(1)}</b></span></div>
+      <div class="scroll"><table><thead><tr><th>Criterion</th><th class="num">You</th><th class="num">Judge</th><th>Judge's reason</th></tr></thead><tbody>
+      ${M.criteria.map(c => { const y = d.yours[c.key], j = d.judge[c.key]; const df = j == null ? "" : `d${Math.min(2, Math.abs(y - j))}`;
+        return `<tr><td>${esc(c.name)}</td><td class="num">${y}</td><td class="num ${df}">${j ?? "–"}</td><td class="small muted">${esc(d.reasons[c.key] || "")}</td></tr>`; }).join("")}
+      </tbody></table></div><div class="card-b" style="padding-top:12px"><button class="primary" onclick="route()">Next report</button></div>`;
+  };
+}
+
+/* ================================ boot =============================== */
+(async () => {
+  M = await get("/api/meta");
+  $("meta").textContent = `agent ${M.agent_model} · judge ${M.judge_model}`;
+  route();
+})();
+</script>
+</body>
+</html>

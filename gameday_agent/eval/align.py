@@ -221,12 +221,14 @@ def import_sheet() -> int:
     return 1 if bad else 0
 
 
-def report() -> int:
-    human = _load_human()
-    if not human:
-        print("No human scores yet. Run with --sample 8 first.")
-        return 1
+def alignment(human: dict | None = None) -> dict:
+    """Your scores vs the judge's, per criterion. Shared by report() and dashboard.py.
 
+    Returns {"items": n reports scored by both, "rows": [...]} where each row is
+    {key, name, n, exact, within1, bias, verdict, flagged}. exact/within1 are
+    fractions; bias is judge minus human (positive = the judge grades softer).
+    """
+    human = _load_human() if human is None else human
     judged = {i["id"]: i for i in _all_judged_results()}
 
     # criterion -> list of (human, judge)
@@ -240,43 +242,55 @@ def report() -> int:
             if theirs is not None and key in pairs:
                 pairs[key].append((mine, theirs))
 
-    total = sum(len(v) for v in pairs.values())
-    if not total:
+    rows = []
+    for c in CRITERIA:
+        vals = pairs[c.key]
+        row = {"key": c.key, "name": c.name, "n": len(vals), "exact": None,
+               "within1": None, "bias": None, "verdict": "not scored", "flagged": False}
+        if vals:
+            n = len(vals)
+            row["exact"] = sum(1 for h, j in vals if h == j) / n
+            row["within1"] = sum(1 for h, j in vals if abs(h - j) <= 1) / n
+            # Signed, judge minus human. Positive means the judge is the softer
+            # grader. A consistent bias is easy to live with and easy to fix in
+            # the anchors; scatter with no bias is the harder problem, because
+            # there is nothing to correct -- the criterion is just ambiguous.
+            row["bias"] = statistics.mean(j - h for h, j in vals)
+            row["verdict"] = "aligned"
+            if row["within1"] < 0.7:
+                row["verdict"] = "NOT ALIGNED -- do not trust this criterion"
+                row["flagged"] = True
+            elif abs(row["bias"]) >= 1.0:
+                row["verdict"] = (f"{'lenient' if row['bias'] > 0 else 'harsh'} "
+                                  f"by ~{abs(row['bias']):.1f}")
+                row["flagged"] = True
+        rows.append(row)
+    return {"items": len(set(human) & set(judged)), "rows": rows}
+
+
+def report() -> int:
+    human = _load_human()
+    if not human:
+        print("No human scores yet. Run with --sample 8 first.")
+        return 1
+
+    result = alignment(human)
+    if not any(r["n"] for r in result["rows"]):
         print("Your scores do not line up with any judged run on disk.")
         return 1
 
     print(f"\n{'criterion':<24} {'n':>3}  {'exact':>6} {'within1':>8} "
           f"{'bias':>6}   judge is...")
     print("-" * 74)
-
-    flagged = []
-    for c in CRITERIA:
-        vals = pairs[c.key]
-        if not vals:
-            print(f"{c.key:<24} {0:>3}       --       --     --   not scored")
+    for r in result["rows"]:
+        if not r["n"]:
+            print(f"{r['key']:<24} {0:>3}       --       --     --   not scored")
             continue
-        n = len(vals)
-        exact = sum(1 for h, j in vals if h == j) / n
-        within = sum(1 for h, j in vals if abs(h - j) <= 1) / n
-        # Signed, judge minus human. Positive means the judge is the softer
-        # grader. A consistent bias is easy to live with and easy to fix in
-        # the anchors; scatter with no bias is the harder problem, because
-        # there is nothing to correct -- the criterion is just ambiguous.
-        bias = statistics.mean(j - h for h, j in vals)
-
-        verdict = "aligned"
-        if within < 0.7:
-            verdict = "NOT ALIGNED -- do not trust this criterion"
-            flagged.append(c.key)
-        elif abs(bias) >= 1.0:
-            verdict = f"{'lenient' if bias > 0 else 'harsh'} by ~{abs(bias):.1f}"
-            flagged.append(c.key)
-
-        print(f"{c.key:<24} {n:>3}  {exact:>5.0%} {within:>8.0%} "
-              f"{bias:>+6.1f}   {verdict}")
-
+        print(f"{r['key']:<24} {r['n']:>3}  {r['exact']:>5.0%} {r['within1']:>8.0%} "
+              f"{r['bias']:>+6.1f}   {r['verdict']}")
     print("-" * 74)
-    items = len(set(human) & set(judged))
+    items = result["items"]
+    flagged = [r["key"] for r in result["rows"] if r["flagged"]]
     print(f"{items} report(s) scored by both.")
 
     if items < MIN_USEFUL_SAMPLE:

@@ -75,6 +75,12 @@ class Trace:
     tool_results: list[tuple[str, dict]] = field(default_factory=list)
     final_text: str = ""
     elapsed_s: float = 0.0
+    # Summed usage_metadata over every model call in the run (token_cost.py).
+    tokens: dict = field(default_factory=dict)
+    # One entry per model call: its tokens, cost, and what it was for.
+    model_calls: list = field(default_factory=list)
+    # The lineup the scenario handed the agent, for the dashboard.
+    lineup: list = field(default_factory=list)
 
     def tool_names(self) -> set[str]:
         return {n for n, _ in self.tool_calls}
@@ -123,6 +129,11 @@ class ScenarioResult:
     repeats: list[str]
     elapsed_s: float
     report: str
+    # What the run cost. Defaults so run files saved before 10/16 still load.
+    tokens: dict = field(default_factory=dict)
+    cost_usd: float | None = None
+    judge_tokens: dict = field(default_factory=dict)
+    judge_cost_usd: float | None = None
 
     @property
     def checks_ok(self) -> bool:
@@ -131,7 +142,11 @@ class ScenarioResult:
 
 def build_result(scenario_name: str, trace: Trace, failures: list[str],
                  total_checks: int, verdict,
-                 description: str = "") -> ScenarioResult:
+                 description: str = "", agent_model: str = "",
+                 judge_model: str = "") -> ScenarioResult:
+    from token_cost import cost_usd
+
+    judge_tokens = dict(getattr(verdict, "tokens", {}) or {})
     return ScenarioResult(
         scenario=scenario_name,
         description=description,
@@ -147,6 +162,10 @@ def build_result(scenario_name: str, trace: Trace, failures: list[str],
         repeats=trace.repeated_calls(),
         elapsed_s=round(trace.elapsed_s, 1),
         report=trace.final_text,
+        tokens=dict(trace.tokens),
+        cost_usd=cost_usd(trace.tokens, agent_model),
+        judge_tokens=judge_tokens,
+        judge_cost_usd=cost_usd(judge_tokens, judge_model) if judge_tokens else None,
     )
 
 
@@ -198,6 +217,8 @@ def save_run(results: list[ScenarioResult], traces: dict[str, Trace]) -> Path:
                     [n, _cap(r)] for n, r in t.tool_results
                 ],
                 "final_text": t.final_text,
+                "model_calls": t.model_calls,
+                "lineup": t.lineup,
             }
             for name, t in traces.items()
         },

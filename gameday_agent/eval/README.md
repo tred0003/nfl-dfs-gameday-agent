@@ -33,6 +33,7 @@ numbers instead of one.
 | `rubric.py` | what "good" means, extracted from the agent's prompt so it can be scored |
 | `judge.py` | the LLM judge: a stronger model at temperature 0, scoring against the rubric |
 | `align.py` | **checks the judge against a human.** Without this the quality scores mean nothing |
+| `dashboard.py` + `.html` | local page: **grade reports blind by clicking**, then every eval number on one screen (checks, quality, tools used, tokens, $ per report, you-vs-judge, run history, live per-user reports) |
 | `seeded.py` | checks the judge against **planted defects**: real reports broken one known way, so the right answer needs no grader |
 | `claims.py` | checks `news.check_claims` on labeled claim/quote pairs: wrong summaries replaced, good ones kept |
 | `scoring.py` | trace, scorecard, baseline, and the gate |
@@ -64,6 +65,24 @@ measured it is a random variable with a plausible mean.
 python gameday_agent/eval/align.py --sample 8      # score reports by hand
 python gameday_agent/eval/align.py --report        # your scores vs the judge's
 ```
+
+Or click instead of typing (added 2026-10-16):
+
+```
+python gameday_agent/eval/dashboard.py     # http://localhost:8765
+```
+
+Grading there is blind: the server does not send the judge's scores to the
+browser until yours are saved to `human_scores.json` (same file as above),
+then shows you vs the judge with its reasons. The Dashboard tab reads
+`runs/*.json` and the live Firestore reports.
+
+Runs from 10/16 on also record **tokens and dollars** per report
+(`src/token_cost.py`, summed `usage_metadata`, thinking billed as output)
+for the agent and the judge separately. The same day `run_eval.py` stopped
+grading only the agent's *last* text chunk: it now joins every text part,
+the rule `run_report.py` has used since 10/9, so the judge sees the whole
+report the user would.
 
 Disagreement is usually a rubric bug, not a judge bug. If the judge's
 reasoning is sound and you still disagree, the anchor text says something

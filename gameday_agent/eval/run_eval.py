@@ -75,6 +75,7 @@ from gameday_agent.eval.scoring import (  # noqa: E402
     mean_quality, save_baseline, save_run, suite_quality,
 )
 from predict_slate import normalize_name  # noqa: E402
+from token_cost import add_usage, call_record, new_totals  # noqa: E402
 
 QUERY = "Check my lineup for this Sunday and tell me if anything needs my attention."
 
@@ -263,13 +264,27 @@ async def _run_scenario(scenario: Scenario) -> Trace:
     )
     content = types.Content(role="user", parts=[types.Part(text=scenario.query or QUERY)])
 
-    trace = Trace()
+    trace = Trace(tokens=new_totals(), lineup=list(scenario.lineup))
+    texts: list[str] = []
     started = time.perf_counter()
     async for event in runner.run_async(
         user_id="eval", session_id=session.id, new_message=content
     ):
+        # Every model response carries its usage; summed, that is the run's
+        # token cost. Counted before the content check: a response that is
+        # only a function call has no text but still cost tokens.
+        if not getattr(event, "partial", False):
+            add_usage(trace.tokens, getattr(event, "usage_metadata", None))
         if not (event.content and event.content.parts):
             continue
+        if not getattr(event, "partial", False):
+            rec = call_record(
+                getattr(event, "usage_metadata", None), os.environ["GEMINI_MODEL"],
+                [p.function_call.name for p in event.content.parts
+                 if getattr(p, "function_call", None)],
+                any(getattr(p, "text", None) for p in event.content.parts))
+            if rec:
+                trace.model_calls.append(rec)
         for part in event.content.parts:
             if getattr(part, "function_call", None):
                 fc = part.function_call
@@ -278,7 +293,12 @@ async def _run_scenario(scenario: Scenario) -> Trace:
                 fr = part.function_response
                 trace.tool_results.append((fr.name, fr.response))
             if getattr(part, "text", None):
-                trace.final_text = part.text  # last text wins -- the actual report
+                texts.append(part.text)
+    # Every text part, joined -- the same rule run_report.py has used since
+    # 10/9. This used to be "last text wins", which graded only the final
+    # section of a report the model wrote between tool calls: the judge and
+    # the checks saw less than the user would have.
+    trace.final_text = "\n\n".join(t.strip() for t in texts if t.strip())
     trace.elapsed_s = time.perf_counter() - started
 
     return trace
@@ -370,7 +390,9 @@ async def _run_all(names, repeat: int, use_judge: bool, verbose: bool,
 
             result = build_result(scenario.name, trace, failures,
                                   len(scenario.checks), verdict,
-                                  scenario.description)
+                                  scenario.description,
+                                  agent_model=os.environ["GEMINI_MODEL"],
+                                  judge_model=JUDGE_MODEL)
             results.append(result)
             # Only the last repeat's trace is kept for the saved run. Three
             # near-identical reports in the file would make align.py's

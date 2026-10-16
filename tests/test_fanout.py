@@ -111,7 +111,7 @@ class ProduceReportTest(unittest.TestCase):
     """produce_report hands the agent this user's lineup, under this user's uid."""
 
     def setUp(self):
-        for name in ("log", "check_report"):
+        for name in ("log", "audit_report"):
             patcher = mock.patch.object(rr, name, return_value=[])
             patcher.start()
             self.addCleanup(patcher.stop)

@@ -60,8 +60,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -99,8 +101,9 @@ def _load_agent_env() -> None:
 
 _load_agent_env()
 
+from token_cost import add_usage, call_record, cost_usd, new_totals  # noqa: E402
 from user_store import FirestoreStore, LineupError, User  # noqa: E402
-from report_check import check as check_report, correct as correct_report  # noqa: E402
+from report_check import audit as audit_report, correct as correct_report  # noqa: E402
 from watch_slate import load_env, send_discord  # noqa: E402
 
 # Must match gameday_agent/slate.py LINEUP_STATE_KEY. Not imported from there:
@@ -122,9 +125,29 @@ def log(msg: str) -> None:
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
 
 
+def _record_event(record: dict, usage, function_calls: list[dict],
+                  wrote_text: bool) -> None:
+    """Add one non-partial agent event to the run record (see run_agent_remote).
+
+    Tool calls go in with their arguments, in order. A model call is any event
+    carrying usage_metadata; it is tagged with the tools it asked for and
+    whether it wrote text, so the dashboard can say what each call was for.
+    """
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    for fc in function_calls:
+        record.setdefault("tool_calls", []).append(
+            {"name": fc.get("name", ""), "args": dict(fc.get("args") or {})})
+    rec = call_record(usage, model, [fc.get("name", "") for fc in function_calls],
+                      wrote_text)
+    if rec:
+        record.setdefault("model_calls", []).append(rec)
+
+
 def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
                      responses: list[dict] | None = None,
-                     user_id: str = "scheduled") -> str:
+                     user_id: str = "scheduled",
+                     tokens: dict | None = None,
+                     record: dict | None = None) -> str:
     """Call the agent deployed on Agent Platform and return its final report.
 
     This is the mode the scheduled job runs in. The agent lives in the cloud;
@@ -143,6 +166,11 @@ def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
 
     `user_id` is the Firestore uid. Agent Engine keys sessions by it, so each
     user's session is theirs alone, and the agent's logs say whose run it was.
+
+    `tokens`, if given, is filled with the run's summed Gemini usage
+    (src/token_cost.py) -- what this one report cost to write. `record`, if
+    given, gets the detail behind it for the eval dashboard: every tool call
+    with its arguments, and every model call with its own tokens and cost.
     """
     import vertexai
     from vertexai import agent_engines
@@ -174,8 +202,15 @@ def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
                                    f"{str(event.get('error_message', ''))[:200]}")
             if event.get("partial"):
                 continue
-            for part in (event.get("content", {}) or {}).get("parts", []) or []:
-                if "function_call" in part:
+            if tokens is not None:
+                add_usage(tokens, event.get("usage_metadata"))
+            parts = (event.get("content", {}) or {}).get("parts", []) or []
+            if record is not None:
+                _record_event(record, event.get("usage_metadata"),
+                              [p["function_call"] for p in parts if p.get("function_call")],
+                              any(p.get("text") for p in parts))
+            for part in parts:
+                if part.get("function_call"):
                     calls.append(part["function_call"]["name"])
                 if responses is not None and part.get("function_response"):
                     responses.append(part["function_response"])
@@ -200,7 +235,8 @@ def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
 
 
 async def run_agent(lineup: list[str], responses: list[dict] | None = None,
-                    user_id: str = "scheduled") -> str:
+                    user_id: str = "scheduled", tokens: dict | None = None,
+                    record: dict | None = None) -> str:
     """Drive the ADK agent IN THIS PROCESS and return its final report.
 
     Used with --local, for testing a code change before deploying it. The
@@ -233,8 +269,16 @@ async def run_agent(lineup: list[str], responses: list[dict] | None = None,
                                f"{str(getattr(event, 'error_message', ''))[:200]}")
         if getattr(event, "partial", False):
             continue
+        if tokens is not None:
+            add_usage(tokens, getattr(event, "usage_metadata", None))
         if not (event.content and event.content.parts):
             continue
+        if record is not None:
+            fcs = [p.function_call for p in event.content.parts
+                   if getattr(p, "function_call", None)]
+            _record_event(record, getattr(event, "usage_metadata", None),
+                          [{"name": fc.name, "args": dict(fc.args or {})} for fc in fcs],
+                          any(getattr(p, "text", None) for p in event.content.parts))
         for part in event.content.parts:
             if getattr(part, "function_call", None):
                 tool_calls.append(part.function_call.name)
@@ -269,17 +313,28 @@ def produce_report(user: User, resource: str, local: bool,
         # lineup still names real players, and the report will show who.
         log(f"[{user.uid}] note: expected {EXPECTED_SLOTS} players, got {len(lineup)}")
 
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    # Stored with every report, agent or fallback: who, what they submitted,
+    # and which model and agent produced it.
+    base = {"lineup": list(lineup), "model": model,
+            "agent": resource.rsplit("/", 1)[-1] if resource and not local else "local"}
+
     # What each tool RETURNED, kept so report_check can hold the report to it.
     responses: list[dict] = []
+    tokens = new_totals()
+    record: dict = {"tool_calls": [], "model_calls": []}
+    started = time.monotonic()
     try:
         if resource and not local:
             log(f"[{user.uid}] calling deployed agent {resource.rsplit('/', 1)[-1]}")
             report = run_agent_remote(resource, lineup, responses=responses,
-                                      user_id=user.uid)
+                                      user_id=user.uid, tokens=tokens, record=record)
         else:
             log(f"[{user.uid}] running agent in-process")
             report = asyncio.run(asyncio.wait_for(
-                run_agent(lineup, responses, user_id=user.uid), TIMEOUT_SECONDS))
+                run_agent(lineup, responses, user_id=user.uid, tokens=tokens,
+                          record=record),
+                TIMEOUT_SECONDS))
         if not report:
             raise RuntimeError("agent returned an empty report")
         log(f"[{user.uid}] agent produced {len(report)} characters")
@@ -287,7 +342,9 @@ def produce_report(user: User, resource: str, local: bool,
         # Fact-check before delivery. A failed check does not block the post:
         # the facts the model missed go on top, and the rest of its report
         # stays. "REPORT CHECK FAILED" is the line to build a log metric on.
-        problems = check_report(report, responses)
+        checks = audit_report(report, responses)
+        problems = [p for row in checks for p in row["problems"]]
+        agent_text = report
         if problems:
             log(f"[{user.uid}] REPORT CHECK FAILED ({len(problems)}): "
                 + " | ".join(problems))
@@ -295,8 +352,14 @@ def produce_report(user: User, resource: str, local: bool,
         else:
             log(f"[{user.uid}] report check passed")
         tools = [r.get("name", "") for r in responses]
-        return {"text": report, "source": "agent", "problems": problems,
-                "tools": tools}
+        cost = cost_usd(tokens, model)
+        log(f"[{user.uid}] tokens: {tokens} (${cost})")
+        return {**base, "text": report, "agent_text": agent_text, "source": "agent",
+                "problems": problems, "checks": checks, "tools": tools,
+                "tokens": tokens, "cost_usd": cost,
+                "model_calls": record["model_calls"],
+                "tool_calls": pair_tool_calls(record["tool_calls"], responses),
+                "elapsed_s": round(time.monotonic() - started, 1)}
     except Exception as e:
         log(f"[{user.uid}] agent failed: {type(e).__name__}: {e}")
         if no_fallback:
@@ -307,9 +370,40 @@ def produce_report(user: User, resource: str, local: bool,
         # no Agent Platform quota, so it survives most things that kill the LLM.
         log(f"[{user.uid}] falling back to the rule-based report")
         from gameday_report import build_report
-        return {"text": build_report(names=lineup), "source": "fallback",
+        return {**base, "text": build_report(names=lineup), "source": "fallback",
                 "problems": [], "tools": [],
-                "agent_error": f"{type(e).__name__}: {str(e)[:300]}"}
+                "agent_error": f"{type(e).__name__}: {str(e)[:300]}",
+                "elapsed_s": round(time.monotonic() - started, 1)}
+
+
+# One tool result can be a whole news article list. Firestore caps a document
+# at 1 MiB, so each result is stored as capped JSON text: a string, because
+# Firestore also rejects arrays nested directly in arrays, which tool results
+# are free to contain.
+MAX_RESULT_CHARS = 60_000
+
+
+def pair_tool_calls(calls: list[dict], responses: list[dict]) -> list[dict]:
+    """Each tool call with what it returned, in call order, as JSON text.
+
+    Paired by name and order: the Nth call to a tool gets that tool's Nth
+    response. Calls in one model response run in parallel, so responses can
+    come back in a different order than the calls went out.
+    """
+    by_name: dict[str, list] = {}
+    for r in responses:
+        by_name.setdefault(r.get("name", ""), []).append(r.get("response"))
+    out = []
+    for c in calls:
+        queue = by_name.get(c["name"]) or []
+        result = queue.pop(0) if queue else None
+        text = json.dumps(result, default=str, ensure_ascii=False)
+        out.append({"name": c["name"],
+                    "args_json": json.dumps(c.get("args") or {}, default=str),
+                    "result_json": text[:MAX_RESULT_CHARS],
+                    "result_chars": len(text),
+                    "truncated": len(text) > MAX_RESULT_CHARS})
+    return out
 
 
 def run_users(users: list[User], store, produce: Callable[[User], dict],

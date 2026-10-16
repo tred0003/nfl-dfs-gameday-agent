@@ -63,6 +63,8 @@ class Verdict:
     scores: dict[str, int] = field(default_factory=dict)
     reasons: dict[str, str] = field(default_factory=dict)
     error: str | None = None
+    # The judge's own usage, so grading cost shows up next to agent cost.
+    tokens: dict = field(default_factory=dict)
 
     @property
     def percent(self) -> float:
@@ -220,7 +222,10 @@ def judge(query: str, tool_calls, tool_results, report: str) -> Verdict:
     except Exception as e:
         return Verdict(error=f"{type(e).__name__}: {e}")
 
-    v = Verdict()
+    from token_cost import add_usage, new_totals
+
+    v = Verdict(tokens=new_totals())
+    add_usage(v.tokens, getattr(response, "usage_metadata", None))
     for c in CRITERIA:
         entry = parsed.get(c.key) or {}
         score = entry.get("score")

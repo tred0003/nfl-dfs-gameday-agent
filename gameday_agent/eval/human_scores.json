@@ -1,0 +1,15 @@
+{
+  "20261016-101959:clean_lineup": {
+    "scenario": "clean_lineup",
+    "scores": {
+      "grounded": 3,
+      "completeness": 3,
+      "actionability": 5,
+      "earns_the_interruption": 3,
+      "honest_about_gaps": 3
+    },
+    "note": "",
+    "graded_at": "2026-10-16T10:23:11",
+    "via": "dashboard"
+  }
+}
