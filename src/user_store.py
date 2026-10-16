@@ -125,6 +125,19 @@ class FirestoreStore:
         snap = self._user(uid).collection(REPORTS).document(report_id).get()
         return snap.to_dict() if snap.exists else None
 
+    def latest_report(self, uid: str) -> tuple[str, dict] | None:
+        # Report ids are YYYY-MM-DD, so the highest id is the newest report.
+        q = (self._user(uid).collection(REPORTS)
+             .order_by("__name__", direction=self._fs.Query.DESCENDING).limit(1))
+        snaps = list(q.stream())
+        return (snaps[0].id, snaps[0].to_dict() or {}) if snaps else None
+
+    def set_lineup(self, uid: str, lineup: list[str]) -> None:
+        # update(), not set(): the web page may change the lineup and nothing
+        # else. A set() here would also wipe name, active and discord.
+        self._user(uid).update({"lineup": list(lineup),
+                                "updated_at": self._fs.SERVER_TIMESTAMP})
+
 
 class MemoryStore:
     """Same interface, in a dict. For the unit tests."""
@@ -150,3 +163,10 @@ class MemoryStore:
 
     def get_report(self, uid: str, report_id: str) -> dict | None:
         return self.reports.get((_require_uid(uid), report_id))
+
+    def latest_report(self, uid: str) -> tuple[str, dict] | None:
+        ids = sorted(rid for (u, rid) in self.reports if u == _require_uid(uid))
+        return (ids[-1], self.reports[(uid, ids[-1])]) if ids else None
+
+    def set_lineup(self, uid: str, lineup: list[str]) -> None:
+        self.users[_require_uid(uid)].lineup = list(lineup)

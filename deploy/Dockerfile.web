@@ -1,0 +1,19 @@
+# The multi-user web app: sign in, edit your lineup, read your report.
+# Cloud Run service `gameday-web`. Only the store and the app go in -- no
+# model, no agent, no pandas. See deploy/WEB.md.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+COPY deploy/requirements-web.txt .
+RUN pip install --no-cache-dir -r requirements-web.txt
+
+COPY src/user_store.py ./src/
+COPY webapp/ ./webapp/
+
+# One worker, a few threads: four users do not need more, and one process
+# means the Firebase app and Firestore client are initialised once.
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 60 --chdir webapp main:app

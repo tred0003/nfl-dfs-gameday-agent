@@ -1,0 +1,13 @@
+rules_version = '2';
+// No client reads or writes Firestore directly. The browser talks to the web
+// app (webapp/main.py), which checks the Firebase token and then uses its own
+// service account -- and server credentials bypass these rules entirely.
+// So the rule for clients is simply: nothing. If a later page ever needs
+// direct access, the rule it gets is request.auth.uid == uid on users/{uid}.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gameday Lineup</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #5d6470;
+    --line: #dde1e7; --accent: #1f6feb; --accent-text: #ffffff;
+    --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #171a21; --text: #e6e8ec; --muted: #9aa3af;
+      --line: #2a2f3a; --accent: #4c8dff; --accent-text: #0f1115;
+      --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; justify-content: space-between; align-items: baseline;
+           gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .card { background: var(--card); border: 1px solid var(--line);
+          border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input { width: 100%; padding: 9px 10px; border: 1px solid var(--line);
+          border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  .slots { display: grid; grid-template-columns: 56px 1fr; gap: 8px 10px; align-items: center; }
+  .slot { font-weight: 600; font-size: 13px; color: var(--muted); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+  button { padding: 9px 14px; border-radius: 6px; border: 1px solid var(--line);
+           background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .6; cursor: default; }
+  .msg { font-size: 13px; }
+  .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
+  .report { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px;
+         border: 1px solid var(--line); color: var(--muted); }
+  .tag.fallback { color: var(--warn); border-color: var(--warn); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Gameday Lineup</h1>
+    <span id="who" class="muted"></span>
+  </header>
+
+  <section id="signin" class="card" hidden>
+    <h2>Sign in</h2>
+    <form id="signin-form">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password">
+      <div class="row">
+        <button class="primary" type="submit">Sign in</button>
+        <button id="reset" type="button">Email me a link to set my password</button>
+      </div>
+      <p id="signin-msg" class="msg"></p>
+    </form>
+  </section>
+
+  <section id="app" hidden>
+    <div class="card">
+      <h2>My lineup</h2>
+      <p class="muted">Checked every day at 12:30 ET. Use the names as DraftKings shows them.</p>
+      <form id="lineup-form">
+        <div id="slots" class="slots"></div>
+        <div class="row">
+          <button class="primary" type="submit">Save lineup</button>
+          <span id="lineup-msg" class="msg"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Latest report <span id="report-meta" class="muted"></span></h2>
+      <div id="report" class="report muted">No report yet.</div>
+    </div>
+
+    <div class="row"><button id="signout" type="button">Sign out</button></div>
+  </section>
+</main>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

@@ -11,3 +11,6 @@ pulp>=2.8
 # was the first place it was ever missing (14 of 22 tests errored).
 scipy>=1.11
 requests>=2.31
+# tests/test_webapp.py drives the Flask app with its test client. The
+# Firebase Admin SDK is NOT needed: the tests swap in a fake verifier.
+flask>=3.0

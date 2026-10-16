@@ -14,7 +14,7 @@ steps:
   - id: compile
     name: python:3.11-slim
     entrypoint: python
-    args: ['-m', 'compileall', '-q', 'src', 'gameday_agent', 'news_rag', 'tests', 'tf_sequence', 'gcp_lab', 'research', 'deploy']
+    args: ['-m', 'compileall', '-q', 'src', 'gameday_agent', 'news_rag', 'tests', 'tf_sequence', 'gcp_lab', 'research', 'deploy', 'webapp']
 
   - id: unit-tests
     name: python:3.11-slim

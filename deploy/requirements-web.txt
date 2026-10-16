@@ -1,0 +1,6 @@
+# The web app (webapp/main.py) on Cloud Run. Flask behind gunicorn; the Admin
+# SDK only to verify Firebase ID tokens; Firestore through src/user_store.py.
+flask>=3.0
+gunicorn>=22.0
+firebase-admin>=6.5
+google-cloud-firestore>=2.16
