@@ -202,3 +202,54 @@ daily run -- the canary's first finding is that quota, not tools, is the
 flakiest dependency.
 
 Test without posting: `gcloud run jobs execute gameday-canary --args=gameday_agent/canary.py,--dry-run --wait`
+
+## Phase 3: one report per user, from Firestore (multi-user step 1, 2026-10-16)
+
+The single lineup Sheet is replaced by Firestore (`(default)` database,
+Native mode, `us-central1`, created 10/16). Four users, all the same person
+through Gmail plus-addressing, so the fan-out has more than one user:
+
+| uid | Lineup | Discord |
+|---|---|---|
+| `u1` | the real one, copied once from the old Sheet | yes |
+| `u2`-`u4` | the optimizer's top 3 lineups for Week 6 (`deploy/seed_users.py`) | no |
+
+```
+Cloud Scheduler ──► gameday-report ──► for each active user, one at a time:
+                                         users/{uid}.lineup ──► agent session (user_id = uid)
+                                         report ──► users/{uid}/reports/{YYYY-MM-DD}
+                                                └─► Discord, only if discord: true
+```
+
+- `src/user_store.py`: `FirestoreStore` (real) and `MemoryStore` (tests), one
+  interface. Every call takes a uid and builds the path from it.
+- `gameday_agent/run_report.py`: `--user u2` runs one user, `--no-discord`
+  stores but posts nothing. One user failing doesn't stop the others; the job
+  exits 1 at the end, so the alert still fires.
+- `gameday_agent/canary.py`: reads `users/{CANARY_UID}` (default `u1`).
+- `tests/test_fanout.py`: 12 offline tests of that contract, in CI.
+- IAM: `agent-reports@` got `roles/datastore.user`.
+
+Verified 10/16: `run_report.py --user u2 --no-discord` against the deployed
+agent called all 7 tools, passed the report check, and saved
+`users/u2/reports/2026-10-16`. All 9 of u2's players are in it; none of u1's.
+One user took 107s, so **four users need more than the job's 600s timeout**.
+
+### Still to run (not done yet)
+
+```bash
+P=advisor-agent-2026; R=us-central1
+IMG=$R-docker.pkg.dev/$P/agent-reports/reports:$(git rev-parse --short HEAD)
+gcloud builds submit . --project $P --region $R --config deploy/cloudbuild.reports.yaml \
+  --service-account=projects/$P/serviceAccounts/report-builder@$P.iam.gserviceaccount.com \
+  --substitutions=_IMAGE=$IMG
+gcloud run jobs update gameday-report --project $P --region $R --image $IMG \
+  --task-timeout 1800s --remove-env-vars LINEUP_SHEET_ID
+gcloud run jobs update gameday-canary --project $P --region $R --image $IMG \
+  --remove-env-vars LINEUP_SHEET_ID
+gcloud run jobs execute gameday-report --project $P --region $R --wait \
+  --args=gameday_agent/run_report.py,--dry-run
+```
+
+`src/lineup_sheet.py` stays in the repo only because `seed_users.py` reads
+u1 from it; nothing in the image uses it.

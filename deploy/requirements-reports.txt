@@ -9,7 +9,6 @@ google-cloud-aiplatform[agent_engines]==1.162.0
 pandas>=2.0
 numpy>=1.24
 requests>=2.31
-# lineup_sheet.py: ADC + AuthorizedSession. Already pulled in by aiplatform;
-# listed because this code imports it directly.
-google-auth>=2.20
+# user_store.py: per-user lineups and reports (replaced the lineup Sheet).
+google-cloud-firestore>=2.16
 tzdata>=2024.1     # slim images ship no zoneinfo; ET timestamps need it

@@ -2,7 +2,7 @@
 
 The gameday-canary Cloud Run job runs this every Thursday at 10:00 ET, three
 days before the Sunday report matters. It goes through the same path the
-daily report does -- Cloud Run -> lineup Sheet -> deployed agent on Agent
+daily report does -- Cloud Run -> Firestore lineup -> deployed agent on Agent
 Engine -> Gemini -> every tool -> Discord -- so a pass means the Sunday run
 has a working path, not just that the code is fine on a laptop.
 
@@ -43,7 +43,7 @@ import time
 # Importing run_report loads gameday_agent/.env and puts src/ on the path, in
 # the order its docstring explains. It does not import the agent package.
 from run_report import log, run_agent_remote  # noqa: E402
-from lineup_sheet import LineupError, read_lineup  # noqa: E402
+from user_store import FirestoreStore, LineupError  # noqa: E402
 from watch_slate import load_env, send_discord  # noqa: E402
 
 # Every tool in gameday_agent/tools.py TOOLS, and the response key that must be
@@ -133,13 +133,20 @@ def main() -> int:
     failure = None
     rows: list[tuple[str, bool, str]] = []
     try:
-        lineup = read_lineup(os.environ.get("LINEUP_SHEET_ID", "").strip())
-        log(f"lineup from sheet: {len(lineup)} players")
+        # One real user's lineup, through the same store the report reads.
+        # CANARY_UID picks whose; u1 is the real lineup, u2-u4 are fakes.
+        uid = os.environ.get("CANARY_UID", "u1").strip()
+        user = FirestoreStore().get_user(uid)
+        if user is None:
+            raise LineupError(f"user {uid} not found in Firestore")
+        lineup = user.checked_lineup()
+        log(f"lineup from Firestore users/{uid}: {len(lineup)} players")
         responses: list[dict] = []
-        run_agent_remote(resource, lineup, query=CANARY_QUERY, responses=responses)
+        run_agent_remote(resource, lineup, query=CANARY_QUERY, responses=responses,
+                         user_id=f"canary-{uid}")
         rows = check(responses)
     except LineupError as e:
-        failure = f"lineup sheet unreadable: {e}"
+        failure = f"lineup unavailable: {e}"
     except Exception as e:  # noqa: BLE001 -- any agent failure is a red canary
         failure = f"agent run failed: {type(e).__name__}: {str(e)[:200]}"
     secs = time.monotonic() - t0

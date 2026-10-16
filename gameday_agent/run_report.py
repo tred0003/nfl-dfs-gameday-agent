@@ -1,11 +1,13 @@
-"""Headless entry point: run the ADK agent once, send the report to Discord.
+"""Headless entry point: run the ADK agent once per user, store and send the reports.
 
 This is what the gameday-report Cloud Run job runs every day. Nobody is watching
 it, nobody types a question, and there is no second turn -- so delivery is NOT
 the model's decision. The model writes the report; this script sends it.
 
-    python gameday_agent/run_report.py --dry-run    # print, never send
-    python gameday_agent/run_report.py              # send to Discord
+    python gameday_agent/run_report.py --dry-run    # print, never store or send
+    python gameday_agent/run_report.py              # every active user
+    python gameday_agent/run_report.py --user u2    # one user
+    python gameday_agent/run_report.py --no-discord # store, but post nothing
     python gameday_agent/run_report.py --local      # run in-process, not deployed
 
 TWO MODES. With AGENT_ENGINE_ID set it calls the agent deployed on Agent
@@ -25,16 +27,25 @@ in `adk web` -- every experiment in the dev UI would post to the real Discord
 channel. Keeping the send out here means the UI stays a safe place to poke at
 the agent and only the scheduled job actually talks to Discord.
 
-THE LINEUP COMES WITH THE REQUEST. This client reads it from a Google Sheet
-(LINEUP_SHEET_ID) and creates the agent's session with it in state, so the
-agent checks whatever the sheet says right now. It used to be MY_LINEUP baked
-into the deployment, which went three weeks stale. The week is derived from
-the slate date (src/nfl_week.py), for the same reason.
+THE LINEUP COMES WITH THE REQUEST. This client reads each user's lineup from
+Firestore (src/user_store.py, users/{uid}) and creates that user's agent
+session with it in state, so the agent checks whatever the user saved right
+now. It used to be MY_LINEUP baked into the deployment, which went three weeks
+stale, and then one Google Sheet, which could only ever hold one person. The
+week is derived from the slate date (src/nfl_week.py), for the same reason.
+
+ONE USER AT A TIME. Users run in sequence, each in their own session with
+user_id = their uid, and each report is saved to users/{uid}/reports/{date}.
+Sequential on purpose: four agent runs at once is four times the Gemini
+requests in the same minute, and 429s are this project's most common failure.
+One user failing (no lineup, agent down and fallback down) does not stop the
+others; it makes the job exit 1 at the end, so the alert still fires. Only
+users with `discord: true` are posted -- the shared webhook is one channel.
 
 Two env files are read, on purpose:
-    nfl-dfs/.env                  DISCORD_WEBHOOK_URL, AGENT_ENGINE_ID,
-                                  LINEUP_SHEET_ID -- the CLIENT's config,
-                                  never staged into the agent
+    nfl-dfs/.env                  DISCORD_WEBHOOK_URL, AGENT_ENGINE_ID --
+                                  the CLIENT's config, never staged into
+                                  the agent
     nfl-dfs/gameday_agent/.env    model + project config, which `adk deploy`
                                   bakes into the deployment. MY_LINEUP and
                                   WEEK must NOT be in it when deploying; see
@@ -53,6 +64,8 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
+from zoneinfo import ZoneInfo
 
 # Windows console is cp1252 by default and the report contains emoji and
 # typographic dashes. Without this the job dies on print, not on the work.
@@ -86,7 +99,7 @@ def _load_agent_env() -> None:
 
 _load_agent_env()
 
-from lineup_sheet import EXPECTED_SLOTS, LineupError, read_lineup  # noqa: E402
+from user_store import FirestoreStore, LineupError, User  # noqa: E402
 from report_check import check as check_report, correct as correct_report  # noqa: E402
 from watch_slate import load_env, send_discord  # noqa: E402
 
@@ -100,6 +113,9 @@ QUERY = "Check my lineup for this Sunday and tell me if anything needs my attent
 # starts. The Cloud Run task timeout is the backstop, not the plan.
 TIMEOUT_SECONDS = 300
 
+# DraftKings classic NFL: QB, 2 RB, 3 WR, TE, FLEX, DST.
+EXPECTED_SLOTS = 9
+
 
 def log(msg: str) -> None:
     """Timestamped, flushed -- this is the only record of an unattended run."""
@@ -107,7 +123,8 @@ def log(msg: str) -> None:
 
 
 def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
-                     responses: list[dict] | None = None) -> str:
+                     responses: list[dict] | None = None,
+                     user_id: str = "scheduled") -> str:
     """Call the agent deployed on Agent Platform and return its final report.
 
     This is the mode the scheduled job runs in. The agent lives in the cloud;
@@ -123,6 +140,9 @@ def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
     `query` and `responses` exist for the Thursday canary (canary.py): it asks
     a different question and needs to see what each tool RETURNED, not just
     that it was called. The daily report passes neither.
+
+    `user_id` is the Firestore uid. Agent Engine keys sessions by it, so each
+    user's session is theirs alone, and the agent's logs say whose run it was.
     """
     import vertexai
     from vertexai import agent_engines
@@ -133,16 +153,16 @@ def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
     )
     agent = agent_engines.get(resource)
 
-    # A fresh session per run, carrying this run's lineup in state. The
+    # A fresh session per run, carrying this user's lineup in state. The
     # agent's lineup tools read state before they look at env, so this is
-    # what makes a sheet edit take effect with no redeploy.
-    session = agent.create_session(user_id="scheduled",
+    # what makes a lineup edit take effect with no redeploy.
+    session = agent.create_session(user_id=user_id,
                                    state={LINEUP_STATE_KEY: lineup})
     session_id = session["id"] if isinstance(session, dict) else session.id
 
     texts, calls = [], []
     try:
-        for event in agent.stream_query(user_id="scheduled", session_id=session_id,
+        for event in agent.stream_query(user_id=user_id, session_id=session_id,
                                         message=query):
             # A model error arrives as an EVENT, not an exception: a dict with
             # error_code and no content. Seen on 10/9 -- a 429 from Gemini
@@ -165,7 +185,7 @@ def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
         # Managed sessions persist and bill per event. One run, one session,
         # then gone. A failed delete is not worth failing the report over.
         try:
-            agent.delete_session(user_id="scheduled", session_id=session_id)
+            agent.delete_session(user_id=user_id, session_id=session_id)
         except Exception as e:  # noqa: BLE001
             log(f"could not delete session {session_id}: {e}")
 
@@ -179,7 +199,8 @@ def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
     return "\n\n".join(t.strip() for t in texts if t.strip())
 
 
-async def run_agent(lineup: list[str], responses: list[dict] | None = None) -> str:
+async def run_agent(lineup: list[str], responses: list[dict] | None = None,
+                    user_id: str = "scheduled") -> str:
     """Drive the ADK agent IN THIS PROCESS and return its final report.
 
     Used with --local, for testing a code change before deploying it. The
@@ -197,13 +218,13 @@ async def run_agent(lineup: list[str], responses: list[dict] | None = None) -> s
 
     runner = InMemoryRunner(agent=root_agent, app_name="gameday_report")
     session = await runner.session_service.create_session(
-        app_name="gameday_report", user_id="scheduled",
+        app_name="gameday_report", user_id=user_id,
         state={LINEUP_STATE_KEY: lineup},
     )
 
     texts, tool_calls = [], []
     async for event in runner.run_async(
-        user_id="scheduled",
+        user_id=user_id,
         session_id=session.id,
         new_message=types.Content(role="user", parts=[types.Part(text=QUERY)]),
     ):
@@ -233,15 +254,129 @@ async def run_agent(lineup: list[str], responses: list[dict] | None = None) -> s
     return "\n\n".join(t.strip() for t in texts if t.strip())
 
 
+def produce_report(user: User, resource: str, local: bool,
+                   no_fallback: bool) -> dict:
+    """One user's report: agent, fact-check, fallback. Returns the fields to store.
+
+    Raises LineupError when the user has no lineup -- see the tradeoff in
+    run_users. Everything else that goes wrong becomes the rule-based fallback,
+    unless --no-fallback, in which case it raises too.
+    """
+    lineup = user.checked_lineup()
+    log(f"[{user.uid}] lineup: {len(lineup)} players")
+    if len(lineup) != EXPECTED_SLOTS:
+        # Worth a line in the log, not worth stopping for -- a half-edited
+        # lineup still names real players, and the report will show who.
+        log(f"[{user.uid}] note: expected {EXPECTED_SLOTS} players, got {len(lineup)}")
+
+    # What each tool RETURNED, kept so report_check can hold the report to it.
+    responses: list[dict] = []
+    try:
+        if resource and not local:
+            log(f"[{user.uid}] calling deployed agent {resource.rsplit('/', 1)[-1]}")
+            report = run_agent_remote(resource, lineup, responses=responses,
+                                      user_id=user.uid)
+        else:
+            log(f"[{user.uid}] running agent in-process")
+            report = asyncio.run(asyncio.wait_for(
+                run_agent(lineup, responses, user_id=user.uid), TIMEOUT_SECONDS))
+        if not report:
+            raise RuntimeError("agent returned an empty report")
+        log(f"[{user.uid}] agent produced {len(report)} characters")
+
+        # Fact-check before delivery. A failed check does not block the post:
+        # the facts the model missed go on top, and the rest of its report
+        # stays. "REPORT CHECK FAILED" is the line to build a log metric on.
+        problems = check_report(report, responses)
+        if problems:
+            log(f"[{user.uid}] REPORT CHECK FAILED ({len(problems)}): "
+                + " | ".join(problems))
+            report = correct_report(report, problems)
+        else:
+            log(f"[{user.uid}] report check passed")
+        tools = [r.get("name", "") for r in responses]
+        return {"text": report, "source": "agent", "problems": problems,
+                "tools": tools}
+    except Exception as e:
+        log(f"[{user.uid}] agent failed: {type(e).__name__}: {e}")
+        if no_fallback:
+            raise
+        # Same call as src/agent.py makes, for the same reason: a scheduled
+        # Sunday job that silently sends nothing is worse than one that sends
+        # the deterministic version. The rule-based report needs no model and
+        # no Agent Platform quota, so it survives most things that kill the LLM.
+        log(f"[{user.uid}] falling back to the rule-based report")
+        from gameday_report import build_report
+        return {"text": build_report(names=lineup), "source": "fallback",
+                "problems": [], "tools": [],
+                "agent_error": f"{type(e).__name__}: {str(e)[:300]}"}
+
+
+def run_users(users: list[User], store, produce: Callable[[User], dict],
+              deliver: Callable[[str], bool] | None, report_id: str,
+              dry_run: bool = False) -> int:
+    """Run every user in turn. Returns how many FAILED (0 = all good).
+
+    `produce` and `deliver` are passed in so the unit tests can run this loop
+    with a MemoryStore and a fake agent -- no credentials, no Gemini, no Discord.
+    `deliver` None means --no-discord.
+
+    The tradeoff, kept from the Sheet days: a user with no lineup gets NO
+    report today, not a report about some other roster. The fallback exists
+    for when the agent breaks -- it still checks the right players. Nothing
+    covers "we do not know the players", and a stale or empty roster reads
+    exactly like a real one ("all 9 active"). A missing report trips the
+    alert and gets fixed; a confidently wrong one went unnoticed for weeks.
+    """
+    failed = 0
+    for user in users:
+        try:
+            fields = produce(user)
+        except LineupError as e:
+            log(f"[{user.uid}] LINEUP UNAVAILABLE, no report: {e}")
+            failed += 1
+            continue
+        except Exception as e:  # noqa: BLE001 -- one user must not stop the rest
+            log(f"[{user.uid}] FAILED: {type(e).__name__}: {e}")
+            failed += 1
+            continue
+
+        if dry_run:
+            log(f"[{user.uid}] dry run -- not storing or sending")
+            print("\n" + "-" * 60 + f"\n{user.uid} ({user.name or user.email})")
+            print(fields["text"])
+            print("-" * 60)
+            continue
+
+        # Stored before it is posted: the stored copy is the record, and the
+        # web page (step 2) reads it whether or not Discord worked.
+        store.save_report(user.uid, report_id, fields)
+        log(f"[{user.uid}] saved users/{user.uid}/reports/{report_id} "
+            f"({fields['source']})")
+
+        if user.discord and deliver is not None:
+            # send_discord() prints and returns False when no webhook is set.
+            # Fine at a terminal; on a schedule it is a silent non-delivery
+            # that exits 0. A run that delivered nothing has failed.
+            if not deliver(fields["text"]):
+                log(f"[{user.uid}] NOT DELIVERED: no DISCORD_WEBHOOK_URL")
+                failed += 1
+    return failed
+
+
 def main() -> int:
-    p = argparse.ArgumentParser(description="Run the gameday agent and report")
+    p = argparse.ArgumentParser(description="Run the gameday agent for each user")
     p.add_argument("--dry-run", action="store_true",
-                   help="print the report instead of sending it")
+                   help="print the reports instead of storing or sending them")
     p.add_argument("--no-fallback", action="store_true",
                    help="fail loudly instead of sending the rule-based report")
     p.add_argument("--local", action="store_true",
                    help="run the agent in this process instead of calling the "
                         "deployed one (for testing an unpushed change)")
+    p.add_argument("--user", metavar="UID",
+                   help="run one user (active or not) instead of every active user")
+    p.add_argument("--no-discord", action="store_true",
+                   help="store the reports but post nothing to Discord")
     a = p.parse_args()
 
     load_env()  # DISCORD_WEBHOOK_URL and AGENT_ENGINE_ID from the repo-root .env
@@ -251,78 +386,37 @@ def main() -> int:
     # an agent carrying its own resource name around is both pointless and one
     # more value to keep in sync.
     resource = os.environ.get("AGENT_ENGINE_ID", "").strip()
-    remote = bool(resource) and not a.local
+    if not resource and not a.local:
+        log("AGENT_ENGINE_ID unset -- running the agent in-process")
 
-    # Read the lineup BEFORE anything else, and stop if it cannot be read.
-    #
-    # The tradeoff, made on purpose: an unreadable sheet means NO report
-    # today, not a report about some other roster. The fallback below exists
-    # for when the agent breaks -- it still checks the right players. There is
-    # no equivalent for "we do not know the players": a stale roster reads
-    # exactly like a real one ("all 9 active"), and that is the failure this
-    # whole change exists to remove. A missing report trips the alert and gets
-    # fixed; a confidently wrong one went unnoticed for three weeks.
+    # Read the users BEFORE anything else, and stop if they cannot be read:
+    # no users means no reports, and that has to reach the alert as exit 1.
     try:
-        lineup = read_lineup(os.environ.get("LINEUP_SHEET_ID", "").strip())
-    except LineupError as e:
-        log(f"LINEUP UNAVAILABLE, not running: {e}")
-        return 1
-    log(f"lineup from sheet: {len(lineup)} players")
-    if len(lineup) != EXPECTED_SLOTS:
-        # Worth a line in the log, not worth stopping for -- a half-edited
-        # sheet still names real players, and the report will show who.
-        log(f"note: expected {EXPECTED_SLOTS} players, sheet has {len(lineup)}")
-
-    # What each tool RETURNED, kept so report_check can hold the report to it.
-    responses: list[dict] = []
-    try:
-        if remote:
-            log(f"calling deployed agent {resource.rsplit('/', 1)[-1]}")
-            report = run_agent_remote(resource, lineup, responses=responses)
+        store = FirestoreStore()
+        if a.user:
+            one = store.get_user(a.user)
+            users = [one] if one else []
         else:
-            why = "--local" if a.local else "AGENT_ENGINE_ID unset"
-            log(f"running agent in-process ({why})")
-            report = asyncio.run(asyncio.wait_for(run_agent(lineup, responses),
-                                                  TIMEOUT_SECONDS))
-        if not report:
-            raise RuntimeError("agent returned an empty report")
-        log(f"agent produced {len(report)} characters")
-
-        # Fact-check before delivery. A failed check does not block the post:
-        # the facts the model missed go on top, and the rest of its report
-        # stays. "REPORT CHECK FAILED" is the line to build a log metric on.
-        problems = check_report(report, responses)
-        if problems:
-            log(f"REPORT CHECK FAILED ({len(problems)}): " + " | ".join(problems))
-            report = correct_report(report, problems)
-        else:
-            log("report check passed")
-    except Exception as e:
-        log(f"agent failed: {type(e).__name__}: {e}")
-        if a.no_fallback:
-            raise
-        # Same call as src/agent.py makes, for the same reason: a scheduled
-        # Sunday job that silently sends nothing is worse than one that sends
-        # the deterministic version. The rule-based report needs no model and
-        # no Agent Platform quota, so it survives most things that kill the LLM.
-        log("falling back to the rule-based report")
-        from gameday_report import build_report
-        report = build_report(names=lineup)
-
-    if a.dry_run:
-        log("dry run -- not sending")
-        print("\n" + "-" * 60)
-        print(report)
-        print("-" * 60)
-        return 0
-
-    # send_discord() prints and returns False when no webhook is set. Fine
-    # at a terminal; on a schedule it is a silent non-delivery that exits 0.
-    # A run that delivered nothing has failed, so say so with the exit code.
-    if not send_discord(report):
-        log("NOT DELIVERED: no DISCORD_WEBHOOK_URL")
+            users = store.active_users()
+    except Exception as e:  # noqa: BLE001 -- auth, network, missing database
+        log(f"USERS UNAVAILABLE, not running: {type(e).__name__}: {e}")
         return 1
-    return 0
+    if not users:
+        log(f"no {'user ' + a.user if a.user else 'active users'} in Firestore")
+        return 1
+    log(f"{len(users)} user(s): {', '.join(u.uid for u in users)}")
+
+    # One report per user per day, named by the ET date. A rerun the same day
+    # replaces that day's report rather than piling up copies.
+    report_id = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+
+    failed = run_users(
+        users, store,
+        produce=lambda u: produce_report(u, resource, a.local, a.no_fallback),
+        deliver=None if a.no_discord else send_discord,
+        report_id=report_id, dry_run=a.dry_run)
+    log(f"done: {len(users) - failed}/{len(users)} users OK")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
