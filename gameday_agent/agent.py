@@ -16,6 +16,7 @@ from google.adk.models import Gemini
 from google.genai import types
 
 from .guards import collect_warnings, prepend_warnings, reset_warnings
+from .metering import collect_subcalls, start_subcalls
 from .news import GEMINI_LOCATION
 from .tools import TOOLS
 
@@ -187,6 +188,9 @@ root_agent = LlmAgent(
     # The injection warning goes on top of the report every time, in code --
     # see guards.py for the eval run that showed the instruction alone is 80%.
     before_agent_callback=reset_warnings,
-    after_tool_callback=collect_warnings,
+    # Gemini calls made inside tools report their usage through these -- see
+    # metering.py. Neither changes what the model sees.
+    before_tool_callback=start_subcalls,
+    after_tool_callback=[collect_warnings, collect_subcalls],
     after_model_callback=prepend_warnings,
 )

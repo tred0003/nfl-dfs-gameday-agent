@@ -79,6 +79,9 @@ class Trace:
     tokens: dict = field(default_factory=dict)
     # One entry per model call: its tokens, cost, and what it was for.
     model_calls: list = field(default_factory=list)
+    # One entry per Gemini call made INSIDE a tool (metering.py): screen,
+    # news extraction, claim check, search. Not in `tokens` above.
+    subcalls: list = field(default_factory=list)
     # The lineup the scenario handed the agent, for the dashboard.
     lineup: list = field(default_factory=list)
 
@@ -134,6 +137,11 @@ class ScenarioResult:
     cost_usd: float | None = None
     judge_tokens: dict = field(default_factory=dict)
     judge_cost_usd: float | None = None
+    # `cost_usd` is the agent's own loop. Sub-calls were added 2026-10-19;
+    # older run files have none, so their total is the agent cost alone.
+    subcalls: list = field(default_factory=list)
+    subcall_cost_usd: float | None = None
+    total_cost_usd: float | None = None
 
     @property
     def checks_ok(self) -> bool:
@@ -144,8 +152,10 @@ def build_result(scenario_name: str, trace: Trace, failures: list[str],
                  total_checks: int, verdict,
                  description: str = "", agent_model: str = "",
                  judge_model: str = "") -> ScenarioResult:
-    from token_cost import cost_usd
+    from token_cost import cost_usd, subcall_cost
 
+    agent_cost = cost_usd(trace.tokens, agent_model)
+    sub_cost = subcall_cost(trace.subcalls)
     judge_tokens = dict(getattr(verdict, "tokens", {}) or {})
     return ScenarioResult(
         scenario=scenario_name,
@@ -163,7 +173,10 @@ def build_result(scenario_name: str, trace: Trace, failures: list[str],
         elapsed_s=round(trace.elapsed_s, 1),
         report=trace.final_text,
         tokens=dict(trace.tokens),
-        cost_usd=cost_usd(trace.tokens, agent_model),
+        cost_usd=agent_cost,
+        subcalls=list(trace.subcalls),
+        subcall_cost_usd=sub_cost,
+        total_cost_usd=None if agent_cost is None else round(agent_cost + sub_cost, 6),
         judge_tokens=judge_tokens,
         judge_cost_usd=cost_usd(judge_tokens, judge_model) if judge_tokens else None,
     )

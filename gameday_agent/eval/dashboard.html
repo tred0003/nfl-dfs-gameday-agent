@@ -212,6 +212,7 @@ async function showOverview(sec) {
       ${tile(num(avg(rows.map(r => r.tool_count)), 1), "tool calls per report")}
       ${tile(num(avg(rows.map(r => r.tokens_total))), "tokens per report")}
       ${tile(usd(avg(rows.map(r => r.cost_usd))), "agent cost per report")}
+      ${rows.some(r => r.total_cost_usd != null) ? tile(usd(avg(rows.map(r => r.total_cost_usd))), "full cost per report, with in-tool calls") : ""}
       ${tile(usd(avg(O.latest.judge_costs)), "judge cost per report")}
       ${tile(within.length ? pct(avg(within)) : "–", `you vs judge, within 1 · ${O.alignment.items} graded`)}
     </div>
@@ -354,6 +355,8 @@ async function showReport(sec, kind, parts) {
   const costCard = card("Cost", `
     <div class="tiles" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));margin-bottom:12px">
       ${tile(usd(R.cost_usd), "agent, this report")}
+      ${R.subcall_cost_usd != null ? tile(usd(R.subcall_cost_usd), `${(R.subcalls || []).length} in-tool calls`) : ""}
+      ${R.total_cost_usd != null ? tile(usd(R.total_cost_usd), "full cost, this report") : ""}
       ${R.judge_cost_usd != null ? tile(usd(R.judge_cost_usd), "judge, this report") : ""}
       ${tile(num(totalTok), "tokens total")}
       ${tile(num(t.model_calls ?? mc.length), "model calls")}
@@ -365,8 +368,12 @@ async function showReport(sec, kind, parts) {
         <td class="num">${usd(c.cost_usd)}<div class="bar"><div style="width:${Math.round(100 * (c.cost_usd || 0) / maxCost)}%"></div></div></td></tr>`).join("")}
       </tbody></table></div>`
       : `<div class="muted small">${t.input != null ? "Totals only: this report was saved before per-call costs were recorded." : "No token data: saved before 10/16."}</div>`}
+    ${(R.subcalls || []).length ? `<h3 style="margin:14px 0 6px">Gemini calls made inside tools</h3><div class="scroll"><table><thead><tr><th>Call</th><th>Tool</th><th>Model</th><th class="num">Input</th><th class="num">Cached</th><th class="num">Output</th><th class="num">Thinking</th><th class="num">Cost</th></tr></thead><tbody>
+      ${R.subcalls.map(c => `<tr><td><code>${esc(c.label)}</code></td><td class="small">${esc(c.tool || "")}</td><td class="small">${esc(c.model)}</td>
+        <td class="num">${num(c.input)}</td><td class="num">${num(c.cached)}</td><td class="num">${num(c.output)}</td><td class="num">${num(c.thinking)}</td><td class="num">${usd(c.cost_usd)}</td></tr>`).join("")}
+      </tbody></table></div>` : ""}
     <div class="faint small" style="margin-top:8px">${R.model || "gemini-2.5-flash"} at $${M.prices[R.model || "gemini-2.5-flash"]?.input}/1M input, $${M.prices[R.model || "gemini-2.5-flash"]?.output}/1M output (thinking billed as output), checked ${M.prices_checked}.
-      Tools cost nothing per call in tokens: the model pays to read their results on the next call. Gemini calls made inside a tool aren't counted.</div>`);
+      Cached input is billed at 10% of the input rate. Gemini calls made inside a tool (screen, news extraction, claim check, search) are listed separately${R.subcalls?.length ? "" : "; reports saved before 10/19 did not record them"}. The Google Search grounding fee is per request and not included.</div>`);
 
   const toolsCard = card(`Tool calls · ${R.tool_calls.length}`, R.tool_calls.length ? R.tool_calls.map((c, i) => toolBlock(c, i)).join("")
     : `<div class="muted small">${R.legacy ? "This report was stored before tool calls were recorded (10/16)." : "No tools were called."}</div>`,

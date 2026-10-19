@@ -46,6 +46,7 @@ from google.adk.tools import ToolContext
 
 from predict_slate import resolve_lineup
 
+from .metering import generate
 from .slate import my_lineup_names, slate
 
 MODEL = os.environ.get("NEWS_MODEL", os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
@@ -373,8 +374,8 @@ def check_claims(claims: list[dict]) -> tuple[list[dict], int]:
     verdicts: dict[int, str] = {}
     try:
         from google.genai import types
-        resp = _client().models.generate_content(
-            model=CLAIM_CHECK_MODEL,
+        resp = generate(
+            _client(), "claim_check", model=CLAIM_CHECK_MODEL,
             contents=CLAIM_CHECK_PROMPT.format(items=items),
             config=types.GenerateContentConfig(
                 temperature=0.0, response_mime_type="application/json",
@@ -511,8 +512,8 @@ def get_team_news(tool_context: ToolContext = None) -> dict:
         a["text"] = a["text"][:TEXT_CHARS]
     try:
         from google.genai import types
-        resp = _client().models.generate_content(
-            model=MODEL,
+        resp = generate(
+            _client(), "news_extract", model=MODEL,
             contents=EXTRACT_PROMPT.format(teams=", ".join(teams),
                                            roster=", ".join(mine["name"]), articles=blocks),
             config=types.GenerateContentConfig(
@@ -579,8 +580,8 @@ def search_news(query: str, tool_context: ToolContext = None) -> dict:
               f"from NFL news published in the last 3 days. If recent sources do not "
               f"answer it, say so.\n\nQuestion: {query}")
     try:
-        resp = _client().models.generate_content(
-            model=MODEL, contents=prompt,
+        resp = generate(
+            _client(), "search_news", model=MODEL, contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0,
                 tools=[types.Tool(google_search=types.GoogleSearch())]),

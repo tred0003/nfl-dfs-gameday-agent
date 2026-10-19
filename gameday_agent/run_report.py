@@ -101,7 +101,9 @@ def _load_agent_env() -> None:
 
 _load_agent_env()
 
-from token_cost import add_usage, call_record, cost_usd, new_totals  # noqa: E402
+from token_cost import (  # noqa: E402
+    add_usage, call_record, cost_usd, new_totals, subcall_cost, subcalls_from_state,
+)
 from user_store import FirestoreStore, LineupError, User  # noqa: E402
 from report_check import audit as audit_report, correct as correct_report  # noqa: E402
 from watch_slate import load_env, send_discord  # noqa: E402
@@ -204,6 +206,9 @@ def run_agent_remote(resource: str, lineup: list[str], query: str = QUERY,
                 continue
             if tokens is not None:
                 add_usage(tokens, event.get("usage_metadata"))
+            if record is not None:
+                record.setdefault("subcalls", []).extend(subcalls_from_state(
+                    (event.get("actions") or {}).get("state_delta")))
             parts = (event.get("content", {}) or {}).get("parts", []) or []
             if record is not None:
                 _record_event(record, event.get("usage_metadata"),
@@ -271,6 +276,9 @@ async def run_agent(lineup: list[str], responses: list[dict] | None = None,
             continue
         if tokens is not None:
             add_usage(tokens, getattr(event, "usage_metadata", None))
+        if record is not None:
+            record.setdefault("subcalls", []).extend(subcalls_from_state(
+                getattr(getattr(event, "actions", None), "state_delta", None)))
         if not (event.content and event.content.parts):
             continue
         if record is not None:
@@ -322,7 +330,7 @@ def produce_report(user: User, resource: str, local: bool,
     # What each tool RETURNED, kept so report_check can hold the report to it.
     responses: list[dict] = []
     tokens = new_totals()
-    record: dict = {"tool_calls": [], "model_calls": []}
+    record: dict = {"tool_calls": [], "model_calls": [], "subcalls": []}
     started = time.monotonic()
     try:
         if resource and not local:
@@ -353,10 +361,15 @@ def produce_report(user: User, resource: str, local: bool,
             log(f"[{user.uid}] report check passed")
         tools = [r.get("name", "") for r in responses]
         cost = cost_usd(tokens, model)
-        log(f"[{user.uid}] tokens: {tokens} (${cost})")
+        sub_cost = subcall_cost(record["subcalls"])
+        total = None if cost is None else round(cost + sub_cost, 6)
+        log(f"[{user.uid}] tokens: {tokens} (agent ${cost} + "
+            f"{len(record['subcalls'])} in-tool calls ${sub_cost} = ${total})")
         return {**base, "text": report, "agent_text": agent_text, "source": "agent",
                 "problems": problems, "checks": checks, "tools": tools,
                 "tokens": tokens, "cost_usd": cost,
+                "subcalls": record["subcalls"], "subcall_cost_usd": sub_cost,
+                "total_cost_usd": total,
                 "model_calls": record["model_calls"],
                 "tool_calls": pair_tool_calls(record["tool_calls"], responses),
                 "elapsed_s": round(time.monotonic() - started, 1)}

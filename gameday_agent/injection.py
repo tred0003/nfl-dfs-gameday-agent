@@ -85,6 +85,8 @@ def screen(texts: list[str], client=None, batch: int | None = None) -> list[dict
         client = _client()
     from google.genai import types
 
+    from .metering import generate
+
     batch = batch or BATCH
     out: list[dict] = []
     for start in range(0, len(texts), batch):
@@ -96,7 +98,8 @@ def screen(texts: list[str], client=None, batch: int | None = None) -> list[dict
             for i, t in enumerate(chunk))
         verdicts: dict[int, dict] = {}
         try:
-            resp = client.models.generate_content(
+            resp = generate(
+                client, "injection_screen",
                 model=SCREEN_MODEL, contents=SCREEN_PROMPT.format(items=items),
                 config=types.GenerateContentConfig(
                     temperature=0.0, response_mime_type="application/json",

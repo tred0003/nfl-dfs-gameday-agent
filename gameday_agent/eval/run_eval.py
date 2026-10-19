@@ -75,7 +75,7 @@ from gameday_agent.eval.scoring import (  # noqa: E402
     mean_quality, save_baseline, save_run, suite_quality,
 )
 from predict_slate import normalize_name  # noqa: E402
-from token_cost import add_usage, call_record, new_totals  # noqa: E402
+from token_cost import add_usage, call_record, new_totals, subcalls_from_state  # noqa: E402
 
 QUERY = "Check my lineup for this Sunday and tell me if anything needs my attention."
 
@@ -275,6 +275,9 @@ async def _run_scenario(scenario: Scenario) -> Trace:
         # only a function call has no text but still cost tokens.
         if not getattr(event, "partial", False):
             add_usage(trace.tokens, getattr(event, "usage_metadata", None))
+            # Gemini calls made inside tools (metering.py) ride in state deltas.
+            actions = getattr(event, "actions", None)
+            trace.subcalls += subcalls_from_state(getattr(actions, "state_delta", None))
         if not (event.content and event.content.parts):
             continue
         if not getattr(event, "partial", False):

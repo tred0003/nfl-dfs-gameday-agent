@@ -135,6 +135,7 @@ def _eval_row(stem: str, payload: dict, r: dict) -> dict:
         "tools_called": sorted(called) if trace else None,
         "core_used": sum(t in called for t in CORE_TOOLS),
         "tokens_total": _tok_total(r.get("tokens")), "cost_usd": r.get("cost_usd"),
+        "total_cost_usd": r.get("total_cost_usd"),
         "has_trace": bool(trace),
     }
 
@@ -166,6 +167,7 @@ def _prod_rows() -> tuple[list[dict], str | None]:
                 "quality": None, "tool_count": len(tools), "tools_called": sorted(set(tools)),
                 "core_used": sum(t in set(tools) for t in CORE_TOOLS),
                 "tokens_total": _tok_total(d.get("tokens")), "cost_usd": d.get("cost_usd"),
+                "total_cost_usd": d.get("total_cost_usd"),
                 "has_trace": bool(d.get("tool_calls")),
             })
         rows.sort(key=lambda r: (r["date"], r["who"]), reverse=True)
@@ -209,6 +211,8 @@ def _detail_eval(stem: str, scenario: str) -> dict:
         "lineup": _lineup_view(trace.get("lineup") or [], responses),
         "tokens": r.get("tokens") or None, "cost_usd": r.get("cost_usd"),
         "judge_cost_usd": r.get("judge_cost_usd"),
+        "subcalls": r.get("subcalls") or [], "subcall_cost_usd": r.get("subcall_cost_usd"),
+        "total_cost_usd": r.get("total_cost_usd"),
         "model_calls": trace.get("model_calls") or [],
         "tool_calls": _eval_tool_calls(trace),
         "report_check": audit(r.get("report", ""), responses) if trace else [],
@@ -243,6 +247,8 @@ def _detail_prod(uid: str, date: str) -> dict:
         "model": d.get("model"), "agent": d.get("agent"), "elapsed_s": d.get("elapsed_s"),
         "lineup": _lineup_view(d.get("lineup") or [], responses),
         "tokens": d.get("tokens"), "cost_usd": d.get("cost_usd"), "judge_cost_usd": None,
+        "subcalls": d.get("subcalls") or [], "subcall_cost_usd": d.get("subcall_cost_usd"),
+        "total_cost_usd": d.get("total_cost_usd"),
         "model_calls": d.get("model_calls") or [], "tool_calls": calls,
         "report_check": d.get("checks") or [],
         "scenario_checks": None, "judge": None, "judge_hidden": False, "grade_id": None,
@@ -304,7 +310,8 @@ def overview():
                      "avg_tools": _mean([r.get("tool_count") for r in res]),
                      "avg_seconds": _mean([r.get("elapsed_s") for r in res]),
                      "avg_tokens": _mean([_tok_total(r.get("tokens")) for r in res]),
-                     "avg_cost": _mean([r.get("cost_usd") for r in res])})
+                     "avg_cost": _mean([r.get("cost_usd") for r in res]),
+                     "avg_total_cost": _mean([r.get("total_cost_usd") for r in res])})
     prod, prod_err = _prod_rows()
     return jsonify(
         latest={"run": latest_stem, "at": latest.get("at", ""),
