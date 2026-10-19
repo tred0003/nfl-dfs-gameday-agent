@@ -246,10 +246,16 @@ async def _run_scenario(scenario: Scenario) -> Trace:
     tools_mod.vegas_for_slate = lambda *_a, **_kw: vegas
 
     news_mod.slate, news_mod._gather, news_mod._client = _NEWS_ORIGINALS
-    if scenario.news_articles is not None:
-        articles = _news_articles(scenario)
-        news_mod.slate = tools_mod.slate
-        news_mod._gather = lambda *_a, **_kw: ([dict(a) for a in articles], [])
+    # news.py has its own reference to slate(). Until 2026-10-19 it was only
+    # pointed at the fixture when a scenario planted articles, so in every
+    # other scenario get_team_news looked the fixture lineup up on the LIVE
+    # DK slate, found nobody, and returned an error -- the news path was
+    # untested in 8 of 9 scenarios. Now every scenario reads the fixture
+    # slate, and one with no planted articles gets a quiet week, not live
+    # feeds: live news would make runs incomparable day to day.
+    news_mod.slate = tools_mod.slate
+    articles = _news_articles(scenario) if scenario.news_articles is not None else []
+    news_mod._gather = lambda *_a, **_kw: ([dict(a) for a in articles], [])
     if scenario.search_answer is not None:
         real = _NEWS_ORIGINALS[2]
         news_mod._client = lambda: _FakeSearchClient(real(), scenario.search_answer)
