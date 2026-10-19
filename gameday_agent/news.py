@@ -70,6 +70,13 @@ NEWS_HOURS = int(os.environ.get("NEWS_HOURS", "48"))
 PER_TEAM = 10            # newest articles kept per team, after de-duplication
 TEXT_CHARS = 1800        # per article, sent to extraction
 SEARCH_LIMIT = 3         # search_news calls allowed per agent run
+# Thinking budgets for the two narrow calls. Both return a fixed schema, and
+# what keeps them honest is code, not reasoning: verify() throws out any
+# quote not in the article, and check_claims() replaces any claim its quote
+# does not support. On the 2026-10-19 live run extraction thought 2.4-4.0K
+# tokens to write 1-505 tokens of JSON. -1 restores the dynamic default.
+EXTRACT_THINKING = int(os.environ.get("NEWS_THINKING", "0"))
+CLAIM_CHECK_THINKING = int(os.environ.get("CLAIM_CHECK_THINKING", "0"))
 
 # DK abbreviation -> (ESPN team id, nickname, official site). DK writes WAS and
 # sometimes LA / JAC; ESPN writes WSH / LAR / JAX.
@@ -379,7 +386,8 @@ def check_claims(claims: list[dict]) -> tuple[list[dict], int]:
             contents=CLAIM_CHECK_PROMPT.format(items=items),
             config=types.GenerateContentConfig(
                 temperature=0.0, response_mime_type="application/json",
-                response_schema=_check_schema()),
+                response_schema=_check_schema(),
+                thinking_config=types.ThinkingConfig(thinking_budget=CLAIM_CHECK_THINKING)),
         )
         for r in resp.parsed or []:
             r = r if isinstance(r, dict) else r.model_dump()
@@ -518,7 +526,8 @@ def get_team_news(tool_context: ToolContext = None) -> dict:
                                            roster=", ".join(mine["name"]), articles=blocks),
             config=types.GenerateContentConfig(
                 temperature=0.0, response_mime_type="application/json",
-                response_schema=_schema()),
+                response_schema=_schema(),
+                thinking_config=types.ThinkingConfig(thinking_budget=EXTRACT_THINKING)),
         )
         raw = resp.parsed or []
         raw = [r if isinstance(r, dict) else r.model_dump() for r in raw]

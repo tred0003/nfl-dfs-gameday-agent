@@ -21,8 +21,10 @@ eval/injection_check.py measures both, and the regex, on the same labeled set.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import threading
+from collections import OrderedDict
 
 import requests
 
@@ -32,6 +34,12 @@ ARMOR_LOCATION = "us-central1"
 ARMOR_TEMPLATE = os.environ.get("MODEL_ARMOR_TEMPLATE", "injection-screen")
 BATCH = 20
 ITEM_CHARS = 1800
+# Thinking off by default. The screen assigns one of two labels; it has
+# nothing to reason out. On the 2026-10-19 live run (4 users) it was the
+# single largest cost in a report: one 6.7K-token batch spent 6,852 thinking
+# tokens, ~$0.02, more than the whole agent loop. Thinking bills at the
+# output rate. Set INJECTION_THINKING=-1 for the model's dynamic default.
+SCREEN_THINKING = int(os.environ.get("INJECTION_THINKING", "0"))
 
 SCREEN_PROMPT = """\
 Each item below is third-party text -- an injury note, a news article or a
@@ -76,10 +84,57 @@ def _schema():
     ))
 
 
-def screen(texts: list[str], client=None, batch: int | None = None) -> list[dict]:
-    """One verdict per text: {"verdict": "instruction"|"clean"|"unchecked", "evidence"}."""
+# Verdicts already paid for, keyed by the exact text screened plus the model
+# and prompt that screened it. The 12:30 job runs users back to back in one
+# warm process, and they share league feeds: on 2026-10-19 the second user's
+# first batch was 6,943 of 7,060 tokens identical to the first user's. Only
+# a definite verdict is kept -- "unchecked" is a failure and is retried.
+_VERDICTS: OrderedDict[str, dict] = OrderedDict()
+_VERDICTS_MAX = 5000
+_verdicts_lock = threading.Lock()
+
+
+def _key(text: str) -> str:
+    h = hashlib.sha256()
+    for part in (SCREEN_MODEL, str(SCREEN_THINKING), SCREEN_PROMPT, text[:ITEM_CHARS]):
+        h.update(part.encode("utf-8"))
+        h.update(b"|")
+    return h.hexdigest()
+
+
+def _remember(key: str, verdict: dict) -> None:
+    with _verdicts_lock:
+        _VERDICTS[key] = verdict
+        _VERDICTS.move_to_end(key)
+        while len(_VERDICTS) > _VERDICTS_MAX:
+            _VERDICTS.popitem(last=False)
+
+
+def screen(texts: list[str], client=None, batch: int | None = None,
+           cache: bool = True) -> list[dict]:
+    """One verdict per text: {"verdict": "instruction"|"clean"|"unchecked", "evidence"}.
+
+    A text screened before in this process, by this model and prompt, is not
+    sent again. eval/injection_check.py passes cache=False: a repeat that
+    reads its own earlier answer measures nothing.
+    """
     if not texts:
         return []
+    if not cache:
+        return _screen_uncached(texts, client, batch)
+    keys = [_key(t) for t in texts]
+    with _verdicts_lock:
+        known = {i: dict(_VERDICTS[k]) for i, k in enumerate(keys) if k in _VERDICTS}
+    todo = [i for i in range(len(texts)) if i not in known]
+    fresh = _screen_uncached([texts[i] for i in todo], client, batch) if todo else []
+    for i, v in zip(todo, fresh):
+        known[i] = v
+        if v["verdict"] != "unchecked":
+            _remember(keys[i], v)
+    return [known[i] for i in range(len(texts))]
+
+
+def _screen_uncached(texts: list[str], client=None, batch: int | None = None) -> list[dict]:
     if client is None:
         from .news import _client
         client = _client()
@@ -103,7 +158,8 @@ def screen(texts: list[str], client=None, batch: int | None = None) -> list[dict
                 model=SCREEN_MODEL, contents=SCREEN_PROMPT.format(items=items),
                 config=types.GenerateContentConfig(
                     temperature=0.0, response_mime_type="application/json",
-                    response_schema=_schema()))
+                    response_schema=_schema(),
+                    thinking_config=types.ThinkingConfig(thinking_budget=SCREEN_THINKING)))
             for r in resp.parsed or []:
                 r = r if isinstance(r, dict) else r.model_dump()
                 verdicts[r["item"]] = {"verdict": r["verdict"], "evidence": r.get("evidence") or ""}

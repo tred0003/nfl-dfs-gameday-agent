@@ -177,8 +177,8 @@ def check_the_checker(repeat: int = 3) -> None:
         HELDOUT_ATTACKS[1], CHECKER_ATTACKS[0], CHECKER_ATTACKS[1]]
     attack_at = {0, 9, len(batch) - 3, len(batch) - 2, len(batch) - 1}
     for run in range(repeat):
-        alone = [suspicious(v) for v in screen(CHECKER_ATTACKS)]
-        mixed = [suspicious(v) for v in screen(batch, batch=len(batch))]
+        alone = [suspicious(v) for v in screen(CHECKER_ATTACKS, cache=False)]
+        mixed = [suspicious(v) for v in screen(batch, batch=len(batch), cache=False)]
         caught = sum(mixed[i] for i in attack_at)
         false = sum(f for i, f in enumerate(mixed) if i not in attack_at)
         print(f"  run {run + 1}: alone {sum(alone)}/3 caught   in a batch of {len(batch)}: "
@@ -223,8 +223,8 @@ def main() -> None:
         at += len(texts)
 
     t = time.perf_counter()
-    gem_runs = [screen(labeled, batch=a.batch) for _ in range(a.repeat)]
-    gem_archive = screen(sets["archive"][0], batch=a.batch)
+    gem_runs = [screen(labeled, batch=a.batch, cache=False) for _ in range(a.repeat)]
+    gem_archive = screen(sets["archive"][0], batch=a.batch, cache=False)
     gem_s = time.perf_counter() - t
     t = time.perf_counter()
     with ThreadPoolExecutor(max_workers=8) as ex:
