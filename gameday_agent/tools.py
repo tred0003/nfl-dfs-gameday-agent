@@ -325,13 +325,12 @@ def get_lineup_status(tool_context: ToolContext = None) -> dict:
     }
 
 
-def get_slate_weather() -> dict:
-    """Get weather for the games on this week's slate, from two sources.
+def get_slate_weather(tool_context: ToolContext = None) -> dict:
+    """Get weather for the games the user has a player in, from two sources.
 
-    Only games the user can actually roster are returned -- the Sunday main
-    slate, which is the 1pm and 4pm windows. Thursday, Sunday-night and
-    Monday-night games are excluded because no player in them can be in the
-    lineup, so their weather cannot matter.
+    Only Sunday main-slate games (the 1pm and 4pm windows) that include a
+    rostered player's team are returned. When the lineup is unknown, every
+    main-slate game is returned instead.
 
     TWO INDEPENDENT SOURCES are reported per game and they do not always
     agree. Report a disagreement as a disagreement -- do not silently pick
@@ -376,6 +375,12 @@ def get_slate_weather() -> dict:
         games["home_n"].isin(_slate_teams(slate_games))
         & games["away_n"].isin(_slate_teams(slate_games))
     ]
+    # The whole slate's weather was ~2.5K characters on a real Sunday, read by
+    # the model on every later call, for a report that only ever mentions the
+    # user's own games (2026-10-19 cost pass). Scoped to those, in code.
+    mine = _my_game_teams(tool_context)
+    if mine:
+        games = games[games["home_n"].isin(mine) | games["away_n"].isin(mine)]
 
     # DK's own forecast, keyed by the same normalized team pair -- the two
     # feeds name games differently ("Green Bay Packers at New York Jets" vs
@@ -403,6 +408,23 @@ def get_slate_weather() -> dict:
         })
 
     return {"status": "ok", "games": out}
+
+
+def _my_game_teams(tool_context) -> set[str]:
+    """Both teams in every game a rostered player is in, normalized. Empty
+    when there is no lineup or nothing matches, which callers read as "do not
+    filter"."""
+    names = my_lineup_names(tool_context)
+    if not names:
+        return set()
+    try:
+        players, _ = slate()
+    except requests.RequestException:
+        return set()
+    matched, _ = resolve_lineup(names, players)
+    games = players.loc[players["name"].isin({m["name"] for m in matched}), "game"]
+    teams = {t for g in games.dropna() for t in str(g).replace("@", " ").split()}
+    return set(pd.Series(sorted(teams), dtype=object).replace(TEAM_FIXES))
 
 
 def get_vegas_context() -> dict:
@@ -631,12 +653,6 @@ def get_cb_matchups(tool_context: ToolContext = None) -> dict:
     verdict rather than re-deriving one from the grades; a number like 86.2
     means nothing to a reader without the distribution behind it.
 
-    Give a verdict for EVERY receiver and tight end in the lineup, one line
-    each, shortest first. Lead with anything tough or favorable, since those
-    are the ones that change a decision, but do not silently omit the neutral
-    ones -- a reader who sees four of five players listed cannot tell whether
-    the fifth was fine or unchecked.
-
     `top_corner_unavailable` names an elite corner who is OUT, IR or Doubtful.
     That is the single most useful line in this tool: the matchup just got
     easier and most people will not have adjusted for it.
@@ -667,15 +683,17 @@ def get_cb_matchups(tool_context: ToolContext = None) -> dict:
         if opp is None:
             continue
         corners = board[board["team"].eq(opp)].head(4)
+        # Passer rating, yards per target and snap share used to ride along
+        # for every corner: 4 corners x 7 fields per receiver, the largest
+        # tool result in a run, for a model told to report the verdict and
+        # not re-derive it. Cut to what the verdict and the report use
+        # (2026-10-19 cost pass); the grade still blends all three.
         packed = [
                 {
                     "name": c["pfr_player_name"],
                     "coverage_grade": _f(c["coverage_grade"]),
                     "role": _s(c["role"], default="unknown"),
-                    "passer_rating_allowed": _f(c["passer_rating_allowed"]),
-                    "yards_per_target": _f(c["yards_per_target"]),
                     "injury_status": _s(c["injury_status"]),
-                    "snap_share": _f(c["snap_share"]),
                 }
             for _, c in corners.iterrows()
         ]
@@ -686,7 +704,8 @@ def get_cb_matchups(tool_context: ToolContext = None) -> dict:
             "opponent": opp,
             "game": r["game"],
             "verdict": verdict,
-            "best_available_corner": best,
+            # A name, not the whole record again: it is one of opponent_corners.
+            "best_available_corner": best["name"] if best else None,
             "top_corner_unavailable": sidelined,
             "opponent_corners": packed,
         })
@@ -739,7 +758,10 @@ def get_notable_scratches(min_salary: int = 6000) -> dict:
 # agent's identity has bigquery.jobUser -- plus READER on this one dataset.
 PROJECTIONS_TABLE = os.environ.get(
     "PROJECTIONS_TABLE", "fantasy-football-ml-503718.dfs.projections")
-VALUE_PICKS_PER_POS = {"QB": 5, "RB": 5, "WR": 5, "TE": 5, "DST": 3}
+# The report lists the top 2 at each position and the top DST. One spare per
+# position, so a backup QB the report has to skip still leaves a pick; the
+# old 5/5/5/5/3 sent ~23 rows to be read for ~9 used (2026-10-19 cost pass).
+VALUE_PICKS_PER_POS = {"QB": 3, "RB": 3, "WR": 3, "TE": 3, "DST": 2}
 
 
 def get_value_picks() -> dict:
@@ -749,7 +771,7 @@ def get_value_picks() -> dict:
     Sunday 11:00 ET) projects the whole slate with the registered XGBoost
     model and stores the result; this reads the latest run for this slate.
 
-    Returns the top 5 QB, RB, WR and TE by `value` and the top 3 defenses.
+    Returns the top 3 QB, RB, WR and TE by `value` and the top 2 defenses.
 
     `value` = projection minus what the salary implies a typical player at
     that price scores. Positive means the model likes him more than DK priced
