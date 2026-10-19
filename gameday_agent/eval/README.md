@@ -84,6 +84,14 @@ grading only the agent's *last* text chunk: it now joins every text part,
 the rule `run_report.py` has used since 10/9, so the judge sees the whole
 report the user would.
 
+From 10/19 the dollars are the **whole** bill: Gemini calls made inside
+tools (injection screen, news extraction, claim check, search) are metered
+too (`gameday_agent/metering.py`), cached input is billed at 10%, and each
+report lists its in-tool calls. Before that the number was a floor — on the
+live slate those calls were 63-87% of a report's real cost.
+`--batch-judge` grades the whole run in one Vertex batch job at half the
+judge's price; expect it to queue for several minutes.
+
 Disagreement is usually a rubric bug, not a judge bug. If the judge's
 reasoning is sound and you still disagree, the anchor text says something
 other than what you meant, and the anchor is what gets rewritten.
