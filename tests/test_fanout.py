@@ -101,6 +101,31 @@ class RunUsersTest(unittest.TestCase):
         self.assertEqual(self.store.reports, {})
         self.assertEqual(self.sent, [])
 
+    def test_identical_lineups_reuse_one_agent_report(self):
+        self.store.put_user(User(uid="u3", lineup=["A2", "a1"]))  # u1's players
+        calls = []
+
+        def counting(user):
+            calls.append(user.uid)
+            return echo(user) | {"cost_usd": 0.01, "total_cost_usd": 0.05}
+        self.assertEqual(self.run_all(produce=counting), 0)
+        self.assertEqual(calls, ["u1", "u2"])
+        reused = self.store.get_report("u3", DAY)
+        self.assertEqual(reused["text"], "u1: A1,A2")
+        self.assertEqual(reused["reused_from"], "u1")
+        self.assertEqual(reused["total_cost_usd"], 0.0)
+        self.assertEqual(self.store.get_report("u1", DAY)["total_cost_usd"], 0.05)
+
+    def test_a_fallback_report_is_not_reused(self):
+        self.store.put_user(User(uid="u3", lineup=["A1", "A2"]))
+        calls = []
+
+        def fallback(user):
+            calls.append(user.uid)
+            return echo(user) | {"source": "fallback"}
+        self.run_all(produce=fallback)
+        self.assertEqual(calls, ["u1", "u2", "u3"])
+
     def test_inactive_users_are_skipped(self):
         self.store.put_user(User(uid="u3", lineup=["C1"], active=False))
         self.run_all()

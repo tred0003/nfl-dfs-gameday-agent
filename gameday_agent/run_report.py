@@ -419,6 +419,20 @@ def pair_tool_calls(calls: list[dict], responses: list[dict]) -> list[dict]:
     return out
 
 
+def _lineup_key(user: User) -> tuple[str, ...] | None:
+    """The lineup as a set of names, or None when there is no usable lineup."""
+    try:
+        return tuple(sorted(n.lower() for n in user.checked_lineup()))
+    except LineupError:
+        return None
+
+
+# What a reused report carries instead of the first user's bill: nothing was
+# spent on it. The first user's record keeps the real cost.
+_REUSED_COST = {"tokens": {}, "cost_usd": 0.0, "subcalls": [], "subcall_cost_usd": 0.0,
+                "total_cost_usd": 0.0, "model_calls": []}
+
+
 def run_users(users: list[User], store, produce: Callable[[User], dict],
               deliver: Callable[[str], bool] | None, report_id: str,
               dry_run: bool = False) -> int:
@@ -434,11 +448,26 @@ def run_users(users: list[User], store, produce: Callable[[User], dict],
     covers "we do not know the players", and a stale or empty roster reads
     exactly like a real one ("all 9 active"). A missing report trips the
     alert and gets fixed; a confidently wrong one went unnoticed for weeks.
+
+    Two users with the same nine players get the same report: the agent is
+    asked the same question with the same lineup against the same slate a
+    minute apart. The second one reuses the first's agent report instead of
+    paying for it again (2026-10-19 cost pass). Only within one run, and
+    only an agent report -- a fallback costs nothing to rebuild.
     """
     failed = 0
+    seen: dict[tuple[str, ...], tuple[str, dict]] = {}
     for user in users:
+        key = _lineup_key(user)
         try:
-            fields = produce(user)
+            if key is not None and key in seen:
+                first_uid, first = seen[key]
+                fields = {**first, **_REUSED_COST, "reused_from": first_uid}
+                log(f"[{user.uid}] same lineup as {first_uid}: reusing its report")
+            else:
+                fields = produce(user)
+                if key is not None and fields.get("source") == "agent":
+                    seen[key] = (user.uid, fields)
         except LineupError as e:
             log(f"[{user.uid}] LINEUP UNAVAILABLE, no report: {e}")
             failed += 1
