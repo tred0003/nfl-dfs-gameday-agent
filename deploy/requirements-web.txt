@@ -4,3 +4,8 @@ flask>=3.0
 gunicorn>=22.0
 firebase-admin>=6.5
 google-cloud-firestore>=2.16
+# This week's player pool (BigQuery) and suggested lineups (the ILP in src/optimize.py).
+google-cloud-bigquery>=3.20
+db-dtypes>=1.2
+pandas>=2.1
+pulp>=2.8

@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "webapp"))
 from main import create_app  # noqa: E402
+from slate import SlateError, solve  # noqa: E402
 from user_store import MemoryStore, User  # noqa: E402
 
 
@@ -32,13 +33,31 @@ def bearer(uid: str) -> dict:
     return {"Authorization": f"Bearer token-{uid}"}
 
 
+class FakeSlate:
+    """Stands in for BigQuery. Counts calls so the caching contract is visible."""
+
+    def __init__(self, fail: bool = False):
+        self.fail = fail
+
+    def pool(self):
+        if self.fail:
+            raise SlateError("no projection run found")
+        return {"run_id": "r1", "week": 7, "players": [{"name": "Drake Maye"}]}
+
+    def suggested(self):
+        if self.fail:
+            raise SlateError("no projection run found")
+        return {"run_id": "r1", "week": 7, "lineups": []}
+
+
 class WebAppTest(unittest.TestCase):
     def setUp(self):
         self.store = MemoryStore([User(uid="u1", name="one", lineup=["A1", "A2"]),
                                   User(uid="u2", name="two", lineup=["B1", "B2"])])
         self.store.save_report("u1", "2026-10-16", {"text": "u1 secret report",
                                                     "source": "agent"})
-        self.client = create_app(store=self.store, verify=fake_verify).test_client()
+        self.client = create_app(store=self.store, verify=fake_verify,
+                                 slate=FakeSlate()).test_client()
 
     # ---- who you are -------------------------------------------------------
     def test_no_token_is_401(self):
@@ -86,6 +105,60 @@ class WebAppTest(unittest.TestCase):
                      {"lineup": ["x" * 61]}, {"lineup": ["p"] * 13}):
             r = self.client.put("/api/lineup", headers=bearer("u1"), json=body)
             self.assertEqual(r.status_code, 400, body)
+
+
+    # ---- slate and suggestions: shared, but still behind sign-in -------------
+    def test_slate_needs_a_signed_in_provisioned_user(self):
+        for path in ("/api/slate", "/api/suggested"):
+            self.assertEqual(self.client.get(path).status_code, 401, path)
+            self.assertEqual(self.client.get(path, headers=bearer("u9")).status_code, 403, path)
+
+    def test_slate_and_suggested_return_the_shared_pool(self):
+        r = self.client.get("/api/slate", headers=bearer("u1")).get_json()
+        self.assertEqual(r["players"][0]["name"], "Drake Maye")
+        self.assertEqual(self.client.get("/api/suggested", headers=bearer("u2")).get_json()["week"], 7)
+
+    def test_unreadable_slate_is_503_not_an_empty_pool(self):
+        client = create_app(store=self.store, verify=fake_verify,
+                            slate=FakeSlate(fail=True)).test_client()
+        r = client.get("/api/slate", headers=bearer("u1"))
+        self.assertEqual(r.status_code, 503)
+        self.assertIn("could not be loaded", r.get_json()["error"])
+
+
+def _player(name, pos, team, opp, salary, proj, status=None):
+    return {"name": name, "position": pos, "team": team, "opp_team": opp,
+            "game": " @ ".join(sorted([team, opp])), "salary": salary,
+            "status": status, "projection": proj, "ceiling": None, "value": None}
+
+
+class SolveTest(unittest.TestCase):
+    """The suggestion solver: legal DK lineups, and never a ruled-out player."""
+
+    def pool(self):
+        # Salaries high enough to reach optimize()'s $49,000 floor.
+        teams =[("AAA", "BBB"), ("BBB", "AAA"), ("CCC", "DDD"), ("DDD", "CCC")]
+        out = []
+        for t, o in teams:
+            out.append(_player(f"{t} QB", "QB", t, o, 7000, 18.0))
+            out += [_player(f"{t} RB{i}", "RB", t, o, 6500, 12.0 - i) for i in range(2)]
+            out += [_player(f"{t} WR{i}", "WR", t, o, 6500, 11.0 - i) for i in range(3)]
+            out.append(_player(f"{t} TE", "TE", t, o, 3500, 7.0))
+            out.append(_player(f"{t} DST", "DST", t, o, 2500, 6.0))
+        # The best projection on the slate, ruled out: must never be suggested.
+        out.append(_player("Hurt Star", "WR", "AAA", "BBB", 3000, 40.0, status="O"))
+        return out
+
+    def test_lineups_are_legal_and_skip_ruled_out_players(self):
+        lineups = solve(self.pool(), 2)
+        self.assertEqual(len(lineups), 2)
+        for lu in lineups:
+            names = [p["name"] for p in lu["players"]]
+            self.assertEqual(len(names), 9)
+            self.assertNotIn("Hurt Star", names)
+            self.assertLessEqual(lu["salary"], 50_000)
+            pos = [p["position"] for p in lu["players"]]
+            self.assertEqual((pos.count("QB"), pos.count("DST")), (1, 1))
 
 
 if __name__ == "__main__":

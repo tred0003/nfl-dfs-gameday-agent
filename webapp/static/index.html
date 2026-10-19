@@ -7,13 +7,13 @@
 <style>
   :root {
     --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #5d6470;
-    --line: #dde1e7; --accent: #1f6feb; --accent-text: #ffffff;
+    --line: #dde1e7; --accent: #1f6feb; --accent-text: #ffffff; --accent-soft: #e8f0fe;
     --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0f1115; --card: #171a21; --text: #e6e8ec; --muted: #9aa3af;
-      --line: #2a2f3a; --accent: #4c8dff; --accent-text: #0f1115;
+      --line: #2a2f3a; --accent: #4c8dff; --accent-text: #0f1115; --accent-soft: #1b2638;
       --ok: #3fb950; --warn: #d29922; --bad: #f85149;
     }
   }
@@ -25,14 +25,13 @@
            gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
   h1 { font-size: 22px; margin: 0; }
   h2 { font-size: 16px; margin: 0 0 12px; }
+  h3 { font-size: 14px; margin: 0; }
   .muted { color: var(--muted); font-size: 13px; }
   .card { background: var(--card); border: 1px solid var(--line);
           border-radius: 10px; padding: 18px; margin-bottom: 16px; }
   label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
   input { width: 100%; padding: 9px 10px; border: 1px solid var(--line);
           border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
-  .slots { display: grid; grid-template-columns: 56px 1fr; gap: 8px 10px; align-items: center; }
-  .slot { font-weight: 600; font-size: 13px; color: var(--muted); }
   .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
   button { padding: 9px 14px; border-radius: 6px; border: 1px solid var(--line);
            background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
@@ -42,9 +41,50 @@
   .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
   .report { white-space: pre-wrap; overflow-wrap: anywhere; }
   .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px;
-         border: 1px solid var(--line); color: var(--muted); }
-  .tag.fallback { color: var(--warn); border-color: var(--warn); }
+         border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .tag.fallback, .tag.warn { color: var(--warn); border-color: var(--warn); }
+  .tag.bad { color: var(--bad); border-color: var(--bad); }
+  .num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
   [hidden] { display: none !important; }
+
+  /* lineup slots */
+  .slots { display: grid; gap: 6px; }
+  .slot { display: grid; grid-template-columns: 48px 1fr auto 32px; gap: 10px; align-items: center;
+          padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+          background: var(--bg); cursor: pointer; text-align: left; width: 100%; }
+  .slot.active { border-color: var(--accent); background: var(--accent-soft); }
+  .slot .pos { font-weight: 600; font-size: 13px; color: var(--muted); }
+  .slot .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slot .empty { color: var(--muted); }
+  .slot .x { padding: 2px 0; border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; }
+  .totals { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; }
+  .totals b { font-variant-numeric: tabular-nums; }
+  .over { color: var(--bad); }
+
+  /* player picker */
+  /* position tabs, DraftKings-style */
+  .tabs { display: flex; gap: 0; margin: 10px 0 8px; border-bottom: 1px solid var(--line);
+          overflow-x: auto; }
+  .tab { flex: 1 0 auto; padding: 8px 12px; border: 0; border-bottom: 3px solid transparent;
+         border-radius: 0; background: none; color: var(--muted); font-weight: 600; font-size: 14px; }
+  .tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+  .sort { display: flex; gap: 6px; align-items: center; margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .chip { padding: 3px 12px; border-radius: 999px; font-size: 13px; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .pool { max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .player { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;
+            width: 100%; padding: 8px 10px; border: 0; border-bottom: 1px solid var(--line);
+            border-radius: 0; background: none; text-align: left; }
+  .player:last-child { border-bottom: 0; }
+  .player:hover:not(:disabled) { background: var(--accent-soft); }
+  .player .sub { font-size: 12px; color: var(--muted); }
+
+  /* suggested lineups */
+  .suggest { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-top: 10px; }
+  .suggest-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  td { padding: 3px 4px; border-top: 1px solid var(--line); }
+  td.pos { color: var(--muted); width: 44px; }
 </style>
 </head>
 <body>
@@ -72,14 +112,33 @@
   <section id="app" hidden>
     <div class="card">
       <h2>My lineup</h2>
-      <p class="muted">Checked every day at 12:30 ET. Use the names as DraftKings shows them.</p>
-      <form id="lineup-form">
-        <div id="slots" class="slots"></div>
-        <div class="row">
-          <button class="primary" type="submit">Save lineup</button>
-          <span id="lineup-msg" class="msg"></span>
-        </div>
-      </form>
+      <p class="muted">Tap a slot, then tap a player below. Every change saves on its own. Checked every day at 12:30 ET.</p>
+      <div id="slots" class="slots"></div>
+      <div class="totals">
+        <span>Salary <b id="t-salary">$0</b> / $50,000</span>
+        <span>Left <b id="t-left">$50,000</b></span>
+        <span>Projected <b id="t-proj">0.0</b></span>
+      </div>
+      <p id="lineup-msg" class="msg"></p>
+    </div>
+
+    <div class="card">
+      <h2 id="picker">Add players <span id="pool-meta" class="muted"></span></h2>
+      <div id="chips" class="tabs" role="tablist"></div>
+      <p id="picking" class="muted" style="margin:0 0 8px"></p>
+      <input id="search" type="search" placeholder="Search name or team" aria-label="Search players">
+      <div class="sort">Sort by
+        <button id="sort-salary" class="chip on" type="button">Salary</button>
+        <button id="sort-proj" class="chip" type="button">Projection</button>
+      </div>
+      <div style="height:8px"></div>
+      <div id="pool" class="pool"><p class="muted" style="padding:10px">Loading players…</p></div>
+    </div>
+
+    <div class="card">
+      <h2>Suggested lineups <span id="suggest-meta" class="muted"></span></h2>
+      <p class="muted">The optimizer's best lineups by model projection, under the $50,000 cap. Ruled-out players are excluded.</p>
+      <div id="suggested"><p class="muted">Loading…</p></div>
     </div>
 
     <div class="card">

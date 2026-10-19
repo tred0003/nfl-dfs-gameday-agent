@@ -127,10 +127,15 @@ class FirestoreStore:
 
     def latest_report(self, uid: str) -> tuple[str, dict] | None:
         # Report ids are YYYY-MM-DD, so the highest id is the newest report.
-        q = (self._user(uid).collection(REPORTS)
-             .order_by("__name__", direction=self._fs.Query.DESCENDING).limit(1))
-        snaps = list(q.stream())
-        return (snaps[0].id, snaps[0].to_dict() or {}) if snaps else None
+        # Not order_by("__name__", DESCENDING): a descending key query needs a
+        # composite index Firestore does not create on its own, and without
+        # one every /api/me was a 500 (2026-10-19). Listing ids needs no index
+        # and is one report per day per user -- small for a long time.
+        ids = [d.id for d in self._user(uid).collection(REPORTS).list_documents()]
+        if not ids:
+            return None
+        snap = self._user(uid).collection(REPORTS).document(max(ids)).get()
+        return (snap.id, snap.to_dict() or {}) if snap.exists else None
 
     def set_lineup(self, uid: str, lineup: list[str]) -> None:
         # update(), not set(): the web page may change the lineup and nothing

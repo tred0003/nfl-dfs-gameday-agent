@@ -7,8 +7,13 @@ Firestore the 12:30 job writes to (src/user_store.py):
     browser ──Authorization: Bearer <token>──► this app ──► users/{uid}
 
     GET  /             the page (static/index.html)
-    GET  /api/me       your name, lineup, and latest report
-    PUT  /api/lineup   replace your lineup  {"lineup": ["name", ...]}
+    GET  /api/me         your name, lineup, and latest report
+    PUT  /api/lineup     replace your lineup  {"lineup": ["name", ...]}
+    GET  /api/slate      this week's player pool, to click players from
+    GET  /api/suggested  the optimizer's top lineups for this week
+
+The last two are the same for every user and cached per projection run
+(webapp/slate.py) -- they cost one query and one solve per run, not per user.
 
 WHO YOU ARE COMES FROM THE TOKEN, NEVER FROM THE REQUEST. current_uid()
 verifies the Firebase ID token's signature, expiry and audience with the
@@ -36,6 +41,8 @@ from flask import Flask, abort, jsonify, request, send_from_directory
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from slate import BigQuerySlate, SlateError  # noqa: E402
 from user_store import FirestoreStore  # noqa: E402
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -63,10 +70,11 @@ def verify_firebase_token(token: str) -> str:
     return auth.verify_id_token(token)["uid"]
 
 
-def create_app(store=None, verify=verify_firebase_token) -> Flask:
-    """Build the app. Tests pass a MemoryStore and a fake verifier."""
+def create_app(store=None, verify=verify_firebase_token, slate=None) -> Flask:
+    """Build the app. Tests pass a MemoryStore, a fake verifier and a fake slate."""
     app = Flask(__name__, static_folder=None)
     app.config["store"] = store
+    slate = slate if slate is not None else BigQuerySlate()
 
     def get_store():
         # Created on first use, not at import: a missing credential should be
@@ -138,10 +146,30 @@ def create_app(store=None, verify=verify_firebase_token) -> Flask:
         get_store().set_lineup(user.uid, names)
         return jsonify(uid=user.uid, lineup=names)
 
+    # Signed-in only: the pool is not secret, but there is no reason to run
+    # BigQuery for anonymous traffic. current_user(), not current_uid(), so an
+    # unprovisioned account gets the same 403 here as everywhere else.
+    @app.get("/api/slate")
+    def get_slate():
+        current_user()
+        try:
+            return jsonify(slate.pool())
+        except SlateError as e:
+            abort(503, f"this week's players could not be loaded ({e})")
+
+    @app.get("/api/suggested")
+    def get_suggested():
+        current_user()
+        try:
+            return jsonify(slate.suggested())
+        except SlateError as e:
+            abort(503, f"suggested lineups could not be built ({e})")
+
     @app.errorhandler(400)
     @app.errorhandler(401)
     @app.errorhandler(403)
     @app.errorhandler(404)
+    @app.errorhandler(503)
     def json_error(e):
         return jsonify(error=e.description), e.code
 
