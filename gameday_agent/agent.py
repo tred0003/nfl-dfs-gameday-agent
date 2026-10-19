@@ -18,6 +18,7 @@ from google.genai import types
 from .guards import collect_warnings, prepend_warnings, reset_warnings
 from .metering import collect_subcalls, start_subcalls
 from .news import GEMINI_LOCATION
+from .prefetch import prefetch_core_tools
 from .tools import TOOLS
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
@@ -192,5 +193,8 @@ root_agent = LlmAgent(
     # metering.py. Neither changes what the model sees.
     before_tool_callback=start_subcalls,
     after_tool_callback=[collect_warnings, collect_subcalls],
+    # The first model call only ever asked for the same seven tools; this
+    # asks for them in its place -- see prefetch.py. PREFETCH_TOOLS=0 to undo.
+    before_model_callback=prefetch_core_tools,
     after_model_callback=prepend_warnings,
 )
