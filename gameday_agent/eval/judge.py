@@ -38,8 +38,10 @@ exposure, which is what the prompt_injection scenario exists to probe.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import time
 from dataclasses import dataclass, field
 
 from google.genai import types
@@ -65,6 +67,8 @@ class Verdict:
     error: str | None = None
     # The judge's own usage, so grading cost shows up next to agent cost.
     tokens: dict = field(default_factory=dict)
+    # Graded through Vertex batch prediction, which bills at half price.
+    batch: bool = False
 
     @property
     def percent(self) -> float:
@@ -189,6 +193,33 @@ def _client():
     return _CLIENT
 
 
+def _prompt(query: str, tool_calls, tool_results, report: str) -> str:
+    return PROMPT.format(
+        query=query,
+        evidence=_evidence_block(tool_calls, tool_results),
+        report=report,
+        rubric=_rubric_block(),
+    )
+
+
+def _verdict(text: str, usage) -> Verdict:
+    """Parse the judge's JSON answer. Raises on unparseable text."""
+    from token_cost import add_usage, new_totals
+
+    parsed = json.loads(text)
+    v = Verdict(tokens=new_totals())
+    add_usage(v.tokens, usage)
+    for c in CRITERIA:
+        entry = parsed.get(c.key) or {}
+        score = entry.get("score")
+        if isinstance(score, int) and 1 <= score <= 5:
+            v.scores[c.key] = score
+            v.reasons[c.key] = str(entry.get("reason", "")).strip()
+    if not v.scores:
+        v.error = "judge returned no usable scores"
+    return v
+
+
 def judge(query: str, tool_calls, tool_results, report: str) -> Verdict:
     """Score one agent run. Never raises -- a judge failure is not a test failure.
 
@@ -199,12 +230,7 @@ def judge(query: str, tool_calls, tool_results, report: str) -> Verdict:
     if not report.strip():
         return Verdict(error="agent produced no report to judge")
 
-    prompt = PROMPT.format(
-        query=query,
-        evidence=_evidence_block(tool_calls, tool_results),
-        report=report,
-        rubric=_rubric_block(),
-    )
+    prompt = _prompt(query, tool_calls, tool_results, report)
 
     try:
         response = _client().models.generate_content(
@@ -218,20 +244,106 @@ def judge(query: str, tool_calls, tool_results, report: str) -> Verdict:
                 response_schema=RESPONSE_SCHEMA,
             ),
         )
-        parsed = json.loads(response.text)
+        return _verdict(response.text, getattr(response, "usage_metadata", None))
     except Exception as e:
         return Verdict(error=f"{type(e).__name__}: {e}")
 
-    from token_cost import add_usage, new_totals
 
-    v = Verdict(tokens=new_totals())
-    add_usage(v.tokens, getattr(response, "usage_metadata", None))
-    for c in CRITERIA:
-        entry = parsed.get(c.key) or {}
-        score = entry.get("score")
-        if isinstance(score, int) and 1 <= score <= 5:
-            v.scores[c.key] = score
-            v.reasons[c.key] = str(entry.get("reason", "")).strip()
-    if not v.scores:
-        v.error = "judge returned no usable scores"
-    return v
+# ------------------------------------------------------------------- batch
+# The judge is the one call in the eval nobody waits on mid-run, and it is
+# 3-4x what the agent costs per report (2026-10-19). Vertex batch prediction
+# runs the same requests at half price; the price is latency -- a job takes
+# minutes to queue even when it is tiny. Opt-in: run_eval.py --batch-judge.
+BATCH_BUCKET = os.environ.get("JUDGE_BATCH_BUCKET", "gs://advisor-agent-2026-staging/eval-judge")
+# Batch jobs are regional; the global endpoint the online judge uses has none.
+BATCH_LOCATION = os.environ.get("JUDGE_BATCH_LOCATION", "us-central1")
+BATCH_TIMEOUT_S = int(os.environ.get("JUDGE_BATCH_TIMEOUT_S", "5400"))
+
+
+def _request_body(prompt: str) -> dict:
+    return {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.0,
+            "responseMimeType": "application/json",
+            "responseSchema": RESPONSE_SCHEMA.model_dump(mode="json", exclude_none=True),
+        },
+    }
+
+
+def _prompt_key(request: dict) -> str:
+    text = "".join(p.get("text", "") for c in request.get("contents", [])
+                   for p in c.get("parts", []))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def judge_batch(items: list[tuple], log=print) -> list[Verdict]:
+    """Score many runs in one Vertex batch job. Same prompt, same parsing.
+
+    `items` are (query, tool_calls, tool_results, report) tuples. Returns one
+    Verdict per item, in order. Never raises: a failed job marks every item
+    unjudged, the same as a failed online judge call.
+    """
+    from google import genai
+    from google.cloud import storage
+
+    out: list[Verdict | None] = [None] * len(items)
+    requests_, keys = [], {}
+    for i, (query, calls, results, report) in enumerate(items):
+        if not report.strip():
+            out[i] = Verdict(error="agent produced no report to judge")
+            continue
+        body = _request_body(_prompt(query, calls, results, report))
+        keys.setdefault(_prompt_key(body), []).append(i)
+        requests_.append({"request": body})
+    if not requests_:
+        return out
+
+    try:
+        run = time.strftime("%Y%m%d-%H%M%S")
+        bucket_name, _, prefix = BATCH_BUCKET.removeprefix("gs://").partition("/")
+        bucket = storage.Client(project=os.environ.get("GOOGLE_CLOUD_PROJECT")).bucket(bucket_name)
+        src = f"{prefix}/{run}/input.jsonl"
+        bucket.blob(src).upload_from_string(
+            "\n".join(json.dumps(r) for r in requests_), content_type="application/jsonl")
+
+        client = genai.Client(vertexai=True, location=BATCH_LOCATION,
+                              project=os.environ.get("GOOGLE_CLOUD_PROJECT", "advisor-agent-2026"))
+        job = client.batches.create(
+            model=JUDGE_MODEL, src=f"gs://{bucket_name}/{src}",
+            config=types.CreateBatchJobConfig(dest=f"gs://{bucket_name}/{prefix}/{run}/out"))
+        log(f"  judge batch {job.name} submitted ({len(requests_)} reports)")
+        started = time.monotonic()
+        while job.state.name not in ("JOB_STATE_SUCCEEDED", "JOB_STATE_FAILED",
+                                     "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED"):
+            if time.monotonic() - started > BATCH_TIMEOUT_S:
+                raise TimeoutError(f"batch still {job.state.name} after {BATCH_TIMEOUT_S}s")
+            time.sleep(30)
+            job = client.batches.get(name=job.name)
+        log(f"  judge batch {job.state.name} after {time.monotonic() - started:.0f}s")
+        if job.state.name != "JOB_STATE_SUCCEEDED":
+            raise RuntimeError(f"batch {job.state.name}: {getattr(job, 'error', '')}")
+
+        for blob in bucket.list_blobs(prefix=f"{prefix}/{run}/out"):
+            if not blob.name.endswith(".jsonl"):
+                continue
+            for line in blob.download_as_text().splitlines():
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                idx = keys.get(_prompt_key(row.get("request", {})), [])
+                if not idx:
+                    continue
+                i = idx.pop(0)
+                try:
+                    resp = row["response"]
+                    text = resp["candidates"][0]["content"]["parts"][0]["text"]
+                    out[i] = _verdict(text, resp.get("usageMetadata"))
+                    out[i].batch = True
+                except Exception as e:  # noqa: BLE001
+                    out[i] = Verdict(error=f"batch row unusable: {type(e).__name__}: "
+                                           f"{str(row.get('status', e))[:200]}")
+    except Exception as e:  # noqa: BLE001 -- never lose the eval to the grader
+        err = f"judge batch failed: {type(e).__name__}: {str(e)[:300]}"
+        return [v if v is not None else Verdict(error=err) for v in out]
+    return [v if v is not None else Verdict(error="no batch result for this report") for v in out]

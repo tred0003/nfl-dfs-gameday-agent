@@ -64,7 +64,7 @@ from gameday_agent.agent import root_agent  # noqa: E402
 from gameday_agent.eval.fixtures import (  # noqa: E402
     dk_fixture, espn_fixture, vegas_fixture,
 )
-from gameday_agent.eval.judge import JUDGE_MODEL, judge  # noqa: E402
+from gameday_agent.eval.judge import JUDGE_MODEL, judge, judge_batch  # noqa: E402
 from gameday_agent.eval.rubric import CRITERIA  # noqa: E402
 from gameday_agent.eval.scenarios import (  # noqa: E402
     FAKE_PLAYER_PHRASES, SCENARIOS, TOOL_CALL_LIMIT, Scenario,
@@ -376,7 +376,7 @@ def _print_gate(reasons) -> None:
 # ----------------------------------------------------------------------- main
 
 async def _run_all(names, repeat: int, use_judge: bool, verbose: bool,
-                   scenarios: list[Scenario] | None = None):
+                   scenarios: list[Scenario] | None = None, batch_judge: bool = False):
     scenarios = scenarios or [s for s in SCENARIOS if not names or s.name in names]
     # A typo in --scenario used to run nothing at all and report ALL PASS,
     # which is the most expensive kind of green.
@@ -384,6 +384,7 @@ async def _run_all(names, repeat: int, use_judge: bool, verbose: bool,
         raise SystemExit(f"unknown scenario(s): {', '.join(sorted(unknown))}")
 
     results, traces = [], {}
+    pending = []  # batch judge: (scenario, trace, failures), graded after the loop
 
     for scenario in scenarios:
         print(f"\n=== {scenario.name} ===")
@@ -393,9 +394,11 @@ async def _run_all(names, repeat: int, use_judge: bool, verbose: bool,
             failures = [msg for check in scenario.checks if (msg := check(trace))]
 
             verdict = None
-            if use_judge:
+            if use_judge and not batch_judge:
                 verdict = judge(scenario.query or QUERY, trace.tool_calls, trace.tool_results,
                                 trace.final_text)
+            elif use_judge:
+                pending.append((scenario, trace, failures))
 
             result = build_result(scenario.name, trace, failures,
                                   len(scenario.checks), verdict,
@@ -411,6 +414,20 @@ async def _run_all(names, repeat: int, use_judge: bool, verbose: bool,
             tag = f" (run {i + 1}/{repeat})" if repeat > 1 else ""
             _print_scenario(result, trace, verbose, tag)
 
+    if pending:
+        print(f"\n=== judging {len(pending)} reports in one batch job (half price, slower) ===")
+        verdicts = judge_batch([(s.query or QUERY, t.tool_calls, t.tool_results, t.final_text)
+                                for s, t, _ in pending])
+        results = []
+        for (scenario, trace, failures), verdict in zip(pending, verdicts):
+            result = build_result(scenario.name, trace, failures, len(scenario.checks), verdict,
+                                  scenario.description,
+                                  agent_model=os.environ["GEMINI_MODEL"],
+                                  judge_model=JUDGE_MODEL)
+            results.append(result)
+            print(f"\n=== {scenario.name} (judged) ===")
+            _print_scenario(result, trace, verbose, "")
+
     return results, traces
 
 
@@ -422,6 +439,9 @@ if __name__ == "__main__":
                    help="repeat each scenario N times (flake-hunting)")
     p.add_argument("--no-judge", action="store_true",
                    help="skip the LLM judge: programmatic checks only, no cost")
+    p.add_argument("--batch-judge", action="store_true",
+                   help="grade every report in one Vertex batch job after the run: "
+                        "half the judge's price, but the job can take many minutes")
     p.add_argument("--save-baseline", action="store_true",
                    help="freeze this run's scores as the bar future runs must clear")
     p.add_argument("-v", "--verbose", action="store_true",
@@ -454,7 +474,7 @@ if __name__ == "__main__":
 
     results, traces = asyncio.run(
         _run_all(args.scenario, args.repeat, use_judge, args.verbose,
-                 replay_scenarios)
+                 replay_scenarios, batch_judge=args.batch_judge)
     )
 
     baseline = load_baseline()

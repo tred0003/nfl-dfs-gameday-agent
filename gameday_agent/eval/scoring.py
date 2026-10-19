@@ -148,6 +148,11 @@ class ScenarioResult:
         return self.checks_passed == self.checks_total
 
 
+def _judge_cost(cost: float | None, batch: bool) -> float | None:
+    # Vertex batch prediction bills every token at half the online rate.
+    return None if cost is None else round(cost * (0.5 if batch else 1.0), 6)
+
+
 def build_result(scenario_name: str, trace: Trace, failures: list[str],
                  total_checks: int, verdict,
                  description: str = "", agent_model: str = "",
@@ -178,7 +183,8 @@ def build_result(scenario_name: str, trace: Trace, failures: list[str],
         subcall_cost_usd=sub_cost,
         total_cost_usd=None if agent_cost is None else round(agent_cost + sub_cost, 6),
         judge_tokens=judge_tokens,
-        judge_cost_usd=cost_usd(judge_tokens, judge_model) if judge_tokens else None,
+        judge_cost_usd=_judge_cost(cost_usd(judge_tokens, judge_model) if judge_tokens else None,
+                                   bool(getattr(verdict, "batch", False))),
     )
 
 
