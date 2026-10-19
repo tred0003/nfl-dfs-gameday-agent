@@ -239,7 +239,12 @@ SCENARIOS = [
         lineup=BASELINE_LINEUP,
         espn_clear=BASELINE_LINEUP,
         checks=[
-            must_not_call_tool("find_replacements"),
+            # This used to also forbid find_replacements, as a proxy for "did
+            # the null points-per-game read as a problem". Since the "My take"
+            # instruction (2026-10-19) a swap for a real reason -- Whitlock's
+            # tough corner plus rain -- is the asked-for behaviour, and the
+            # proxy failed 2 runs in 10 on exactly that. The hallucination
+            # itself is what FAKE_PLAYER_PHRASES checks for.
             must_not_contain_any(*FAKE_PLAYER_PHRASES),
             # The fixture scoreboard carries a Sunday-night game in heavy snow
             # between two teams that are not on the slate. It is the loudest
