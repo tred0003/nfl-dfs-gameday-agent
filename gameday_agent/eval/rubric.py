@@ -100,8 +100,8 @@ CRITERIA: list[Criterion] = [
         question=(
             "This report lands on a phone on Sunday morning and interrupts "
             "someone's family time. Is its length proportional to how much "
-            "news it actually carries? A genuinely clean slate reported in two "
-            "lines is the target outcome, not a failure. Restating the "
+            "news it actually carries? On a quiet week the target is the short "
+            "take plus the required one-line sections, not a failure. Restating the "
             "question, preamble, hedging, and padding a quiet week into a long "
             "document all fail this."
         ),
@@ -126,28 +126,32 @@ CRITERIA: list[Criterion] = [
         # "the agent says everything is fine," and only one of those is safe.
         weight=1.5,
     ),
-    # Added 2026-10-16. Before it, nothing rewarded a take, and "grounded"
-    # read strictly penalised one -- so reports listed every fact and never
-    # said what they meant. A recommendation is judgment, not a fact: it is
-    # grounded when the facts it cites are, not when the opinion itself
-    # appears in a tool result.
+    # Added 2026-10-16, reworded 2026-10-19 for the "My take" format. Before
+    # it, nothing rewarded a take, and "grounded" read strictly penalised one
+    # -- so reports listed every fact and never said what they meant. A take
+    # is judgment, not a fact: it is grounded when the facts it cites are,
+    # not when the opinion itself appears in a tool result.
     Criterion(
         key="recommendations",
-        name="Reasons to a clear call",
+        name="Leads with a clear take",
         question=(
-            "The report should open with 1-3 recommendations (start, sit, "
-            "swap, monitor) or a one-line 'stand pat'. Does it? Is each call "
-            "stated plainly rather than hedged into nothing, and does it cite "
-            "the specific tool facts it rests on -- ideally several facts "
-            "about the same player or game combined (matchup, weather, "
-            "implied total, injury, news)? Any swap target must be a player "
-            "the tools returned, with salary. 'Stand pat' is a correct answer "
-            "when nothing justifies a change, and wrong when a rostered "
-            "player is OUT, Doubtful or missing from the slate. Judge the "
-            "reasoning, not whether you would have made the same call."
+            "The report should open with a short 'My take' (2-4 sentences): "
+            "an overall read of the lineup, then 1-3 ranked calls (start, "
+            "sit, swap, fade) or a one-sentence 'stand pat'. Does it? Is each "
+            "call stated plainly with its reason, rather than hedged into "
+            "'monitor' or 'keep an eye on' when the facts support a decision "
+            "('monitor' is right only for a Questionable player still open "
+            "before lock)? Does it cite the specific tool facts it rests on, "
+            "ideally several facts about the same player or game combined "
+            "(matchup, weather, implied total, injury, news)? A swap must "
+            "name a player the tools returned, with salary. 'Stand pat' is "
+            "wrong when a rostered player is OUT, Doubtful or missing from "
+            "the slate. When the lineup could not be checked, the take should "
+            "say so and make no calls that depend on the missing data. Judge "
+            "the reasoning, not whether you would have made the same call."
         ),
-        anchor_1="No recommendation at all, or calls with no cited facts, or a swap to a player the tools never returned.",
-        anchor_5="1-3 plain, ranked calls (or a justified stand pat), each tied to specific facts, combining evidence across tools.",
+        anchor_1="No take at the top, or a take that only lists facts, or calls with no cited facts, or a swap to a player the tools never returned.",
+        anchor_5="A short opinion up top: a clear overall read and 1-3 plain, ranked calls (or a justified stand pat), each tied to specific facts, combining evidence across tools.",
         weight=1.5,
     ),
 ]
