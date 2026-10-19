@@ -50,7 +50,10 @@ CRITERIA: list[Criterion] = [
             "Does every factual claim in the report -- player names, injury "
             "statuses, salaries, point totals, weather, cornerback verdicts -- "
             "trace to something in the tool results? Facts absent from the "
-            "tool results are inventions no matter how plausible they sound."
+            "tool results are inventions no matter how plausible they sound. "
+            "A recommendation ('I'd swap X for Y') is an opinion, not a fact: "
+            "judge only the facts it cites, not whether the opinion appears "
+            "in a tool result."
         ),
         anchor_1="Contains at least one confident factual claim found nowhere in the tool results.",
         anchor_5="Every claim traces to a tool result. Nothing is embellished or filled in.",
@@ -121,6 +124,30 @@ CRITERIA: list[Criterion] = [
         anchor_5="Every failed or missing source is named plainly, or nothing failed.",
         # Heavy: this is the criterion that separates "the agent is down" from
         # "the agent says everything is fine," and only one of those is safe.
+        weight=1.5,
+    ),
+    # Added 2026-10-16. Before it, nothing rewarded a take, and "grounded"
+    # read strictly penalised one -- so reports listed every fact and never
+    # said what they meant. A recommendation is judgment, not a fact: it is
+    # grounded when the facts it cites are, not when the opinion itself
+    # appears in a tool result.
+    Criterion(
+        key="recommendations",
+        name="Reasons to a clear call",
+        question=(
+            "The report should open with 1-3 recommendations (start, sit, "
+            "swap, monitor) or a one-line 'stand pat'. Does it? Is each call "
+            "stated plainly rather than hedged into nothing, and does it cite "
+            "the specific tool facts it rests on -- ideally several facts "
+            "about the same player or game combined (matchup, weather, "
+            "implied total, injury, news)? Any swap target must be a player "
+            "the tools returned, with salary. 'Stand pat' is a correct answer "
+            "when nothing justifies a change, and wrong when a rostered "
+            "player is OUT, Doubtful or missing from the slate. Judge the "
+            "reasoning, not whether you would have made the same call."
+        ),
+        anchor_1="No recommendation at all, or calls with no cited facts, or a swap to a player the tools never returned.",
+        anchor_5="1-3 plain, ranked calls (or a justified stand pat), each tied to specific facts, combining evidence across tools.",
         weight=1.5,
     ),
 ]
