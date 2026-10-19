@@ -33,9 +33,13 @@ for instruction-shaped text, and never passed through as instructions.
 
 from __future__ import annotations
 
+import contextvars
+import hashlib
 import html
 import os
 import re
+import threading
+from collections import OrderedDict
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -231,9 +235,9 @@ _KINDS = ["injury", "practice", "role_change", "depth_chart", "transaction",
 EXTRACT_PROMPT = """\
 You extract fantasy-football-relevant claims from NFL news articles.
 
-The teams of interest: {teams}. The user rosters: {roster}.
+The team of interest: {team}.
 
-Return claims about players on those teams that could change a player's
+Return claims about players on that team that could change a player's
 fantasy outlook this week: injuries, practice participation, who is starting,
 snap or target share, depth chart moves, signings and releases, coach
 statements about usage. Skip game previews with no player news, betting
@@ -282,6 +286,98 @@ def _client():
         _CLIENT = genai.Client(location=GEMINI_LOCATION,
                                http_options=types.HttpOptions(retry_options=retry))
     return _CLIENT
+
+
+# ------------------------------------------------------- shared extraction
+# Extraction runs once per TEAM, not once per user, and is remembered by the
+# exact articles it read. News is about teams; the user only decides which
+# teams. The prompt used to name the user's roster too, which made every
+# user's call unique; is_my_player is decided in code afterwards anyway. Two
+# users who share a team -- or a league-feed story -- now pay for it once
+# while the process is warm, which the 12:30 job, running users back to back,
+# mostly is (2026-10-19 cost pass). A store shared across processes is the
+# next step if the hit rate on Agent Engine turns out low.
+_SHARED: OrderedDict[str, object] = OrderedDict()
+_SHARED_MAX = 2000
+_shared_lock = threading.Lock()
+
+
+def _digest(*parts: str) -> str:
+    h = hashlib.sha256()
+    for part in parts:
+        h.update(part.encode("utf-8"))
+        h.update(b"|")
+    return h.hexdigest()
+
+
+def _shared_get(key: str):
+    with _shared_lock:
+        return _SHARED.get(key)
+
+
+def _shared_put(key: str, value) -> None:
+    with _shared_lock:
+        _SHARED[key] = value
+        _SHARED.move_to_end(key)
+        while len(_SHARED) > _SHARED_MAX:
+            _SHARED.popitem(last=False)
+
+
+def _article_blocks(articles: list[dict]) -> str:
+    return "\n\n".join(
+        f'<article index="{i}" team="{a["team"]}" source="{a["source"]}">\n'
+        f'{a["title"]}\n{a["text"][:TEXT_CHARS]}\n</article>'
+        for i, a in enumerate(articles))
+
+
+def _extract_team(team: str, articles: list[dict]) -> list[dict]:
+    """Claims from one team's articles, `article` indexed into that list.
+
+    Raises when the model call fails; only a successful answer is kept.
+    """
+    blocks = _article_blocks(articles)
+    key = _digest("extract", MODEL, str(EXTRACT_THINKING), EXTRACT_PROMPT, team, blocks)
+    hit = _shared_get(key)
+    if hit is not None:
+        return [dict(c) for c in hit]
+    from google.genai import types
+    resp = generate(
+        _client(), "news_extract", model=MODEL,
+        contents=EXTRACT_PROMPT.format(team=team, articles=blocks),
+        config=types.GenerateContentConfig(
+            temperature=0.0, response_mime_type="application/json",
+            response_schema=_schema(),
+            thinking_config=types.ThinkingConfig(thinking_budget=EXTRACT_THINKING)),
+    )
+    raw = [r if isinstance(r, dict) else r.model_dump() for r in (resp.parsed or [])]
+    _shared_put(key, [dict(c) for c in raw])
+    return raw
+
+
+def _extract(articles: list[dict]) -> tuple[list[dict], list[str]]:
+    """Claims from every article, `article` indexed into `articles`, plus the
+    teams whose extraction failed. One call per team, run in parallel; each
+    thread gets a copy of the context so usage metering still sees it."""
+    by_team: dict[str, list[int]] = {}
+    for i, a in enumerate(articles):
+        by_team.setdefault(a["team"], []).append(i)
+    claims, failed = [], []
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {t: ex.submit(contextvars.copy_context().run, _extract_team, t,
+                             [articles[i] for i in idx])
+                for t, idx in by_team.items()}
+        for t, f in futs.items():
+            try:
+                raw = f.result()
+            except Exception as e:  # noqa: BLE001 -- one team must not sink the rest
+                failed.append(f"{t}: {type(e).__name__}: {str(e)[:120]}")
+                continue
+            idx = by_team[t]
+            for c in raw:
+                local = c.get("article")
+                c["article"] = idx[local] if isinstance(local, int) and 0 <= local < len(idx) else -1
+                claims.append(c)
+    return claims, failed
 
 
 def _norm(s: str) -> str:
@@ -357,6 +453,10 @@ def _check_schema():
     ))
 
 
+class _NothingToCheck(Exception):
+    """Every claim's verdict was already known; skip the call."""
+
+
 def check_claims(claims: list[dict]) -> tuple[list[dict], int]:
     """Make each claim say what its quote says. Returns (claims, replaced).
 
@@ -375,11 +475,22 @@ def check_claims(claims: list[dict]) -> tuple[list[dict], int]:
     """
     if not claims:
         return claims, 0
-    items = "\n\n".join(f'<item index="{i}">\nCLAIM: {c["claim"]}\n'
-                        f'<quote>{c["quote"]}</quote>\n</item>'
-                        for i, c in enumerate(claims))
+    # Verdicts are shared like extraction: the same claim and quote, checked
+    # by the same model and prompt, is not sent twice.
+    keys = [_digest("check", CLAIM_CHECK_MODEL, str(CLAIM_CHECK_THINKING), CLAIM_CHECK_PROMPT,
+                    c["claim"], c["quote"]) for c in claims]
     verdicts: dict[int, str] = {}
+    for i, k in enumerate(keys):
+        known = _shared_get(k)
+        if known is not None:
+            verdicts[i] = known
+    todo = [i for i in range(len(claims)) if i not in verdicts]
+    items = "\n\n".join(f'<item index="{n}">\nCLAIM: {claims[i]["claim"]}\n'
+                        f'<quote>{claims[i]["quote"]}</quote>\n</item>'
+                        for n, i in enumerate(todo))
     try:
+        if not todo:
+            raise _NothingToCheck
         from google.genai import types
         resp = generate(
             _client(), "claim_check", model=CLAIM_CHECK_MODEL,
@@ -391,7 +502,12 @@ def check_claims(claims: list[dict]) -> tuple[list[dict], int]:
         )
         for r in resp.parsed or []:
             r = r if isinstance(r, dict) else r.model_dump()
-            verdicts[r["item"]] = r["verdict"]
+            n = r.get("item")
+            if isinstance(n, int) and 0 <= n < len(todo):
+                verdicts[todo[n]] = r["verdict"]
+                _shared_put(keys[todo[n]], r["verdict"])
+    except _NothingToCheck:
+        pass
     except Exception:  # noqa: BLE001 -- fall through: every claim becomes its quote
         pass
 
@@ -510,31 +626,16 @@ def get_team_news(tool_context: ToolContext = None) -> dict:
                 "articles_read": 0, "source_errors": errors, "source_warnings": warnings,
                 "message": f"No usable articles in the last {NEWS_HOURS} hours."}
 
-    blocks = "\n\n".join(
-        f'<article index="{i}" team="{a["team"]}" source="{a["source"]}">\n'
-        f'{a["title"]}\n{a["text"][:TEXT_CHARS]}\n</article>'
-        for i, a in enumerate(articles))
     # Verify against exactly what the model was shown. A "quote" from past the
     # cut would have to be invented, so it must fail the check.
     for a in articles:
         a["text"] = a["text"][:TEXT_CHARS]
-    try:
-        from google.genai import types
-        resp = generate(
-            _client(), "news_extract", model=MODEL,
-            contents=EXTRACT_PROMPT.format(teams=", ".join(teams),
-                                           roster=", ".join(mine["name"]), articles=blocks),
-            config=types.GenerateContentConfig(
-                temperature=0.0, response_mime_type="application/json",
-                response_schema=_schema(),
-                thinking_config=types.ThinkingConfig(thinking_budget=EXTRACT_THINKING)),
-        )
-        raw = resp.parsed or []
-        raw = [r if isinstance(r, dict) else r.model_dump() for r in raw]
-    except Exception as e:  # noqa: BLE001
+    raw, failed = _extract(articles)
+    if failed and len(failed) == len({a["team"] for a in articles}):
         return {"status": "error", "teams": teams, "articles_read": len(articles),
-                "message": f"News was fetched but could not be read ({type(e).__name__}: "
-                           f"{str(e)[:150]}). Say news could not be checked."}
+                "message": f"News was fetched but could not be read ({failed[0]}). "
+                           "Say news could not be checked."}
+    errors = errors + [f"news for {f.split(':')[0]} could not be read" for f in failed]
 
     team_of = {_norm(re.sub(r"\b(jr|sr|ii|iii|iv)\b\.?", "", n, flags=re.I)): ALIASES.get(t, t)
                for n, t in players.loc[players["position"].ne("DST"), ["name", "team"]]
