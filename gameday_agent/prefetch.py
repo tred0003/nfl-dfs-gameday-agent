@@ -16,12 +16,22 @@ before. The model's first real call is the one that reads the results. It
 can still call find_replacements or search_news, which take arguments only
 it can choose.
 
+Only for the standard report question. Any other message -- the canary's,
+a user asking for a specific check -- gets the model's own first call. The
+first CI eval gate after this shipped (2026-10-19) caught why: told "Use
+search_news to confirm Rashad Feeney's status", the agent skipped the search
+in 1 of 3 local runs and in the gate, because it never saw the request
+before the results arrived and they already looked conclusive. Without
+prefetch it searched 3 of 3. A request the model never got to act on is not
+a constant.
+
 PREFETCH_TOOLS=0 restores the old behaviour.
 """
 
 from __future__ import annotations
 
 import os
+import re
 
 from google.adk.models import LlmResponse
 from google.genai import types
@@ -40,12 +50,27 @@ CORE_TOOLS = [
 ]
 
 
+# Must match run_report.QUERY (the scheduled report and the web app) --
+# tests/test_prefetch.py fails if they drift. A drift only turns prefetch off.
+STANDARD_QUERY = "Check my lineup for this Sunday and tell me if anything needs my attention."
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
+def _asked(callback_context) -> str:
+    content = getattr(callback_context, "user_content", None)
+    parts = getattr(content, "parts", None) or []
+    return "".join(getattr(p, "text", None) or "" for p in parts)
+
+
 def enabled() -> bool:
     return os.environ.get("PREFETCH_TOOLS", "1") != "0"
 
 
 def prefetch_core_tools(callback_context, llm_request):
-    if not enabled():
+    if not enabled() or _norm(_asked(callback_context)) != _norm(STANDARD_QUERY):
         return None
     # Only before anything has been called. Any function call or response in
     # the request means this run is past its first model call.
