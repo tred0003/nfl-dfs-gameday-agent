@@ -28,7 +28,13 @@ from collections import OrderedDict
 
 import requests
 
-SCREEN_MODEL = os.environ.get("INJECTION_MODEL", os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
+# Flash-Lite, not the agent's model. On the labeled set in
+# eval/injection_check.py (28 attacks, 26 hard negatives, 100 real
+# articles, 2 runs) it matched Flash exactly -- 28/28 caught, 0 false alarms
+# -- in 21s against 34s, at about a third of the input price and a sixth of
+# the output price (2026-10-19). Re-run that check before changing this, and
+# set INJECTION_MODEL=gemini-2.5-flash to go back.
+SCREEN_MODEL = os.environ.get("INJECTION_MODEL", "gemini-2.5-flash-lite")
 ARMOR_PROJECT = os.environ.get("MODEL_ARMOR_PROJECT", "advisor-agent-2026")
 ARMOR_LOCATION = "us-central1"
 ARMOR_TEMPLATE = os.environ.get("MODEL_ARMOR_TEMPLATE", "injection-screen")
