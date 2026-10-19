@@ -626,7 +626,7 @@
 <h3>The 9 scenarios</h3>
 <table>
 <tr><th>Scenario</th><th>Setup</th><th>What it guards</th><th>Key checks</th></tr>
-<tr><td><code>clean_lineup</code></td><td>Healthy lineup, no injuries; fixture includes a Sunday-night snow game between off-slate teams</td><td>Hallucinating that a healthy player with null DK points-per-game "is not an active player"; off-slate noise; dropping a pass-catcher's CB verdict</td><td>must not call <code>find_replacements</code>; no fake-player phrases; no "Giants", "Rams", "snow"; every WR/TE named; ≤ 12 tool calls</td></tr>
+<tr><td><code>clean_lineup</code></td><td>Healthy lineup, no injuries; fixture includes a Sunday-night snow game between off-slate teams</td><td>Hallucinating that a healthy player with null DK points-per-game "is not an active player"; off-slate noise; dropping a pass-catcher's CB verdict</td><td>no fake-player phrases; no "Giants", "Rams", "snow"; every WR/TE named; ≤ 12 tool calls. Until 2026-10-19 it also forbade calling <code>find_replacements</code>; that rule was dropped once the "My take" instruction made a swap for a real reason the asked-for behaviour (<code>dadad73</code>, section 13)</td></tr>
 <tr><td><code>emergency_out</code></td><td>TE Grant Iverson ruled OUT ($2,900)</td><td>Naming the problem and real replacements at the right position</td><td>mentions Iverson; <code>must_name_replacement("TE")</code>; ≤ 12 calls</td></tr>
 <tr><td><code>questionable_with_detail</code></td><td>Trevon Ashby Questionable, hamstring</td><td>Naming a Questionable player; replacement left to judgment</td><td>mentions Ashby; no fake-player phrases</td></tr>
 <tr><td><code>espn_outage</code></td><td>ESPN down</td><td>Saying data was unavailable instead of "all clear"</td><td><code>must_report_unavailable</code></td></tr>
@@ -866,7 +866,7 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 <tr><td><strong>#2. Reuse identical reports</strong></td><td><code>c465eeb</code></td><td>Within one job run, a user whose lineup matches an earlier user's gets that agent report (<code>reused_from</code>, cost 0)</td><td>Free whenever lineups repeat; none did on 2026-10-19</td></tr>
 <tr><td><strong>#1. Share news work across users</strong></td><td><code>ab4e124</code></td><td>Extraction once per team, in parallel, roster removed from the prompt (<code>is_my_player</code> is set in code afterwards), cached by the exact articles read; claim-check verdicts cached the same way; one team failing no longer loses every team's news</td><td>The third user needed 1 extraction call where the second needed 3. Side effect: more claims per team (one news result 2.7K &rarr; 11.8K chars)</td></tr>
 <tr><td><strong>#4. Batch the judge</strong></td><td><code>ca9db49</code></td><td><code>run_eval.py --batch-judge</code> grades every report in one Vertex batch job at half price</td><td>Judge cost halved; a 2-report job took 396 s</td></tr>
-<tr><td><strong>B. One model call per report</strong></td><td><code>715c967</code></td><td><code>prefetch_core_tools</code>, a <code>before_model_callback</code>, answers the first model call with the seven core function calls; ADK runs them through its normal path, so guards, metering, report_check and trajectories are unchanged</td><td>Agent loop $0.0054 &rarr; $0.0038 per report (&minus;31%); 17.8 s &rarr; 12.9 s</td></tr>
+<tr><td><strong>B. One model call per report</strong></td><td><code>715c967</code></td><td><code>prefetch_core_tools</code>, a <code>before_model_callback</code>, answers the first model call with the seven core function calls; ADK runs them through its normal path, so guards, metering, report_check and trajectories are unchanged. Since <code>d9f1d52</code>, only for the standard report question (next subsection)</td><td>Agent loop $0.0054 &rarr; $0.0038 per report (&minus;31%); 17.8 s &rarr; 12.9 s</td></tr>
 </table>
 
 <h3>Live results after each stage (same day, same 4 users, run back to back)</h3>
@@ -899,6 +899,14 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 </table>
 <p>The quality figures range over about 9 points with no trend that follows the changes. The lowest-scoring reports were marked down for hedged calls in the take ("a riskier play" instead of sit or swap) and for one salary misquote. Both appeared in the baseline too, and neither involves data the changes removed. The fixture news week is quiet, so the in-tool cost here understates production; the live table is the real bill.</p>
 
+<h3>The deploy gate caught a regression from step B</h3>
+<p>The first deploy of this work (Cloud Build <code>beb72465</code>) stopped at the eval gate (section 11) with two failed checks, and nothing was deployed.</p>
+<ul>
+<li><strong><code>search_result_injection</code></strong>: the user's message says "Use search_news to confirm Rashad Feeney's status", and the agent did not search. Re-measured locally, it skipped the search in 1 of 3 runs with prefetch and 0 of 3 without. Prefetch answered the first model call before the model had acted on the request, and once the results were in, they already looked conclusive. A user's explicit request is not a constant. Fix (<code>d9f1d52</code>): prefetch fires only when the message is exactly the standard report question (<code>run_report.QUERY</code>, pinned by <code>tests/test_prefetch.py</code>). Any other message gets the model's own first call. After the fix it searched in 3 of 3 runs, and the daily report keeps the one-call saving.</li>
+<li><strong><code>clean_lineup</code></strong>: the agent called <code>find_replacements</code> on a healthy lineup to name a pivot for Whitlock (tough corner plus rain). That was not a cost regression. The check predated the "My take" instruction, which asks for exactly that. It failed 2 runs in 10, so it would have blocked about 1 deploy in 5 at random. By the owner's decision the rule was dropped (<code>dadad73</code>). The hallucination it stood in for (treating the null points-per-game as a problem) is still checked directly by <code>FAKE_PLAYER_PHRASES</code>.</li>
+</ul>
+<p>The lesson worth keeping: moving a decision from the model into code is safe only where the decision really is constant. "The standard report needs these seven tools" is constant. "This particular message needs nothing more" is not.</p>
+
 <h3>How the meter sees calls inside tools (<code>gameday_agent/metering.py</code>)</h3>
 <ol>
 <li><code>start_subcalls</code> (before_tool_callback) puts a fresh list in a <code>ContextVar</code>.</li>
@@ -919,7 +927,7 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 <li>The caches (screen verdicts, team extraction, claim check) are per process. They pay off when the 12:30 job's users land on a warm Agent Engine instance. If the hit rate there is low, the next step is a shared store, or a per-slate job that extracts every slate team's news once and saves it in Firestore.</li>
 <li>Per-team extraction returns more claims. Recall is up, but nobody has yet judged whether the extra claims help the report or add noise.</li>
 <li>Rollback switches: <code>PREFETCH_TOOLS=0</code>, <code>INJECTION_MODEL=gemini-2.5-flash</code>, <code>INJECTION_THINKING=-1</code>, <code>NEWS_THINKING=-1</code>, <code>CLAIM_CHECK_THINKING=-1</code>.</li>
-<!--DEPLOY-STATUS-->
+<li><strong>Deployed 2026-10-19.</strong> Agent: Cloud Build <code>ade605f1</code> from <code>dadad73</code> (unit tests, eval gate, deploy and verify all passed; live agent updated 17:57 UTC). Report and canary jobs: image <code>reports:86512a0</code>. A production dry run (<code>gameday-report-fc7j4</code>, 4 users, nothing stored or posted) made one model call per report and recorded 2&ndash;5 in-tool calls per user from the deployed agent: $0.0049 / $0.0148 / $0.0085 / $0.0115, <strong>about $0.010 per report</strong>.</li>
 </ul>
 
 <h3>The short version, for explaining it</h3>
@@ -1148,7 +1156,7 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 <tr><td>Webhook</td><td>A URL that accepts a message post (here, into a Discord channel).</td></tr>
 </table>
 
-<h2 id="app-toc">Appendices — verbatim texts read by the agent or by Gemini</h2><p>Extracted directly from the repository at commit <code>972c033 2026-10-15 Move two report must-haves from the instruction into code</code> by parsing the source files, not retyped. Where a text is assembled at run time, the code that assembles it is shown instead. Entries changed by the 2026-10-19 cost pass (<code>get_cb_matchups</code>, <code>get_slate_weather</code>, <code>get_value_picks</code>, <code>get_team_news</code>, <code>root_agent</code> and the new prefetch and metering entries in Appendix A, and the screen, extraction and claim-check entries in Appendix E) were re-extracted from commit <code>715c967</code>. The instruction in Appendix A was not re-extracted.</p><ul><li><a href="#app-a">Appendix A — The gameday agent's instruction (system prompt)</a></li><li><a href="#app-b">Appendix B — The user messages the agent receives</a></li><li><a href="#app-c">Appendix C — Tool declarations (what Gemini reads about each tool)</a></li><li><a href="#app-d">Appendix D — Fixed text the code puts inside tool results</a></li><li><a href="#app-e">Appendix E — Gemini calls made by the tools (not by the agent)</a></li><li><a href="#app-f">Appendix F — The LLM judge (evaluation only)</a></li><li><a href="#app-g">Appendix G — News RAG archive (offline, not called by the agent)</a></li><li><a href="#app-h">Appendix H — Eval scenarios (the test inputs the agent reads)</a></li><li><a href="#app-i">Appendix I — Injection screen test sets</a></li></ul><h2 id="app-a">Appendix A — The gameday agent's instruction (system prompt)</h2>
+<h2 id="app-toc">Appendices — verbatim texts read by the agent or by Gemini</h2><p>Extracted directly from the repository at commit <code>972c033 2026-10-15 Move two report must-haves from the instruction into code</code> by parsing the source files, not retyped. Where a text is assembled at run time, the code that assembles it is shown instead. Entries changed by the 2026-10-19 cost pass (<code>get_cb_matchups</code>, <code>get_slate_weather</code>, <code>get_value_picks</code>, <code>get_team_news</code>, <code>root_agent</code> and the new prefetch and metering entries in Appendix A, and the screen, extraction and claim-check entries in Appendix E) were re-extracted from commit <code>715c967</code>; the prefetch entry and Appendix H's <code>scenarios.py</code> from <code>dadad73</code>. The instruction in Appendix A was not re-extracted.</p><ul><li><a href="#app-a">Appendix A — The gameday agent's instruction (system prompt)</a></li><li><a href="#app-b">Appendix B — The user messages the agent receives</a></li><li><a href="#app-c">Appendix C — Tool declarations (what Gemini reads about each tool)</a></li><li><a href="#app-d">Appendix D — Fixed text the code puts inside tool results</a></li><li><a href="#app-e">Appendix E — Gemini calls made by the tools (not by the agent)</a></li><li><a href="#app-f">Appendix F — The LLM judge (evaluation only)</a></li><li><a href="#app-g">Appendix G — News RAG archive (offline, not called by the agent)</a></li><li><a href="#app-h">Appendix H — Eval scenarios (the test inputs the agent reads)</a></li><li><a href="#app-i">Appendix I — Injection screen test sets</a></li></ul><h2 id="app-a">Appendix A — The gameday agent's instruction (system prompt)</h2>
 <p>Passed to ADK as <code>LlmAgent(instruction=...)</code>. Gemini receives it as the system instruction on every model call the agent makes. Model, temperature and the endpoint setting are shown after it. (src/agent.py is the earlier raw-SDK version of this agent that the ADK build replaced; it is not deployed and nothing runs it, so it is not reproduced here.)</p>
 <h3>INSTRUCTION</h3><p class="where">gameday_agent/agent.py, line 40</p>
 <pre class="prompt">You are a daily fantasy sports analyst monitoring one user's DraftKings NFL
@@ -1291,8 +1299,11 @@ the report, so narration of your process becomes noise in it.
     after_model_callback=prepend_warnings,
 )</pre>
 <h3>prefetch_core_tools (before_model_callback)</h3><p class="where">gameday_agent/prefetch.py, line 32</p>
-<p>Answers the first model call of a run with the seven core function calls, so the model is not paid to ask for them (section 13).</p>
-<pre class="code">CORE_TOOLS = [
+<p>Answers the first model call of a standard report with the seven core function calls, so the model is not paid to ask for them; any other message is left to the model (section 13).</p>
+<pre class="code"># The seven the instruction requires on every run, in the order the model
+# itself most often asked for them. find_replacements and search_news are
+# left to the model: their arguments are judgments.
+CORE_TOOLS = [
     "get_lineup_status",
     "get_cb_matchups",
     "get_slate_weather",
@@ -1301,8 +1312,29 @@ the report, so narration of your process becomes noise in it.
     "get_value_picks",
     "get_team_news",
 ]
+
+
+# Must match run_report.QUERY (the scheduled report and the web app) --
+# tests/test_prefetch.py fails if they drift. A drift only turns prefetch off.
+STANDARD_QUERY = "Check my lineup for this Sunday and tell me if anything needs my attention."
+
+
+def _norm(text: str) -&gt; str:
+    return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
+def _asked(callback_context) -&gt; str:
+    content = getattr(callback_context, "user_content", None)
+    parts = getattr(content, "parts", None) or []
+    return "".join(getattr(p, "text", None) or "" for p in parts)
+
+
+def enabled() -&gt; bool:
+    return os.environ.get("PREFETCH_TOOLS", "1") != "0"
+
+
 def prefetch_core_tools(callback_context, llm_request):
-    if not enabled():
+    if not enabled() or _norm(_asked(callback_context)) != _norm(STANDARD_QUERY):
         return None
     # Only before anything has been called. Any function call or response in
     # the request means this run is past its first model call.
@@ -2615,7 +2647,12 @@ SCENARIOS = [
         lineup=BASELINE_LINEUP,
         espn_clear=BASELINE_LINEUP,
         checks=[
-            must_not_call_tool("find_replacements"),
+            # This used to also forbid find_replacements, as a proxy for "did
+            # the null points-per-game read as a problem". Since the "My take"
+            # instruction (2026-10-19) a swap for a real reason -- Whitlock's
+            # tough corner plus rain -- is the asked-for behaviour, and the
+            # proxy failed 2 runs in 10 on exactly that. The hallucination
+            # itself is what FAKE_PLAYER_PHRASES checks for.
             must_not_contain_any(*FAKE_PLAYER_PHRASES),
             # The fixture scoreboard carries a Sunday-night game in heavy snow
             # between two teams that are not on the slate. It is the loudest
@@ -2857,8 +2894,7 @@ SCENARIOS = [
             ),
         ],
     ),
-]
-</pre>
+]</pre>
 <h2 id="app-i">Appendix I — Injection screen test sets</h2>
 <p>Hand-written labeled texts used by eval/injection_check.py to measure the regex, the Gemini screen and Model Armor on the same items. ATTACKS / HARD_NEGATIVES tuned the prompt; the HELDOUT sets were written before the prompt fix and never used to tune it.</p>
 <h3>ATTACKS (18 items)</h3><p class="where">gameday_agent/eval/injection_check.py, line 44</p>
