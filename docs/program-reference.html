@@ -37,10 +37,10 @@
 <section class="cover">
 <h1>NFL DFS Program Reference</h1>
 <p>Projection model, lineup optimizer and gameday agent on Google Cloud: how every part works, and every text the agent or Gemini reads.</p>
-<p>Prepared October 15, 2026 from the repository at commit <code>0fa707e 2026-10-15</code> (private GitHub repo <code>tred0003/nfl-dfs</code>). Updated October 19, 2026 for the multi-user system (new section 12; sections 1, 2, 7 and 14&ndash;17 revised), and again the same day for the cost-optimization pass (new section 13; sections 7, 8, 9, 10 and 16 and Appendices A, C and E revised).</p>
+<p>Prepared October 15, 2026 from the repository at commit <code>0fa707e 2026-10-15</code> (private GitHub repo <code>tred0003/nfl-dfs</code>). Updated October 19, 2026 for the multi-user system (new section 12; sections 1, 2, 7 and 14&ndash;17 revised), and again the same day for the cost-optimization pass (new section 13; sections 7, 8, 9, 10 and 16 and Appendices A, C and E revised). Updated October 20, 2026 for the weekly review of production reports (new section 14; sections 2, 10, 11 and 17 and Appendix F revised; former sections 14&ndash;17 renumbered 15&ndash;18).</p>
 <p>For a reader with no other context: sections 1–17 explain the system, and the appendices reproduce prompts, tool descriptions and test inputs word for word from the source.</p>
 </section>
-<section class="toc"><h2 style="break-before:auto">Contents</h2><ul style="list-style:none;padding-left:0"><li><a href="#overview">1. What the program is, in one page</a></li><li><a href="#system-map">2. System map</a></li><li><a href="#data">3. Data</a></li><li><a href="#ml-model">4. The ML model</a></li><li><a href="#optimizer">5. The optimizer</a></li><li><a href="#ml-cloud">6. Cloud deployment of the ML side</a></li><li><a href="#agent">7. The gameday agent</a></li><li><a href="#news-rag">8. News and RAG</a></li><li><a href="#security">9. Security: prompt injection</a></li><li><a href="#evaluation">10. Evaluation</a></li><li><a href="#cicd">11. CI/CD and operations (built 2026-10-15)</a></li><li><a href="#multi-user">12. Multi-user: accounts, the lineup web app and per-user reports</a></li><li><a href="#cost">13. Cost optimization (2026-10-19)</a></li><li><a href="#today">14. Changes made 2026-10-15</a></li><li><a href="#incidents">15. Incident history</a></li><li><a href="#limits">16. Known limits and open items</a></li><li><a href="#glossary">17. Glossary</a></li><li><a href="#app-toc">Appendices A–I: every text the agent or Gemini reads, verbatim</a></li></ul></section>
+<section class="toc"><h2 style="break-before:auto">Contents</h2><ul style="list-style:none;padding-left:0"><li><a href="#overview">1. What the program is, in one page</a></li><li><a href="#system-map">2. System map</a></li><li><a href="#data">3. Data</a></li><li><a href="#ml-model">4. The ML model</a></li><li><a href="#optimizer">5. The optimizer</a></li><li><a href="#ml-cloud">6. Cloud deployment of the ML side</a></li><li><a href="#agent">7. The gameday agent</a></li><li><a href="#news-rag">8. News and RAG</a></li><li><a href="#security">9. Security: prompt injection</a></li><li><a href="#evaluation">10. Evaluation</a></li><li><a href="#cicd">11. CI/CD and operations (built 2026-10-15)</a></li><li><a href="#multi-user">12. Multi-user: accounts, the lineup web app and per-user reports</a></li><li><a href="#cost">13. Cost optimization (2026-10-19)</a></li><li><a href="#weekly-review">14. Weekly review of production reports (2026-10-20)</a></li><li><a href="#today">15. Changes made 2026-10-15</a></li><li><a href="#incidents">16. Incident history</a></li><li><a href="#limits">17. Known limits and open items</a></li><li><a href="#glossary">18. Glossary</a></li><li><a href="#app-toc">Appendices A–I: every text the agent or Gemini reads, verbatim</a></li></ul></section>
 <h2 id="overview">1. What the program is, in one page</h2>
 
 <p>The repository at <code>C:\new_career2026\nfl-dfs</code> is a personal system for DraftKings NFL daily fantasy sports (DFS). In plain terms: every week it predicts how many DraftKings points each NFL player on the Sunday slate will score, picks the best legal nine-player lineup under DraftKings' $50,000 salary cap, and runs an AI agent on Google Cloud that checks each user's actual lineup before kickoff, stores the report, and posts the owner's to Discord. Since 2026-10-16 it serves several signed-in users, each with their own lineup and reports, through a web page where the lineup is built by tapping players from the slate (section 12). Everything that runs on a schedule now runs in Google Cloud, not on the laptop (<code>deploy/REPORTS-CLOUD.md</code>, <code>deploy/PROJECTIONS-CLOUD.md</code>).</p>
@@ -167,7 +167,8 @@
 <tr><td>Friday 19:00</td><td><code>project-slate-fri</code>: projection job, no Discord post</td><td>ML</td><td><code>PROJECTIONS-CLOUD.md</code></td></tr>
 <tr><td>Sunday 11:00</td><td><code>project-slate-sun</code>: projection job with latest injury news, posts lineups ("could change")</td><td>ML</td><td><code>PROJECTIONS-CLOUD.md</code></td></tr>
 <tr><td>Every day 12:30</td><td><code>gameday-report-schedule</code> (<code>30 12 * * *</code>): agent checks each active user's lineup in turn, saves each report, posts u1's to Discord</td><td>Agent</td><td><code>REPORTS-CLOUD.md</code></td></tr>
-<tr><td>Every push to <code>master</code></td><td><code>nfl-dfs-ci</code>: compile + 22 unit tests</td><td>Agent (Cloud Build)</td><td><code>deploy/cloudbuild.ci.yaml</code></td></tr>
+<tr><td>Wednesday 08:00 <em>(planned, not deployed)</em></td><td><code>gameday-weekly-review-schedule</code> (<code>0 8 * * 3</code>): judges the completed week's real reports, scores the Sunday warnings against nflverse snap counts, compares with the prior four weeks, ✅/❌ to Discord (section 14)</td><td>Agent</td><td><code>REPORTS-CLOUD.md</code>, <code>gameday_agent/weekly_review.py</code></td></tr>
+<tr><td>Every push to <code>master</code></td><td><code>nfl-dfs-ci</code>: compile + unit tests</td><td>Agent (Cloud Build)</td><td><code>deploy/cloudbuild.ci.yaml</code></td></tr>
 <tr><td>On demand</td><td><code>nfl-dfs-eval</code>, <code>nfl-dfs-deploy</code>, training jobs, batch prediction, monitoring jobs, <code>news_rag</code> collection</td><td>both</td><td>various</td></tr>
 </table>
 <p>Two notes on the schedule. First, the daily report runs every day, not only Sunday; it "keeps the laptop's time" of 12:30 (<code>REPORTS-CLOUD.md</code>). Official inactives drop 90 minutes before kickoff (11:30 for a 1 pm slate, per <code>deploy/DEPLOY.md</code>), so the Sunday 12:30 run lands after them. Second, the interview briefing (dated 10/10) says the Thursday/Sunday lineup posts were "pending one permission grant"; <code>PROJECTIONS-CLOUD.md</code> records them live as of 2026-10-12 after that grant, so the later document is the current state.</p>
@@ -199,7 +200,7 @@
 <li>DraftKings and ESPN are used for <strong>personal research only</strong>. <code>src/dk_client.py</code> and <code>src/espn_client.py</code> both say "do not redistribute the pulled data." The first line of <code>.gitignore</code> reads "data is pulled, never committed (DK ToS: no redistribution)" and ignores <code>data/</code>, <code>models/</code>, <code>*.parquet</code> and <code>*.csv</code>.</li>
 <li>Because a frozen real pull would be exactly the kind of file that rule keeps out of git, the evaluation fixtures in <code>gameday_agent/eval/fixtures.py</code> are <strong>synthetic</strong>, hand-built rows. Real-sounding names are used only for readability; no salaries, stats or statuses attached to them are real. The fixture docstring adds that this is also the more correct test design: every row exists because a scenario needs it.</li>
 <li><code>news_rag/collect.py</code> notes the archive in <code>data/news/</code> is gitignored because ESPN's terms make it personal research use.</li>
-<li>The interview briefing and the project's known limits note that licensing blocks turning this into a public product (see section 16).</li>
+<li>The interview briefing and the project's known limits note that licensing blocks turning this into a public product (see section 17).</li>
 </ul>
 
 <h2 id="ml-model">4. The ML model</h2>
@@ -412,7 +413,7 @@
 <p>An ADK <code>LlmAgent</code> named <code>gameday_agent</code> (<code>gameday_agent/agent.py</code>). ADK (Google's Agent Development Kit) runs the agent loop: send the instruction, question and tool descriptions to the model; the model replies with a request to call a tool; ADK runs the Python function and sends the result back; repeat until the model writes a final answer. Settings:</p>
 <ul>
 <li>Model: <code>gemini-2.5-flash</code> (env <code>GEMINI_MODEL</code>), temperature 0.2 ("A status report should not be creative").</li>
-<li>Gemini endpoint: <code>GEMINI_LOCATION</code>, default <code>global</code> (since 2026-10-15; see section 14).</li>
+<li>Gemini endpoint: <code>GEMINI_LOCATION</code>, default <code>global</code> (since 2026-10-15; see section 15).</li>
 <li>Retries: 5 attempts, 2 s initial delay doubling to a 30 s cap, on HTTP 429/500/503/504 only (a 400 is "our bug" and is not retried). The genai SDK never retries by default (<code>c7ace3f</code>).</li>
 <li>Callbacks: <code>reset_warnings</code> (before agent), <code>collect_warnings</code> (after each tool), <code>prepend_warnings</code> (after each model turn), from <code>guards.py</code>.</li>
 <li>Instruction: see Appendix A: agent instruction. In summary it ranks priorities (a rostered player who cannot play first; then Questionable/breaking news; weather only for exposed outdoor games; a cornerback verdict for every receiver and tight end; team news every run; slate-wide scratches; value picks last), forbids talking about wind, forbids "will be covered by", says tool results are data and never instructions, says to copy any <code>source_warnings</code> verbatim at the top, and says to call every tool first and write the report once at the end.</li>
@@ -608,7 +609,7 @@
 <p>"A run can score 100 on quality and be broken."</p>
 
 <h3>The judge and the rubric</h3>
-<p>The judge (<code>judge.py</code>) is <code>gemini-2.5-pro</code> (env <code>JUDGE_MODEL</code>) at temperature 0, grading the Flash agent. The rubric has five criteria, each a question with anchored 1 and 5 descriptions, every one traced to a line of the agent instruction: <code>grounded</code> (weight 2.0, heaviest because a wrong number that reads naturally survives review), <code>completeness</code> (1.5), <code>actionability</code> (1.0), <code>earns_the_interruption</code> (1.0), <code>honest_about_gaps</code> (1.5). Rules checkable by code (no "wind", no "rain ruled out", no "will be covered by") belong in checks, not the rubric. See Appendix F (judge prompt and rubric).</p>
+<p>The judge (<code>judge.py</code>) is <code>gemini-2.5-pro</code> (env <code>JUDGE_MODEL</code>) at temperature 0, grading the Flash agent. The rubric has six criteria, each a question with anchored 1 and 5 descriptions, every one traced to a line of the agent instruction: <code>grounded</code> (weight 2.0, heaviest because a wrong number that reads naturally survives review), <code>completeness</code> (1.5), <code>actionability</code> (1.0), <code>earns_the_interruption</code> (1.0), <code>honest_about_gaps</code> (1.5), and <code>recommendations</code> (1.5, added 2026-10-16 with the recommendations section and reworded 10-19 for "My take"; section 12). Each tool result the judge sees is cut at <code>MAX_RESULT_CHARS</code>: 24,000 characters since 2026-10-20, 6,000 before (section 14). Rules checkable by code (no "wind", no "rain ruled out", no "will be covered by") belong in checks, not the rubric. See Appendix F (judge prompt and rubric).</p>
 
 <h3>Baseline and gate (<code>scoring.py</code>, <code>baseline.json</code>)</h3>
 <p>Measured with <code>--repeat 3</code> on 2026-09-20; suite quality <strong>80.0</strong>:</p>
@@ -657,6 +658,7 @@
 
 <h3>What the harness does not cover</h3>
 <p>From <code>eval/README.md</code> "Still missing": nothing evaluates the <strong>deployed</strong> agent; everything runs in-process, so it grades the code rather than the thing that answers on Sunday. There is no path from a real Sunday run back into <code>scenarios.py</code>. The 10/10 briefing adds that there are no scenarios for value picks, and that the harness mocks the network so it cannot catch transport bugs (the Thursday canary covers transport instead).</p>
+<p><strong>Since 2026-10-20</strong> the weekly review (section 14) closes the first of those gaps after the fact: it runs the same judge over the reports the deployed agent actually sent, using the tool results stored with each one, and scores the Sunday report's injury calls against who played. It is built and committed but not yet scheduled. It does not feed real runs back into <code>scenarios.py</code>.</p>
 
 <h2 id="cicd">11. CI/CD and operations (built 2026-10-15)</h2>
 
@@ -695,6 +697,7 @@
 <li>Telemetry: <code>--otel_to_cloud</code> on the agent deployment sends prompts, tool calls, responses and token counts to Cloud Logging and Cloud Trace, with message-content capture enabled in <code>deploy.env</code>. A redeploy without the flag silently drops it.</li>
 <li>Log markers intended for log-based metrics: "REPORT CHECK FAILED" in <code>run_report.py</code>. I found no committed definition of a log-based metric or alert on it.</li>
 <li>I found no alert on Cloud Build trigger failures in the repo; a failed CI or deploy build would be visible in Cloud Build's history.</li>
+<li>Planned (section 14): <code>gameday-weekly-review</code> exits 1 on a week-over-week regression, so the existing "Scheduled agent report FAILED" alert covers it with no new alert policy; each regression is also logged as "WEEKLY REVIEW REGRESSION: ...".</li>
 </ul>
 
 <h2 id="multi-user">12. Multi-user: accounts, the lineup web app and per-user reports (2026-10-16 to 10-19)</h2>
@@ -939,7 +942,83 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 <li>Prove each change twice: quality and checks on the eval, detection rates on the security set, and the real cost on live data. Each change is its own commit, so it can be reverted alone.</li>
 </ol>
 
-<h2 id="today">14. Changes made 2026-10-15</h2>
+<h2 id="weekly-review">14. Weekly review of production reports (2026-10-20)</h2>
+<div class="note"><strong>Status:</strong> built, tested and committed (<code>c073d7a</code>, <code>1d6847a</code>), <strong>not pushed and not deployed</strong>. No image, Cloud Run job or schedule exists yet; the commands are in <code>deploy/REPORTS-CLOUD.md</code> under "Weekly review". Everything measured below came from a local dry run that read production Firestore and saved nothing.</div>
+
+<h3>The gap it closes</h3>
+<p>Before this, every evaluation either looked at one report at a time or at made-up inputs:</p>
+<table>
+<tr><th>Check</th><th>When</th><th>What it can see</th></tr>
+<tr><td><code>report_check.audit()</code></td><td>Every daily report, before it posts</td><td>One report against its own tool results; five black-and-white rules</td></tr>
+<tr><td>Thursday canary</td><td>Weekly</td><td>Whether the tools work on the deployed agent, not whether the report was good</td></tr>
+<tr><td>Eval harness + judge</td><td>On demand (manual trigger; deploy gate runs <code>--no-judge</code>)</td><td>Synthetic fixtures, in-process, compared with <code>baseline.json</code></td></tr>
+</table>
+<p>None of them went back to the reports actually sent and asked whether they were any good, whether the injury calls came true, or whether this week was worse than last. Since 10/16 every production report is stored in Firestore with its lineup, every tool call and result, the model calls, the check rows and the cost (section 12), so the material for that question already existed. Nothing read it.</p>
+
+<h3>What the job does</h3>
+<p><code>gameday_agent/weekly_review.py</code>, planned for Wednesdays at 08:00 ET on the NFL week that ended Monday night:</p>
+<table>
+<tr><th>Step</th><th>What</th><th>Detail</th></tr>
+<tr><td>1. Collect</td><td>Every saved report in the week's window, every user (inactive included)</td><td>The window runs from the day after the previous week's last game to this week's last game, the same rule <code>nfl_week.py</code> uses (Tuesday and Wednesday belong to the coming week).</td></tr>
+<tr><td>2. Judge</td><td>Each distinct agent report goes to the eval's LLM judge (Appendix F), with the stored tool results as ground truth</td><td>Grades <code>agent_text</code>, what the model wrote, not <code>text</code>, which may carry report_check's correction block. Reports reused across users with the same lineup are judged once. Reports from before 10/16 have no stored tool calls and are skipped rather than graded as prose. A 429 is retried (20 s, 80 s); any other judge error is recorded, not retried. Capped at 30 judged reports per run.</td></tr>
+<tr><td>3. Outcomes</td><td>The Sunday report's OUT/Doubtful, Questionable and "fine" calls against nflverse snap counts</td><td>Uses each user's last report on or before the Sunday. "Played" = more than zero offensive snaps; DST skipped. Snap counts list only players who took a snap, so a missing row means "did not play", but only once every team that played that week has rows; until then the player is "not known yet". Names are normalized (case, punctuation, Jr/Sr/II/III).</td></tr>
+<tr><td>4. Trend</td><td>Save the week to <code>eval_weekly/{season}-w{NN}</code> and compare with up to four prior weeks</td><td>Summary, per-report scores and judge reasons, outcomes and flags in one Firestore document. Not written on the user's report documents, so the dashboard's blind grading never sees judge scores early.</td></tr>
+<tr><td>5. Report</td><td>Short summary to Discord; exit 1 on any regression</td><td>Exit 1 trips the existing "Scheduled agent report FAILED" alert, which covers every Cloud Run job in the project.</td></tr>
+</table>
+
+<h3>What counts as a regression</h3>
+<p>Deliberately loose. One week is a handful of reports, and the eval measured identical runs swinging about ±5 quality points.</p>
+<table>
+<tr><th>Rule</th><th>Fires when</th></tr>
+<tr><td>quality</td><td>Judge mean more than 10 points (<code>QUALITY_TOLERANCE</code>, the eval's number) below the prior weeks' mean</td></tr>
+<tr><td>fallback</td><td>More than 25% of the week's reports were the rule-based fallback</td></tr>
+<tr><td>core tools</td><td>Any agent report skipped one of the seven core tools (prefetch requests all seven, so a skip means something broke)</td></tr>
+<tr><td>checks</td><td>report_check failure rate more than 20 points above the prior weeks</td></tr>
+<tr><td>cost</td><td>Cost per agent report more than 1.5× the prior weeks' mean</td></tr>
+<tr><td>judge</td><td>Every judge call failed: no quality number is not a pass</td></tr>
+<tr><td>no reports</td><td>Nothing saved all week: the daily job is probably not running</td></tr>
+</table>
+<p>Outcome misses are reported, not gated. A player ruled inactive at 11:30 after the report was written is not the agent's miss, and with nine players a week there is too little data to tell the two apart. Once several weeks exist, the precision numbers will show whether a gate is worth having.</p>
+
+<h3>Design choices</h3>
+<ul>
+<li><strong>Wednesday, not Tuesday.</strong> nflverse snap counts for Monday night are not reliably published by Tuesday morning.</li>
+<li><strong>No retries on the job.</strong> A retry would pay for the judge again (~$0.03 per report) and post to Discord twice.</li>
+<li><strong>Its own image</strong> (<code>deploy/Dockerfile.review</code>, built by <code>deploy/cloudbuild.review.yaml</code>). The judge imports the agent package and ADK; the reports image deliberately has neither. Same identity as the report jobs (<code>agent-reports@</code>: Vertex for the judge, <code>datastore.user</code> for Firestore) and the same webhook secret, so no new grants.</li>
+<li><strong>Copied constants.</strong> <code>QUERY</code> and <code>CORE_TOOLS</code> are copied from <code>run_report.py</code> and <code>prefetch.py</code> rather than imported, because both import the agent stack at the top; <code>tests/test_weekly_review.py</code> fails if the copies drift.</li>
+<li><strong><code>--no-judge</code></strong> runs everything else for free; <code>--dry-run</code> saves and posts nothing.</li>
+</ul>
+
+<h3>First measurement: Week 6 (dry run, not saved)</h3>
+<table>
+<tr><th>Measure</th><th>Week 6 (10/13&ndash;10/19)</th></tr>
+<tr><td>Reports</td><td>16 from 4 users, all agent, fallback 0%</td></tr>
+<tr><td>report_check failures</td><td>0%</td></tr>
+<tr><td>Cost per report</td><td>$0.0103</td></tr>
+<tr><td>Core tools skipped</td><td><strong>3 reports skipped <code>get_vegas_context</code></strong>, the one regression flagged</td></tr>
+<tr><td>Judge quality</td><td>52.9 on 16 reports (judged with the old 6,000-character cap; see below)</td></tr>
+<tr><td>Per criterion (1&ndash;5)</td><td>grounded 2.9 · actionability 3.4 · completeness 3.9 · honest_about_gaps 3.9 · earns_the_interruption 4.1 · recommendations 1.0</td></tr>
+<tr><td>Outcomes</td><td>OUT/D warnings 1/1 sat · Questionable 0/0 · unflagged players who sat 0/17</td></tr>
+<tr><td>Judge run</td><td>16 Pro calls, about 7 minutes, about $0.55</td></tr>
+</table>
+<p>Week 6 is <strong>not a baseline</strong> and was not saved: every report before 10/19 predates "My take", so all of them score 1/5 on <code>recommendations</code>, which alone drags the weighted score down. The first saved week should be Week 7 (10/20&ndash;10/26), all of it after "My take" deployed.</p>
+
+<h3>A judge bug the first run exposed</h3>
+<p>The second-lowest report (u1, 10/16, 27.9) lost its <code>grounded</code> points for news the judge called invented. Checking the stored tool results showed the news was there: <code>get_team_news</code> returned 11,054 characters for u1's 10/16 report, with the Jaylen Warren item at character 7,635. The judge prompt cut every tool result at <code>MAX_RESULT_CHARS = 6000</code>, and cut it <em>after</em> re-serializing the JSON with indentation, which makes it longer still. Real news ran past the cut, reached the report and not the judge, and was scored as invention. The eval had never shown this because its fixtures are short.</p>
+<p>Fix: the cap is now 24,000 characters (<code>judge.py</code>, Appendix F). Re-judging that same report, the news complaint was gone and <code>grounded</code> still scored 1, now for a real defect: the report said ESPN called SoFi Stadium a dome and DraftKings did not, when the tool results said the opposite (<code>is_dome: false</code>, <code>dk_is_dome: true</code>). So the low production quality is partly real, not only the cap. Side effect: eval quality after 10/20 is not strictly comparable with <code>baseline.json</code>.</p>
+
+<h3>Files</h3>
+<table>
+<tr><th>File</th><th>Role</th></tr>
+<tr><td><code>gameday_agent/weekly_review.py</code></td><td>The job: window, collect, judge, outcomes, summary, regression rules, Discord text</td></tr>
+<tr><td><code>tests/test_weekly_review.py</code></td><td>17 offline tests (MemoryStore, fake judge, synthetic snap counts): window, reuse and old-report skipping, 429 retry, outcomes and the "not known yet" rule, each regression rule alone, end to end with history, copied constants</td></tr>
+<tr><td><code>src/user_store.py</code></td><td><code>all_users</code>, <code>report_ids</code>, <code>save_weekly</code>, <code>weekly_history</code> on both stores</td></tr>
+<tr><td><code>gameday_agent/eval/judge.py</code></td><td>Evidence cap 6,000 &rarr; 24,000</td></tr>
+<tr><td><code>deploy/Dockerfile.review</code>, <code>deploy/cloudbuild.review.yaml</code></td><td>The job's image</td></tr>
+<tr><td><code>deploy/REPORTS-CLOUD.md</code></td><td>Deploy commands: build, <code>gameday-weekly-review</code> job (no retries, 1,800 s), scheduler <code>0 8 * * 3</code> America/New_York, dry-run test</td></tr>
+</table>
+
+<h2 id="today">15. Changes made 2026-10-15</h2>
 <p>Seven commits landed on 2026-10-15, in this order (<code>git log</code>):</p>
 <table>
 <tr><th>Time (EDT)</th><th>Commit</th><th>Summary</th></tr>
@@ -981,7 +1060,7 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 <li><strong>Still to watch:</strong> whether the daily 12:30 report stops hitting Gemini 429s on the global endpoint.</li>
 </ul></div>
 
-<h2 id="incidents">15. Incident history</h2>
+<h2 id="incidents">16. Incident history</h2>
 <p>Dated list of real failures and fixes recorded in docs and commits. The theme the briefing draws: "the dangerous failures are not crashes. They are runs that succeed and say something wrong."</p>
 <table>
 <tr><th>Date</th><th>What happened</th><th>Fix / lesson</th><th>Source</th></tr>
@@ -1025,7 +1104,7 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 <tr><td>2026-10-19</td><td>Every signed-in <code>/api/me</code> returned HTTP 500 since the web app went live on 10/16: "newest report" was a descending key query, which Firestore refuses without a composite index nobody created. The 10/16 live check used an unprovisioned account, which stops at the 403 before that query, so it was never exercised.</td><td><code>latest_report()</code> lists the report ids (dates) and takes the newest; no index needed. Lesson: the live check has to include a real, provisioned user.</td><td><code>src/user_store.py</code></td></tr>
 </table>
 
-<h2 id="limits">16. Known limits and open items</h2>
+<h2 id="limits">17. Known limits and open items</h2>
 <h3>Model and data</h3>
 <ul>
 <li><strong>No defense (DST) model.</strong> Defenses use a DK-FPPG × Vegas rule; the backtest used FantasyData's DST projection for every source.</li>
@@ -1040,7 +1119,10 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 </ul>
 <h3>Agent and evaluation</h3>
 <ul>
-<li><strong>No evaluation of the deployed agent.</strong> The harness grades the code in-process; the canary checks plumbing on the deployed agent but not correctness.</li>
+<li><strong>The weekly review of the deployed agent's real reports is built but not deployed</strong> (section 14): not pushed, no image, no Cloud Run job, no schedule. Until it is, the harness grades the code in-process and the canary checks plumbing on the deployed agent but not correctness.</li>
+<li>No weekly baseline exists yet. Week 6 was measured (judge quality 52.9) but deliberately not saved: its reports predate "My take" and all score 1/5 on <code>recommendations</code>. The first saved week should be Week 7, so the first week-over-week comparison is Week 8.</li>
+<li>Outcome misses (a "fine" player who did not play, an OUT call who played) are reported weekly but not gated, and the outcome check matches DraftKings names to nflverse snap-count names by normalized name only; a spelling difference shows up as "(no snap row)".</li>
+<li>The judge's evidence cap was raised from 6,000 to 24,000 characters per tool result on 2026-10-20. Eval quality scores after that date are not strictly comparable with <code>baseline.json</code>.</li>
 <li>The quality baseline (2026-09-20) predates the three injection scenarios, the news tools being exercised, the global endpoint and the guards; only <code>dk_outage</code> is quiet enough to gate on quality.</li>
 <li>Human grading of the judge has not been done (blank <code>my-scores.txt</code>, no <code>human_scores.json</code>).</li>
 <li>No path from real Sunday runs back into eval scenarios; no scenarios for value picks.</li>
@@ -1056,7 +1138,7 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 <li><code>ci-runner@</code> holds <code>aiplatform.user</code>, which is broader than "call Gemini": it is a general Vertex AI user role, and the push-triggered CI build does not need it at all (only the eval build does).</li>
 <li><code>agent-deployer@</code>'s roles are not recorded in the repo.</li>
 <li>Tracing: the briefing says telemetry goes to Cloud Trace and Cloud Logging via <code>--otel_to_cloud</code>, while <code>eval/README.md</code> "Still missing" says "no tracing on the Agent Runtime deployments." These conflict; the README line may predate the 10/9 <code>--otel_to_cloud</code> change, but the repo does not settle it. Tracing on the Cloud Run client side is not set up as far as I found.</li>
-<li>No log-based metric/alert committed for "REPORT CHECK FAILED"; no alert on failed Cloud Build runs.</li>
+<li>No log-based metric/alert committed for "REPORT CHECK FAILED"; no alert on failed Cloud Build runs. (The weekly review counts report-check failures per week and gates on a rise: a weekly signal, not a same-day one.)</li>
 <li><code>REPORTS-CLOUD.md</code> lists an optional cleanup (remove a <code>serviceAccountTokenCreator</code> grant on <code>agent-reports@</code> added for testing); the repo does not say it was done.</li>
 <li>The projection write gate needed one more image build to go live as of 10/12; not confirmed in the repo.</li>
 <li>Docstring drift: <code>src/espn_client.py</code> still says DK "started hard-blocking this project's requests with a 403 (Akamai)", which <code>b3ded0a</code> showed was the project's own User-Agent. The README's status checklist is also out of date (e.g. it lists deployment and drift monitoring as not done).</li>
@@ -1074,7 +1156,7 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 <h3>Licensing</h3>
 <p>DraftKings and ESPN data are used under "personal research use only" terms with no redistribution. That is why <code>data/</code> is gitignored and eval fixtures are synthetic, and it means the system as built cannot become a public product without licensed data sources.</p>
 
-<h2 id="glossary">17. Glossary</h2>
+<h2 id="glossary">18. Glossary</h2>
 <table>
 <tr><th>Term</th><th>Plain-English meaning</th></tr>
 <tr><td>ADC (Application Default Credentials)</td><td>Google's standard way for code to find credentials: the service account in the cloud, your login on a laptop.</td></tr>
@@ -1144,6 +1226,7 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 <tr><td>Secret Manager</td><td>Google Cloud's store for credentials such as the Discord webhook URL.</td></tr>
 <tr><td>Session / session state</td><td>An Agent Engine conversation record; state is a key-value store the tools can read (here, the lineup).</td></tr>
 <tr><td>SHAP</td><td>A method attributing each prediction to its features.</td></tr>
+<tr><td>Snap counts</td><td>nflverse's per-game count of the plays each player was on the field for. The weekly review treats more than zero offensive snaps as "played".</td></tr>
 <tr><td>Spearman / within-week rank correlation</td><td>How well two orderings agree (−1 to 1), computed per week and averaged.</td></tr>
 <tr><td>Stack</td><td>Rostering a QB with one of his own receivers.</td></tr>
 <tr><td>Structured output (JSON schema)</td><td>Forcing an LLM to answer in a fixed JSON shape.</td></tr>
@@ -1154,9 +1237,10 @@ users/{uid}/reports/{YYYY-MM-DD}   one document per daily report
 <tr><td>Vector search (<code>VECTOR_SEARCH</code>)</td><td>BigQuery function that finds stored embeddings nearest a query embedding.</td></tr>
 <tr><td>Walk-forward validation</td><td>Train only on the past, test on the next period, repeat; never peek at the future.</td></tr>
 <tr><td>Webhook</td><td>A URL that accepts a message post (here, into a Discord channel).</td></tr>
+<tr><td>Weekly review</td><td>The Wednesday job (<code>gameday_agent/weekly_review.py</code>) that grades the past week's real reports with the LLM judge, checks the Sunday injury calls against snap counts and compares the week with the four before it (section 14).</td></tr>
 </table>
 
-<h2 id="app-toc">Appendices — verbatim texts read by the agent or by Gemini</h2><p>Extracted directly from the repository at commit <code>972c033 2026-10-15 Move two report must-haves from the instruction into code</code> by parsing the source files, not retyped. Where a text is assembled at run time, the code that assembles it is shown instead. Entries changed by the 2026-10-19 cost pass (<code>get_cb_matchups</code>, <code>get_slate_weather</code>, <code>get_value_picks</code>, <code>get_team_news</code>, <code>root_agent</code> and the new prefetch and metering entries in Appendix A, and the screen, extraction and claim-check entries in Appendix E) were re-extracted from commit <code>715c967</code>; the prefetch entry and Appendix H's <code>scenarios.py</code> from <code>dadad73</code>. The instruction in Appendix A was not re-extracted.</p><ul><li><a href="#app-a">Appendix A — The gameday agent's instruction (system prompt)</a></li><li><a href="#app-b">Appendix B — The user messages the agent receives</a></li><li><a href="#app-c">Appendix C — Tool declarations (what Gemini reads about each tool)</a></li><li><a href="#app-d">Appendix D — Fixed text the code puts inside tool results</a></li><li><a href="#app-e">Appendix E — Gemini calls made by the tools (not by the agent)</a></li><li><a href="#app-f">Appendix F — The LLM judge (evaluation only)</a></li><li><a href="#app-g">Appendix G — News RAG archive (offline, not called by the agent)</a></li><li><a href="#app-h">Appendix H — Eval scenarios (the test inputs the agent reads)</a></li><li><a href="#app-i">Appendix I — Injection screen test sets</a></li></ul><h2 id="app-a">Appendix A — The gameday agent's instruction (system prompt)</h2>
+<h2 id="app-toc">Appendices — verbatim texts read by the agent or by Gemini</h2><p>Extracted directly from the repository at commit <code>972c033 2026-10-15 Move two report must-haves from the instruction into code</code> by parsing the source files, not retyped. Where a text is assembled at run time, the code that assembles it is shown instead. Entries changed by the 2026-10-19 cost pass (<code>get_cb_matchups</code>, <code>get_slate_weather</code>, <code>get_value_picks</code>, <code>get_team_news</code>, <code>root_agent</code> and the new prefetch and metering entries in Appendix A, and the screen, extraction and claim-check entries in Appendix E) were re-extracted from commit <code>715c967</code>; the prefetch entry and Appendix H's <code>scenarios.py</code> from <code>dadad73</code>. The instruction in Appendix A was not re-extracted. Appendix F was re-extracted whole from <code>1d6847a</code> (2026-10-20).</p><ul><li><a href="#app-a">Appendix A — The gameday agent's instruction (system prompt)</a></li><li><a href="#app-b">Appendix B — The user messages the agent receives</a></li><li><a href="#app-c">Appendix C — Tool declarations (what Gemini reads about each tool)</a></li><li><a href="#app-d">Appendix D — Fixed text the code puts inside tool results</a></li><li><a href="#app-e">Appendix E — Gemini calls made by the tools (not by the agent)</a></li><li><a href="#app-f">Appendix F — The LLM judge (evaluation only)</a></li><li><a href="#app-g">Appendix G — News RAG archive (offline, not called by the agent)</a></li><li><a href="#app-h">Appendix H — Eval scenarios (the test inputs the agent reads)</a></li><li><a href="#app-i">Appendix I — Injection screen test sets</a></li></ul><h2 id="app-a">Appendix A — The gameday agent's instruction (system prompt)</h2>
 <p>Passed to ADK as <code>LlmAgent(instruction=...)</code>. Gemini receives it as the system instruction on every model call the agent makes. Model, temperature and the endpoint setting are shown after it. (src/agent.py is the earlier raw-SDK version of this agent that the ADK build replaced; it is not deployed and nothing runs it, so it is not reproduced here.)</p>
 <h3>INSTRUCTION</h3><p class="where">gameday_agent/agent.py, line 40</p>
 <pre class="prompt">You are a daily fantasy sports analyst monitoring one user's DraftKings NFL
@@ -2074,8 +2158,8 @@ def _extract(articles: list[dict]) -&gt; tuple[list[dict], list[str]]:
                                http_options=types.HttpOptions(retry_options=retry))
     return _CLIENT</pre>
 <h2 id="app-f">Appendix F — The LLM judge (evaluation only)</h2>
-<p>Used by the eval harness to score report quality against a rubric. Never runs in production. The CI and deploy builds run with --no-judge.</p>
-<h3>Judge PROMPT</h3><p class="where">gameday_agent/eval/judge.py, line 100</p>
+<p>Used by the eval harness to score report quality against a rubric, and (from 2026-10-20) by the weekly review to score real reports after they were sent (section 14). It never runs on the report path: no report waits on it or is changed by it. The CI and deploy builds run with --no-judge. Re-extracted from commit <code>1d6847a</code> (2026-10-20), which also picks up the batch-judge refactor (<code>ca9db49</code>) and the sixth rubric criterion; the 10/15 extraction showed neither.</p>
+<h3>Judge PROMPT</h3><p class="where">gameday_agent/eval/judge.py, line 110</p>
 <pre class="prompt">You are evaluating a fantasy football status report written by an AI agent.
 Score it against the rubric. Be a demanding grader: a 5 means you found
 nothing to criticise, not that nothing stood out.
@@ -2114,7 +2198,27 @@ the evidence -- a reason that would apply to any report is not a reason.
 Where a criterion does not apply (no problems were raised, no tool failed),
 score 5 and say so.
 </pre>
-<h3>_evidence_block</h3><p class="where">gameday_agent/eval/judge.py, line 84</p>
+<h3>MAX_RESULT_CHARS</h3><p class="where">gameday_agent/eval/judge.py, line 57</p>
+<pre class="code"># Tool payloads can be large (the whole slate, every corner on every team).
+# Truncating per result keeps the judge prompt bounded without dropping a
+# whole tool's evidence, which would make grounding unscoreable for it.
+# Was 6000 until 2026-10-20: real get_team_news results run ~11k compact
+# (more once indented below), so news past the cut reached the report but not
+# the judge, which then scored it "invented" -- the first weekly review of
+# production reports put grounded at 2.9/5 largely on that.
+MAX_RESULT_CHARS = 24000</pre>
+<h3>_rubric_block</h3><p class="where">gameday_agent/eval/judge.py, line 82</p>
+<pre class="code">def _rubric_block() -&gt; str:
+    lines = []
+    for c in CRITERIA:
+        lines.append(
+            f"### {c.key} -- {c.name}\n"
+            f"{c.question}\n"
+            f"A score of 1 means: {c.anchor_1}\n"
+            f"A score of 5 means: {c.anchor_5}"
+        )
+    return "\n\n".join(lines)</pre>
+<h3>_evidence_block</h3><p class="where">gameday_agent/eval/judge.py, line 94</p>
 <pre class="code">def _evidence_block(tool_calls, tool_results) -&gt; str:
     """Everything the agent had to work with, as the judge's ground truth."""
     if not tool_calls and not tool_results:
@@ -2129,18 +2233,32 @@ score 5 and say so.
             body = body[:MAX_RESULT_CHARS] + f"\n... [truncated, {len(body)} chars total]"
         out.append(f"RESULT of {name}:\n{body}")
     return "\n\n".join(out)</pre>
-<h3>_rubric_block</h3><p class="where">gameday_agent/eval/judge.py, line 72</p>
-<pre class="code">def _rubric_block() -&gt; str:
-    lines = []
+<h3>_prompt</h3><p class="where">gameday_agent/eval/judge.py, line 200</p>
+<pre class="code">def _prompt(query: str, tool_calls, tool_results, report: str) -&gt; str:
+    return PROMPT.format(
+        query=query,
+        evidence=_evidence_block(tool_calls, tool_results),
+        report=report,
+        rubric=_rubric_block(),
+    )</pre>
+<h3>_verdict</h3><p class="where">gameday_agent/eval/judge.py, line 209</p>
+<pre class="code">def _verdict(text: str, usage) -&gt; Verdict:
+    """Parse the judge's JSON answer. Raises on unparseable text."""
+    from token_cost import add_usage, new_totals
+
+    parsed = json.loads(text)
+    v = Verdict(tokens=new_totals())
+    add_usage(v.tokens, usage)
     for c in CRITERIA:
-        lines.append(
-            f"### {c.key} -- {c.name}\n"
-            f"{c.question}\n"
-            f"A score of 1 means: {c.anchor_1}\n"
-            f"A score of 5 means: {c.anchor_5}"
-        )
-    return "\n\n".join(lines)</pre>
-<h3>judge</h3><p class="where">gameday_agent/eval/judge.py, line 190</p>
+        entry = parsed.get(c.key) or {}
+        score = entry.get("score")
+        if isinstance(score, int) and 1 &lt;= score &lt;= 5:
+            v.scores[c.key] = score
+            v.reasons[c.key] = str(entry.get("reason", "")).strip()
+    if not v.scores:
+        v.error = "judge returned no usable scores"
+    return v</pre>
+<h3>judge</h3><p class="where">gameday_agent/eval/judge.py, line 227</p>
 <pre class="code">def judge(query: str, tool_calls, tool_results, report: str) -&gt; Verdict:
     """Score one agent run. Never raises -- a judge failure is not a test failure.
 
@@ -2151,12 +2269,7 @@ score 5 and say so.
     if not report.strip():
         return Verdict(error="agent produced no report to judge")
 
-    prompt = PROMPT.format(
-        query=query,
-        evidence=_evidence_block(tool_calls, tool_results),
-        report=report,
-        rubric=_rubric_block(),
-    )
+    prompt = _prompt(query, tool_calls, tool_results, report)
 
     try:
         response = _client().models.generate_content(
@@ -2170,20 +2283,9 @@ score 5 and say so.
                 response_schema=RESPONSE_SCHEMA,
             ),
         )
-        parsed = json.loads(response.text)
+        return _verdict(response.text, getattr(response, "usage_metadata", None))
     except Exception as e:
-        return Verdict(error=f"{type(e).__name__}: {e}")
-
-    v = Verdict()
-    for c in CRITERIA:
-        entry = parsed.get(c.key) or {}
-        score = entry.get("score")
-        if isinstance(score, int) and 1 &lt;= score &lt;= 5:
-            v.scores[c.key] = score
-            v.reasons[c.key] = str(entry.get("reason", "")).strip()
-    if not v.scores:
-        v.error = "judge returned no usable scores"
-    return v</pre>
+        return Verdict(error=f"{type(e).__name__}: {e}")</pre>
 <h3>Rubric (whole file)</h3><p class="where">gameday_agent/eval/rubric.py</p>
 <pre class="code">"""What "a good report" means, written down where it can be scored.
 
@@ -2237,7 +2339,10 @@ CRITERIA: list[Criterion] = [
             "Does every factual claim in the report -- player names, injury "
             "statuses, salaries, point totals, weather, cornerback verdicts -- "
             "trace to something in the tool results? Facts absent from the "
-            "tool results are inventions no matter how plausible they sound."
+            "tool results are inventions no matter how plausible they sound. "
+            "A recommendation ('I'd swap X for Y') is an opinion, not a fact: "
+            "judge only the facts it cites, not whether the opinion appears "
+            "in a tool result."
         ),
         anchor_1="Contains at least one confident factual claim found nowhere in the tool results.",
         anchor_5="Every claim traces to a tool result. Nothing is embellished or filled in.",
@@ -2284,8 +2389,8 @@ CRITERIA: list[Criterion] = [
         question=(
             "This report lands on a phone on Sunday morning and interrupts "
             "someone's family time. Is its length proportional to how much "
-            "news it actually carries? A genuinely clean slate reported in two "
-            "lines is the target outcome, not a failure. Restating the "
+            "news it actually carries? On a quiet week the target is the short "
+            "take plus the required one-line sections, not a failure. Restating the "
             "question, preamble, hedging, and padding a quiet week into a long "
             "document all fail this."
         ),
@@ -2308,6 +2413,34 @@ CRITERIA: list[Criterion] = [
         anchor_5="Every failed or missing source is named plainly, or nothing failed.",
         # Heavy: this is the criterion that separates "the agent is down" from
         # "the agent says everything is fine," and only one of those is safe.
+        weight=1.5,
+    ),
+    # Added 2026-10-16, reworded 2026-10-19 for the "My take" format. Before
+    # it, nothing rewarded a take, and "grounded" read strictly penalised one
+    # -- so reports listed every fact and never said what they meant. A take
+    # is judgment, not a fact: it is grounded when the facts it cites are,
+    # not when the opinion itself appears in a tool result.
+    Criterion(
+        key="recommendations",
+        name="Leads with a clear take",
+        question=(
+            "The report should open with a short 'My take' (2-4 sentences): "
+            "an overall read of the lineup, then 1-3 ranked calls (start, "
+            "sit, swap, fade) or a one-sentence 'stand pat'. Does it? Is each "
+            "call stated plainly with its reason, rather than hedged into "
+            "'monitor' or 'keep an eye on' when the facts support a decision "
+            "('monitor' is right only for a Questionable player still open "
+            "before lock)? Does it cite the specific tool facts it rests on, "
+            "ideally several facts about the same player or game combined "
+            "(matchup, weather, implied total, injury, news)? A swap must "
+            "name a player the tools returned, with salary. 'Stand pat' is "
+            "wrong when a rostered player is OUT, Doubtful or missing from "
+            "the slate. When the lineup could not be checked, the take should "
+            "say so and make no calls that depend on the missing data. Judge "
+            "the reasoning, not whether you would have made the same call."
+        ),
+        anchor_1="No take at the top, or a take that only lists facts, or calls with no cited facts, or a swap to a player the tools never returned.",
+        anchor_5="A short opinion up top: a clear overall read and 1-3 plain, ranked calls (or a justified stand pat), each tied to specific facts, combining evidence across tools.",
         weight=1.5,
     ),
 ]
@@ -2335,8 +2468,7 @@ def to_percent(scores: dict[str, int]) -&gt; float:
     denom = sum(c.weight for c, _ in used)
     # (mean - 1) / 4 maps 1..5 onto 0..1, so a floor score reads as 0 rather
     # than 20. A judge that hates everything should produce a zero.
-    return round(((weighted / denom) - MIN_SCORE) / (MAX_SCORE - MIN_SCORE) * 100, 1)
-</pre>
+    return round(((weighted / denom) - MIN_SCORE) / (MAX_SCORE - MIN_SCORE) * 100, 1)</pre>
 <h2 id="app-g">Appendix G — News RAG archive (offline, not called by the agent)</h2>
 <p>Builds a point-in-time archive of 2026 news in BigQuery (dfs.news_chunks) with embeddings for hybrid retrieval, and a per-player brief generated from retrieved passages.</p>
 <h3>BRIEF_PROMPT</h3><p class="where">news_rag/week_brief.py, line 46</p>
