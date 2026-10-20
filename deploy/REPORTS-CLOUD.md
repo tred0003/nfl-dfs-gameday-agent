@@ -289,6 +289,7 @@ gcloud builds submit . --project $P --region $R --config deploy/cloudbuild.revie
   --service-account=projects/$P/serviceAccounts/report-builder@$P.iam.gserviceaccount.com \
   --substitutions=_IMAGE=$IMG
 gcloud run jobs create gameday-weekly-review --project $P --region $R --image $IMG \
+  --command python --args gameday_agent/weekly_review.py \
   --service-account agent-reports@$P.iam.gserviceaccount.com \
   --set-secrets DISCORD_WEBHOOK_URL=discord-webhook:latest \
   --set-env-vars GOOGLE_CLOUD_PROJECT=$P,GOOGLE_CLOUD_LOCATION=$R,GOOGLE_GENAI_USE_VERTEXAI=TRUE \
