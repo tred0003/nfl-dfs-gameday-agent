@@ -57,7 +57,11 @@ JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "gemini-2.5-pro")
 # Tool payloads can be large (the whole slate, every corner on every team).
 # Truncating per result keeps the judge prompt bounded without dropping a
 # whole tool's evidence, which would make grounding unscoreable for it.
-MAX_RESULT_CHARS = 6000
+# Was 6000 until 2026-10-20: real get_team_news results run ~11k compact
+# (more once indented below), so news past the cut reached the report but not
+# the judge, which then scored it "invented" -- the first weekly review of
+# production reports put grounded at 2.9/5 largely on that.
+MAX_RESULT_CHARS = 24000
 
 
 @dataclass

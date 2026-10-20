@@ -1,0 +1,21 @@
+# The weekly-review Cloud Run job (gameday_agent/weekly_review.py), Wednesdays.
+#
+# Not the reports image: that one is a thin client with no ADK inside, and the
+# review runs the LLM judge, which imports the agent package (rubric, judge,
+# and through them ADK). So this image carries the agent's own requirements --
+# the same set the eval build installs -- plus Firestore for the reports.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+COPY gameday_agent/requirements.txt requirements-agent.txt
+RUN pip install --no-cache-dir -r requirements-agent.txt \
+        "google-cloud-firestore>=2.16" "tzdata>=2024.1"
+
+COPY src/ ./src/
+COPY gameday_agent/ ./gameday_agent/
+
+CMD ["python", "gameday_agent/weekly_review.py"]

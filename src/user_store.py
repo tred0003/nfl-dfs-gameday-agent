@@ -40,6 +40,11 @@ from datetime import datetime, timezone
 
 USERS = "users"
 REPORTS = "reports"
+# One document per NFL week, written by gameday_agent/weekly_review.py: the
+# week's judge scores, check pass rate, fallback rate, cost and the warning
+# outcomes. Top level, not under a user -- it spans every user -- and only the
+# weekly job's service account reads or writes it.
+WEEKLY = "eval_weekly"
 
 
 class LineupError(RuntimeError):
@@ -143,6 +148,34 @@ class FirestoreStore:
         self._user(uid).update({"lineup": list(lineup),
                                 "updated_at": self._fs.SERVER_TIMESTAMP})
 
+    # ---- weekly review only. Like active_users(), these cross users or sit
+    # outside them; the web app never calls them.
+    def all_users(self) -> list[User]:
+        # Inactive users too: a user switched off mid-week still had reports
+        # earlier in it, and those count.
+        return sorted((User.from_doc(s.id, s.to_dict() or {})
+                       for s in self._db.collection(USERS).stream()),
+                      key=lambda u: u.uid)
+
+    def report_ids(self, uid: str) -> list[str]:
+        # Ids only, no index needed -- same reason as latest_report().
+        return sorted(d.id for d in self._user(uid).collection(REPORTS).list_documents())
+
+    def save_weekly(self, week_id: str, fields: dict) -> None:
+        self._db.collection(WEEKLY).document(week_id).set(
+            {**fields, "created_at": self._fs.SERVER_TIMESTAMP})
+
+    def weekly_history(self, before: str, n: int) -> list[tuple[str, dict]]:
+        """Up to n weekly docs with ids sorting before `before`, oldest first."""
+        ids = sorted(d.id for d in self._db.collection(WEEKLY).list_documents()
+                     if d.id < before)[-n:] if n > 0 else []
+        out = []
+        for i in ids:
+            snap = self._db.collection(WEEKLY).document(i).get()
+            if snap.exists:
+                out.append((i, snap.to_dict() or {}))
+        return out
+
 
 class MemoryStore:
     """Same interface, in a dict. For the unit tests."""
@@ -150,6 +183,7 @@ class MemoryStore:
     def __init__(self, users: list[User] | None = None):
         self.users: dict[str, User] = {}
         self.reports: dict[tuple[str, str], dict] = {}
+        self.weekly: dict[str, dict] = {}
         for u in users or []:
             self.put_user(u)
 
@@ -175,3 +209,16 @@ class MemoryStore:
 
     def set_lineup(self, uid: str, lineup: list[str]) -> None:
         self.users[_require_uid(uid)].lineup = list(lineup)
+
+    def all_users(self) -> list[User]:
+        return sorted(self.users.values(), key=lambda u: u.uid)
+
+    def report_ids(self, uid: str) -> list[str]:
+        return sorted(rid for (u, rid) in self.reports if u == _require_uid(uid))
+
+    def save_weekly(self, week_id: str, fields: dict) -> None:
+        self.weekly[week_id] = {**fields, "created_at": datetime.now(timezone.utc)}
+
+    def weekly_history(self, before: str, n: int) -> list[tuple[str, dict]]:
+        ids = sorted(i for i in self.weekly if i < before)[-n:] if n > 0 else []
+        return [(i, self.weekly[i]) for i in ids]

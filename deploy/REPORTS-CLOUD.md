@@ -253,3 +253,53 @@ gcloud run jobs execute gameday-report --project $P --region $R --wait \
 
 `src/lineup_sheet.py` stays in the repo only because `seed_users.py` reads
 u1 from it; nothing in the image uses it.
+
+## Weekly review (added 2026-10-20) -- NOT DEPLOYED YET
+
+`gameday-weekly-review` runs `gameday_agent/weekly_review.py` Wednesdays 08:00
+ET, on the week that ended Monday night. It is the only thing that goes back to
+the reports actually sent: the LLM judge grades each distinct agent report of
+the week against its stored tool results, nflverse snap counts score the Sunday
+report's OUT/Q/fine calls against who played, and the week's numbers go to
+`eval_weekly/{season}-w{NN}` and are compared with up to four weeks before. A
+regression exits 1, so the existing "Scheduled agent report FAILED" alert
+fires; the summary posts to Discord either way. Rules and thresholds are in the
+module docstring.
+
+Wednesday, not Tuesday: nflverse snap counts for Monday night are not reliably
+published by Tuesday morning. Until every team's data is in, a player without a
+snap row is "not known yet", never "sat".
+
+Own image (`deploy/Dockerfile.review`), because the judge imports ADK and the
+reports image deliberately has none. Same identity (`agent-reports@`: Vertex
+for the judge, `datastore.user` for Firestore) and the same webhook secret. **No
+retries**: a retry re-runs the judge (~$0.03 per report) and posts twice.
+
+Cost: one week of 4 users x 4-7 days was 16 judge calls, ~$0.55, 7 minutes.
+Reports reused across users with the same lineup are judged once.
+
+First run measured week 6 (dry, not saved): quality 52.9. Do not use week 6 as a
+baseline -- its reports predate "My take" (10/19), so every one scores 1/5 on
+`recommendations`. The first saved week should be week 7 (10/20-10/26).
+
+```bash
+P=advisor-agent-2026; R=us-central1
+IMG=$R-docker.pkg.dev/$P/agent-reports/review:$(git rev-parse --short HEAD)
+gcloud builds submit . --project $P --region $R --config deploy/cloudbuild.review.yaml \
+  --service-account=projects/$P/serviceAccounts/report-builder@$P.iam.gserviceaccount.com \
+  --substitutions=_IMAGE=$IMG
+gcloud run jobs create gameday-weekly-review --project $P --region $R --image $IMG \
+  --service-account agent-reports@$P.iam.gserviceaccount.com \
+  --set-secrets DISCORD_WEBHOOK_URL=discord-webhook:latest \
+  --set-env-vars GOOGLE_CLOUD_PROJECT=$P,GOOGLE_CLOUD_LOCATION=$R,GOOGLE_GENAI_USE_VERTEXAI=TRUE \
+  --max-retries 0 --task-timeout 1800s --memory 2Gi
+gcloud run jobs add-iam-policy-binding gameday-weekly-review --project $P --region $R \
+  --member serviceAccount:report-scheduler@$P.iam.gserviceaccount.com --role roles/run.invoker
+gcloud scheduler jobs create http gameday-weekly-review-schedule --project $P --location $R \
+  --schedule "0 8 * * 3" --time-zone America/New_York --http-method POST \
+  --uri https://run.googleapis.com/v2/projects/$P/locations/$R/jobs/gameday-weekly-review:run \
+  --oauth-service-account-email report-scheduler@$P.iam.gserviceaccount.com
+# test without saving or posting
+gcloud run jobs execute gameday-weekly-review --project $P --region $R --wait \
+  --args=gameday_agent/weekly_review.py,--dry-run,--no-judge
+```
