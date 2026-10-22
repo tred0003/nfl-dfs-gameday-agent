@@ -134,6 +134,32 @@
   .progress { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 6px; }
   .progress > div { height: 100%; background: var(--accent); }
   .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+
+  /* control tower. Status hues are the validated reference status palette
+     (dataviz palette.md), the same in both modes; they always ship with a
+     text label, never color alone. */
+  :root { --st-good: #0ca30c; --st-warn: #fab219; --st-bad: #d03b3b; --grid: #e9ebef; }
+  @media (prefers-color-scheme: dark) { :root { --grid: #232833; } }
+  .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .chart .ax { fill: var(--faint); font-size: 11px; font-family: inherit; }
+  .chart .gl { stroke: var(--grid); stroke-width: 1; }
+  .chart .ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .chart .reft { fill: var(--muted); font-size: 11px; }
+  .chart .lbl { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .chart .hit { fill: transparent; }
+  .chart .hit:hover { fill: var(--accent-soft); opacity: .45; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  #tip { position: fixed; z-index: 20; pointer-events: none; background: var(--card); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); max-width: 280px; }
+  #tip b { font-variant-numeric: tabular-nums; }
+  .runs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .run { font-size: 11px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--sunk); white-space: nowrap; }
+  .run.f { background: var(--bad-soft); color: var(--bad); border-color: transparent; font-weight: 650; }
+  .run.r { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+  details.tbl > summary { cursor: pointer; font-size: 12px; color: var(--accent); margin-top: 8px; }
+  .ev { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .ev:last-child { border-bottom: 0; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -143,6 +169,7 @@
   <nav>
     <a href="#overview" data-v="overview">Overview</a>
     <a href="#reports" data-v="reports">Reports</a>
+    <a href="#tower" data-v="tower">Tower</a>
     <a href="#grade" data-v="grade">Grade</a>
   </nav>
   <div class="meta" id="meta"></div>
@@ -153,7 +180,9 @@
   <section id="v-reports" hidden></section>
   <section id="v-report" hidden></section>
   <section id="v-grade" hidden></section>
+  <section id="v-tower" hidden></section>
 </main>
+<div id="tip" hidden></div>
 
 <script>
 /* ============================== helpers ============================== */
@@ -191,6 +220,7 @@ async function route() {
     if (view === "reports") await showReports(sec);
     else if (view === "report") await showReport(sec, rest[0], rest.slice(1).map(decodeURIComponent));
     else if (view === "grade") await showGrade(sec);
+    else if (view === "tower") await showTower(sec);
     else await showOverview(sec);
   } catch (e) { sec.innerHTML = `<div class="card"><div class="empty">Couldn't load: ${esc(e.message)}</div></div>`; }
   window.scrollTo({ top: 0 });
@@ -499,6 +529,154 @@ function jtree(v, key, depth) {
   const label = isArr ? `[${entries.length}]` : `{${entries.length}}`;
   if (!entries.length) return `<div class="row">${k}<span class="jz">${isArr ? "[]" : "{}"}</span></div>`;
   return `<details ${depth < 1 ? "open" : ""}><summary>${k}<span class="faint">${label}</span></summary>${entries.map(([kk, vv]) => jtree(vv, kk, depth + 1)).join("")}</details>`;
+}
+
+/* =========================== control tower =========================== */
+const ST = { agent: ["var(--st-good)", "agent report"], fallback: ["var(--st-warn)", "rule-based fallback"],
+             missing: ["var(--st-bad)", "no report"] };
+const shortDate = (d) => { const [, m, dd] = d.split("-"); return `${Number(m)}/${Number(dd)}`; };
+const ago = (h) => h == null ? "–" : h < 1 ? `${Math.round(h * 60)} min` : h < 48 ? `${num(h, 1)} h` : `${num(h / 24, 1)} days`;
+const etTime = (iso) => iso ? new Date(iso).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) : "–";
+
+function showTip(e, html) {
+  const t = $("tip"); t.innerHTML = html; t.hidden = false;
+  const x = Math.min(e.clientX + 14, innerWidth - t.offsetWidth - 8), y = Math.max(8, e.clientY - t.offsetHeight - 10);
+  t.style.left = `${x}px`; t.style.top = `${y}px`;
+}
+const hideTip = () => { $("tip").hidden = true; };
+
+/* Bars over days, one stack per day. Marks per the dataviz spec: 4px rounded
+   top on the topmost segment only, a 2px surface gap between segments and
+   between bars, recessive grid, a full-height hover target per day. */
+function bars(days, series, { fmt = (v) => num(v), ref = null, tip, label = null, faded = () => false }) {
+  // Drawn at roughly the card's real width, so 11px text renders near 11px.
+  const W = 1120, H = 210, L = 48, B = 24, T = 16, R = 8;
+  const totals = days.map(d => series.reduce((a, s) => a + (d[s.key] || 0), 0));
+  const max = Math.max(...totals, ref ? ref.v * 1.25 : 0) || 1;
+  const y = (v) => H - B - (v / max) * (H - B - T);
+  const bw = (W - L - R) / days.length, gap = 2, w = Math.max(4, bw - gap * 2);
+  let svg = [0, max / 2, max].map(v => `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>
+    <text class="ax" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`).join("");
+  days.forEach((d, i) => {
+    const x = L + i * bw + gap;
+    const segs = series.filter(s => d[s.key] > 0);
+    let base = 0;
+    segs.forEach((s, j) => {
+      const y0 = y(base) - (j ? gap : 0), y1 = y(base + d[s.key]);
+      const h = Math.max(1, y0 - y1);
+      const r = j === segs.length - 1 ? Math.min(4, h / 2, w / 2) : 0;
+      svg += `<path d="M${x},${y0} V${y1 + r} Q${x},${y1} ${x + r},${y1} H${x + w - r} Q${x + w},${y1} ${x + w},${y1 + r} V${y0} Z"
+        fill="${s.color}" opacity="${faded(d) ? .45 : 1}"/>`;
+      base += d[s.key];
+    });
+    if (label && totals[i]) {
+      const t = label(d, totals[i]);
+      if (t) svg += `<text class="lbl" x="${x + w / 2}" y="${y(totals[i]) - 4}" text-anchor="middle">${t}</text>`;
+    }
+    if (i % Math.ceil(days.length / 7) === 0 || i === days.length - 1)
+      svg += `<text class="ax" x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${shortDate(d.date)}</text>`;
+    svg += `<rect class="hit" data-i="${i}" x="${L + i * bw}" y="${T}" width="${bw}" height="${H - B - T}"/>`;
+  });
+  if (ref) svg += `<line class="ref" x1="${L}" x2="${W - R}" y1="${y(ref.v)}" y2="${y(ref.v)}"/>
+    <text class="reft" x="${W - R}" y="${y(ref.v) - 5}" text-anchor="end">${esc(ref.label)}</text>`;
+  const id = `c${Math.random().toString(36).slice(2, 8)}`;
+  setTimeout(() => document.querySelectorAll(`#${id} .hit`).forEach(h => {
+    h.onmousemove = (e) => showTip(e, tip(days[Number(h.dataset.i)]));
+    h.onmouseleave = hideTip;
+  }));
+  return `<div class="chart" id="${id}"><svg viewBox="0 0 ${W} ${H}" role="img">${svg}</svg></div>`;
+}
+const legend = (items) => `<div class="legend">${items.map(([c, l]) => `<span><i style="background:${c}"></i>${esc(l)}</span>`).join("")}</div>`;
+const panelErr = (T, k) => T.errors[k] ? `<div class="notice">This panel's source failed: ${esc(T.errors[k])}. Usually an expired login: <code>gcloud auth application-default login</code>.</div>` : "";
+
+async function showTower(sec) {
+  const T = await get("/api/tower");
+  const R = T.reports || { days: [], rules: [], failures: [], warnings: [], checked: 0 };
+  const days = R.days.map(d => ({ ...d, cost: d.costed ? (d.agent_cost + d.tool_cost) / d.costed : 0 }));
+  const sum = (k) => days.reduce((a, d) => a + d[k], 0);
+  const served = sum("agent"), total = served + sum("fallback") + sum("missing");
+  const rcRuns = R.rules.reduce((a, r) => a + r.runs, 0), rcFail = R.rules.reduce((a, r) => a + r.failed, 0);
+  const F = T.finops, A = T.alerts || { policies: [], events: [] };
+  const stale = T.freshness.filter(f => !f.ok);
+  const fired = A.events.filter(e => e.uid !== "alert-test");
+  const jobs = T.jobs || [];
+
+  const slaCard = card("SLA · did every user get a real report?", `${panelErr(T, "reports")}
+    ${legend(Object.values(ST))}
+    ${bars(days, Object.entries(ST).map(([k, [c]]) => ({ key: k, color: c })), {
+      label: (d, t) => d.fallback || d.missing ? `${d.agent}/${t}` : "",
+      tip: (d) => `<b>${shortDate(d.date)}</b><br>${d.reports ? `${d.agent} agent · ${d.fallback} fallback · ${d.missing} no report` : "no reports stored (the daily run is 12:30 ET)"}` })}
+    <details class="tbl"><summary>Show as table</summary><div class="scroll"><table><thead><tr><th>Date</th><th class="num">Agent</th><th class="num">Fallback</th><th class="num">No report</th></tr></thead>
+      <tbody>${days.slice().reverse().map(d => `<tr><td>${d.date}</td><td class="num">${d.agent}</td><td class="num">${d.fallback}</td><td class="num">${d.missing}</td></tr>`).join("")}</tbody></table></div></details>
+    <h3 style="margin:16px 0 6px">Scheduled jobs · newest run first</h3>
+    ${panelErr(T, "jobs")}
+    <div class="scroll"><table><thead><tr><th>Job</th><th>Recent runs</th></tr></thead><tbody>
+      ${jobs.map(j => `<tr><td><b>${esc(j.job)}</b><div class="faint small">${esc(j.about)} · ${j.project === "advisor-agent-2026" ? "agent project" : "ML project"}</div></td>
+        <td>${j.error ? `<span class="pill bad">${esc(j.error)}</span>` : `<div class="runs">${j.runs.map(r => `<span class="run ${r.status === "failed" ? "f" : r.status === "running" ? "r" : ""}" title="${esc(r.name)}">${r.status === "ok" ? "✓" : r.status === "failed" ? "✗ failed" : esc(r.status)} ${etTime(r.created)}${r.seconds != null ? ` · ${r.seconds}s` : ""}</span>`).join("")}</div>
+          <a class="small" href="${j.console}" target="_blank">Console ↗</a>`}</td></tr>`).join("")}</tbody></table></div>`,
+    { say: `availability is measured per user per day: did they get the agent's report, the rule-based fallback, or nothing. A fallback is still delivered, so it counts against the agent but not against delivery, and it is the one failure the job's own exit code hides, which is why it has its own alert.` });
+
+  const rulesCard = card("Business rules · report_check.py", `${panelErr(T, "reports")}
+    <div class="scroll"><table><thead><tr><th>Rule</th><th class="num">Runs</th><th class="num">Failed</th></tr></thead><tbody>
+      ${R.rules.map(r => `<tr><td class="small">${esc(r.rule)}</td><td class="num">${r.runs}</td><td class="num">${r.failed ? `<span class="pill bad">✗ ${r.failed}</span>` : `<span class="pill ok">✓ 0</span>`}</td></tr>`).join("") || `<tr><td colspan="3" class="muted small">No agent reports in the window.</td></tr>`}
+    </tbody></table></div>
+    ${R.failures.length ? `<h3 style="margin:12px 0 6px">Recent failures</h3>${R.failures.map(f => `<div class="small"><a href="#report/prod/${encodeURIComponent(f.uid)}/${f.date}">${f.date} · ${esc(f.uid)}</a>: ${f.problems.map(esc).join("; ")}</div>`).join("")}`
+      : `<div class="muted small" style="margin-top:8px">No fact-check failures in ${R.checked} agent reports. The rules are narrow by design: the 10/16 "all healthy" report with 4 of 9 players unmatched passed them. Catching that is the LLM judge's job in the weekly review.</div>`}`,
+    { say: `the fact-check is five deterministic rules over facts the tools computed, run on every report before delivery. They cannot judge tone or emphasis, and I show where they missed rather than presenting 100% as proof of correctness.` });
+
+  const policyCard = card("Policy · third-party text the agent refused", `${panelErr(T, "reports")}${panelErr(T, "data")}
+    ${T.data ? `<div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:10px">
+      ${tile(num(T.data.clean), "archive chunks clean")}${tile(num(T.data.instruction), "withheld as instructions")}${tile(num(T.data.unchecked), "unchecked, withheld")}</div>` : ""}
+    <h3 style="margin-bottom:6px">Live reports: injection warnings shown to users <span class="faint small">· ${R.warnings.length}</span></h3>
+    ${R.warnings.length ? R.warnings.slice().reverse().map(w => `<div class="ev"><span class="faint">${w.date} · ${esc(w.uid)}</span><span>${esc(w.warning)}</span></div>`).join("")
+      : `<div class="muted small">None in the window.</div>`}
+    <div class="notice" style="margin-top:10px">The live news screen is still a single Flash-Lite pass. The archive's identical screen flagged 190 chunks that Gemini Flash then cleared, so treat the warnings above as likely false positives until the live path gets the same confirm step.</div>`,
+    { say: `every piece of third-party text is screened before the agent reads it, and anything flagged is dropped and disclosed to the user. Ops shows how often that happens, which is how I found the screen was over-firing.` });
+
+  const costCard = card("FinOps · cost per report", `${panelErr(T, "reports")}
+    ${bars(days, [{ key: "cost", color: "var(--accent)" }], {
+      fmt: (v) => v ? usd(v) : "0", ref: { v: F.alert_usd, label: `alert at ${usd(F.alert_usd)}` },
+      faded: (d) => d.floor,
+      tip: (d) => `<b>${shortDate(d.date)}</b><br>${d.costed ? `${usd(d.cost)} per report${d.floor ? " <i>(floor: in-tool calls not metered yet)</i>" : ` · agent ${usd(d.agent_cost / d.costed)} + in-tool ${usd(d.tool_cost / d.costed)}`}<br>${d.costed} paid report(s)` : "no paid reports"}` })}
+    <div class="faint small">Average full cost per paid report per day (reused reports cost nothing and are left out). Faded bars are before 10/19, when only the agent's own calls were metered, so they understate. Prices: Vertex AI list, checked ${esc(M.prices_checked)}.</div>
+    <details class="tbl"><summary>Show as table</summary><div class="scroll"><table><thead><tr><th>Date</th><th class="num">Reports</th><th class="num">Agent / report</th><th class="num">In-tool / report</th><th class="num">Total / report</th></tr></thead>
+      <tbody>${days.slice().reverse().filter(d => d.costed).map(d => `<tr><td>${d.date}${d.floor ? " <span class='faint'>(floor)</span>" : ""}</td><td class="num">${d.costed}</td><td class="num">${usd(d.agent_cost / d.costed)}</td><td class="num">${usd(d.tool_cost / d.costed)}</td><td class="num">${usd(d.cost)}</td></tr>`).join("")}</tbody></table></div></details>`,
+    { say: `cost is metered per model call, including the Gemini calls made inside tools, which were invisible until 10/19 and turned out to be about half the bill. The alert line sits at roughly 3x normal: high enough to ignore variance, low enough to catch a tool loop.` });
+
+  const freshCard = card("Freshness · is the data the agent reads current?", `${panelErr(T, "data")}
+    <table><thead><tr><th>Source</th><th class="num">Age</th><th class="num">Limit</th><th></th></tr></thead><tbody>
+      ${T.freshness.map(f => `<tr><td>${esc(f.what)}</td><td class="num">${ago(f.hours)}</td><td class="num">${ago(f.limit_h)}</td>
+        <td>${f.ok ? `<span class="pill ok">✓ fresh</span>` : `<span class="pill bad">✗ stale</span>`}</td></tr>`).join("")}</tbody></table>
+    <div class="faint small" style="margin-top:8px">Each limit is the longest gap its schedule allows, plus slack. The archive limit matches the canary's and the tool's own freshness warning.</div>`,
+    { say: `stale data is the quiet failure: every tool still returns "ok". So freshness is checked in three places that agree: the tool warns the agent, the canary fails, and this view shows it.` });
+
+  const alertCard = card("Alerts · what pages, and what fired", `${panelErr(T, "alerts")}
+    <div class="scroll"><table><thead><tr><th>Policy</th><th>Project</th><th></th></tr></thead><tbody>
+      ${A.policies.map(p => `<tr><td class="small">${esc(p.name)}</td><td class="small faint">${p.project === "advisor-agent-2026" ? "agent" : "ML"}</td><td>${p.enabled ? `<span class="pill ok">on</span>` : `<span class="pill neutral">off</span>`}</td></tr>`).join("")}
+    </tbody></table></div>
+    <h3 style="margin:12px 0 6px">Events in the window</h3>
+    ${A.events.length ? A.events.map(e => `<div class="ev"><span class="faint">${etTime(e.time)}</span><span>${e.uid === "alert-test" ? `<span class="pill neutral">test</span> ` : ""}${e.kind === "scheduler" ? `<span class="pill bad">scheduler</span> ` : ""}${esc(e.text)}</span></div>`).join("")
+      : `<div class="muted small">Nothing fired.</div>`}
+    <div class="small" style="margin-top:8px"><a href="${esc(A.console || "#")}" target="_blank">Alert policies in Cloud Monitoring ↗</a></div>`);
+
+  sec.innerHTML = `
+    <div class="head"><div><h1>Control Tower</h1>
+      <div class="muted small">Production, last ${R.days.length} days · read ${esc(T.generated_at.replace("T", " "))}.
+        Cloud Monitoring is what pages you; this view explains. <a href="javascript:void 0" onclick="route()">Refresh</a></div></div></div>
+    <div class="tiles">
+      ${tile(total ? pct(served / total) : "–", `user-days served by the agent · ${served}/${total}`)}
+      ${tile(String(sum("fallback")), "fallbacks to the rule-based report")}
+      ${tile(rcRuns ? pct(1 - rcFail / rcRuns) : "–", `fact-check rules passed · ${rcRuns - rcFail}/${rcRuns}`)}
+      ${tile(usd(F.per_report_7d), "full cost per report, last 7 days")}
+      ${tile(F.month_projection == null ? "–" : `$${F.month_projection.toFixed(2)}`, `per month at ${num(F.reports_per_day_7d, 0)} reports/day`)}
+      ${tile(stale.length ? `${stale.length} stale` : "all fresh", "data freshness")}
+      ${tile(String(fired.length), `alert-worthy events · ${A.policies.filter(p => p.enabled).length} policies on`)}
+    </div>
+    ${slaCard}
+    <div class="cols">${rulesCard}${policyCard}</div>
+    ${costCard}
+    <div class="cols">${freshCard}${alertCard}</div>`;
+  sec.querySelectorAll("details.tbl").forEach(d => d.addEventListener("toggle", hideTip));
 }
 
 /* ============================== grading ============================== */

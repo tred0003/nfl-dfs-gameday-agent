@@ -2,7 +2,7 @@
 
     python gameday_agent/eval/dashboard.py          # then open http://localhost:8765
 
-Four views, one local server:
+Five views, one local server:
 
   Overview   the headline numbers from the latest eval run, the judge
              validation table, and the run history.
@@ -13,6 +13,11 @@ Four views, one local server:
              every tool call with its arguments and the full JSON it
              returned, the five report_check rules and what each looked at,
              the scenario's own checks (eval), and the report as delivered.
+  Tower      the Control Tower: production SLA, business-rule (fact-check)
+             pass rates, policy hits, cost, data freshness, every scheduled
+             job's recent runs, and the alert policies with what fired.
+             Reads Firestore, Cloud Run, Cloud Logging, Cloud Monitoring and
+             BigQuery; Cloud Monitoring is what pages (deploy/MONITORING.md).
   Grade      blind grading. The judge's scores are not sent to the browser
              until yours are saved (human_scores.json, the file align.py reads).
              For the same reason the Report view hides the judge's scores on
@@ -276,6 +281,236 @@ def _grading_queue() -> list[dict]:
     return items
 
 
+# ----------------------------------------------------------- control tower
+#
+# The operator's view: is production healthy, is it obeying its rules, what
+# does it cost, is its data fresh. Same signals Cloud Monitoring alerts on
+# (deploy/MONITORING.md) -- Monitoring pages, this explains. Every source is
+# read independently and fails on its own: an expired gcloud login blanks one
+# panel, not the page.
+
+ML_PROJECT = "fantasy-football-ml-503718"
+REGION = "us-central1"
+TOWER_DAYS = 14
+COST_ALERT_USD = 0.04          # same line as deploy/monitoring/report-cost.json
+JOBS = [  # (project, job, what it is)
+    (PROJECT, "gameday-report", "Daily report, 12:30 ET"),
+    (PROJECT, "gameday-canary", "Canary, Thu 10:00 ET"),
+    (ML_PROJECT, "news-archive", "News archive refresh, daily 11:00 ET"),
+    (ML_PROJECT, "project-slate", "Projections, Thu / Fri / Sun"),
+]
+# Freshness limits, hours. Each is the longest gap the schedule allows plus slack.
+FRESH = {"archive": 36, "projections": 100, "report": 30, "canary": 24 * 8}
+
+
+def _gcp():
+    import google.auth
+    import google.auth.transport.requests as tr
+    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    return tr.AuthorizedSession(creds)
+
+
+def _hours_since(ts) -> float | None:
+    if ts is None:
+        return None
+    from datetime import timezone
+    if isinstance(ts, str):
+        ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return round((datetime.now(timezone.utc) - ts).total_seconds() / 3600, 1)
+
+
+def _tower_days() -> list[str]:
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    return [(today - timedelta(days=i)).isoformat() for i in range(TOWER_DAYS - 1, -1, -1)]
+
+
+def _warned(tool_calls: list[dict]) -> list[str]:
+    """source_warnings carried by any tool result in a stored report."""
+    out = []
+    for c in tool_calls or []:
+        try:
+            res = json.loads(c.get("result_json") or "null")
+        except json.JSONDecodeError:
+            continue
+        if isinstance(res, dict):
+            out += [str(w) for w in res.get("source_warnings") or []]
+    return out
+
+
+def _t_reports() -> dict:
+    """SLA, business rules, FinOps and policy hits, from the stored reports."""
+    db = _db()
+    days = _tower_days()
+    active = [s.id for s in db.collection("users").where("active", "==", True).stream()]
+    by_day = {d: {"date": d, "agent": 0, "fallback": 0, "missing": 0, "reports": 0,
+                  "agent_cost": 0.0, "tool_cost": 0.0, "costed": 0, "floor": False} for d in days}
+    seen: dict[str, set] = {d: set() for d in days}
+    rules: dict[str, dict] = {}
+    fails, warnings, checked, latest = [], [], 0, None
+    for snap in db.collection_group("reports").stream():
+        date, uid = snap.id, snap.reference.parent.parent.id
+        if date not in by_day:
+            continue
+        d = snap.to_dict() or {}
+        row = by_day[date]
+        seen[date].add(uid)
+        row["reports"] += 1
+        row["fallback" if d.get("source") == "fallback" else "agent"] += 1
+        latest = max(latest or date, date)
+        # Before 10/19 only the agent's own calls were metered: that cost is a
+        # floor (no in-tool calls), flagged so the chart can say so.
+        if d.get("cost_usd") is not None and not d.get("reused_from"):
+            row["agent_cost"] += d.get("cost_usd") or 0
+            row["tool_cost"] += d.get("subcall_cost_usd") or 0
+            row["costed"] += 1
+            row["floor"] = row["floor"] or d.get("total_cost_usd") is None
+        if d.get("source") == "agent":
+            checked += 1
+            for c in d.get("checks") or []:
+                r = rules.setdefault(c.get("rule", "?"), {"rule": c.get("rule", "?"), "runs": 0, "failed": 0})
+                r["runs"] += 1
+                r["failed"] += 0 if c.get("passed") else 1
+            if d.get("problems"):
+                fails.append({"date": date, "uid": uid, "problems": d["problems"]})
+        for w in _warned(d.get("tool_calls")):
+            warnings.append({"date": date, "uid": uid, "warning": w})
+    for d in days:
+        # A user active today with no report that day: no lineup, or a failure.
+        # Measured against TODAY's active users -- a user added mid-window
+        # shows as missing on the days before they existed.
+        by_day[d]["missing"] = len([u for u in active if u not in seen[d]]) if by_day[d]["reports"] else 0
+    fails.sort(key=lambda f: f["date"], reverse=True)
+    return {"days": list(by_day.values()), "active_users": len(active),
+            "rules": sorted(rules.values(), key=lambda r: -r["failed"]),
+            "checked": checked, "failures": fails[:20], "warnings": warnings[-20:],
+            "latest_report": latest}
+
+
+def _t_jobs() -> list[dict]:
+    s = _gcp()
+    out = []
+    for project, job, about in JOBS:
+        url = (f"https://run.googleapis.com/v2/projects/{project}/locations/{REGION}"
+               f"/jobs/{job}/executions?pageSize=8")
+        r = s.get(url, timeout=20)
+        if not r.ok:
+            out.append({"job": job, "project": project, "about": about,
+                        "error": f"HTTP {r.status_code}: {r.text[:150]}"})
+            continue
+        runs = []
+        for e in r.json().get("executions", []):
+            done = e.get("completionTime")
+            status = ("running" if not done else "failed" if e.get("failedCount") else
+                      "cancelled" if e.get("cancelledCount") else "ok")
+            dur = None
+            if done and e.get("startTime"):
+                dur = round((datetime.fromisoformat(done.replace("Z", "+00:00"))
+                             - datetime.fromisoformat(e["startTime"].replace("Z", "+00:00"))
+                             ).total_seconds())
+            runs.append({"name": e["name"].rsplit("/", 1)[-1], "created": e.get("createTime"),
+                         "status": status, "seconds": dur})
+        out.append({"job": job, "project": project, "about": about, "runs": runs,
+                    "console": f"https://console.cloud.google.com/run/jobs/details/{REGION}/{job}/executions?project={project}"})
+    return out
+
+
+def _t_alerts() -> dict:
+    s = _gcp()
+    policies = []
+    for project in (PROJECT, ML_PROJECT):
+        r = s.get(f"https://monitoring.googleapis.com/v3/projects/{project}/alertPolicies", timeout=20)
+        r.raise_for_status()
+        policies += [{"project": project, "name": p.get("displayName"), "enabled": p.get("enabled", False)}
+                     for p in r.json().get("alertPolicies", [])]
+    # The events those policies fire on, last TOWER_DAYS: warning report
+    # lines, scheduler failures. Failed job runs are in the jobs panel.
+    since = f'timestamp>="{_tower_days()[0]}T00:00:00Z"'
+    flt = (f'{since} AND ((jsonPayload.event="report" AND severity>=WARNING '
+           f'AND jsonPayload.dry_run=false) OR (resource.type="cloud_scheduler_job" AND severity>=ERROR))')
+    events = []
+    for project in (PROJECT, ML_PROJECT):
+        r = s.post("https://logging.googleapis.com/v2/entries:list", timeout=30, json={
+            "resourceNames": [f"projects/{project}"], "filter": flt,
+            "orderBy": "timestamp desc", "pageSize": 50})
+        r.raise_for_status()
+        for e in r.json().get("entries", []):
+            p = e.get("jsonPayload") or {}
+            events.append({"time": e.get("timestamp"), "project": project, "severity": e.get("severity"),
+                           "kind": "report" if p.get("event") == "report" else "scheduler",
+                           "uid": p.get("uid"), "source": p.get("source"),
+                           "text": p.get("message") or e.get("textPayload")
+                                   or json.dumps(p.get("status") or p)[:200]})
+    events.sort(key=lambda e: e["time"] or "", reverse=True)
+    return {"policies": policies, "events": events[:40],
+            "console": f"https://console.cloud.google.com/monitoring/alerting?project={PROJECT}"}
+
+
+def _t_data() -> dict:
+    from google.cloud import bigquery
+    bq = bigquery.Client(project=ML_PROJECT)
+    q = f"""
+      SELECT
+        (SELECT MAX(published) FROM `{ML_PROJECT}.dfs.news_chunks`
+         WHERE published >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 14 DAY)
+           AND screen = 'clean') AS archive_newest,
+        (SELECT MAX(run_ts) FROM `{ML_PROJECT}.dfs.projections`) AS projections_newest,
+        (SELECT COUNT(*) FROM `{ML_PROJECT}.dfs.news_chunks`) AS chunks,
+        (SELECT COUNTIF(screen = 'clean') FROM `{ML_PROJECT}.dfs.news_chunks`) AS clean,
+        (SELECT COUNTIF(screen = 'instruction') FROM `{ML_PROJECT}.dfs.news_chunks`) AS instruction,
+        (SELECT COUNTIF(screen IS NULL OR screen = 'unchecked') FROM `{ML_PROJECT}.dfs.news_chunks`) AS unchecked
+    """
+    r = dict(next(iter(bq.query(q).result())))
+    return {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in r.items()}
+
+
+def _tower() -> dict:
+    from concurrent.futures import ThreadPoolExecutor
+    parts = {"reports": _t_reports, "jobs": _t_jobs, "alerts": _t_alerts, "data": _t_data}
+    out, errors = {}, {}
+    with ThreadPoolExecutor(max_workers=len(parts)) as ex:
+        futs = {k: ex.submit(f) for k, f in parts.items()}
+        for k, f in futs.items():
+            try:
+                out[k] = f.result()
+            except Exception as e:  # noqa: BLE001 -- one source down is one panel down
+                out[k], errors[k] = None, f"{type(e).__name__}: {str(e)[:200]}"
+
+    rep, jobs, data = out["reports"], out["jobs"] or [], out["data"]
+    canary = next((j for j in jobs if j["job"] == "gameday-canary"), {})
+    last_ok = next((r["created"] for r in canary.get("runs", []) if r["status"] == "ok"), None)
+    fresh = [
+        {"what": "News archive (newest clean item)", "limit_h": FRESH["archive"],
+         "hours": _hours_since(data and data.get("archive_newest"))},
+        {"what": "Projections (newest run)", "limit_h": FRESH["projections"],
+         "hours": _hours_since(data and data.get("projections_newest"))},
+        {"what": "Production report (newest day stored)", "limit_h": FRESH["report"],
+         "hours": _hours_since(f"{rep['latest_report']}T16:30:00+00:00")
+                  if rep and rep.get("latest_report") else None},
+        {"what": "Canary (last passing run)", "limit_h": FRESH["canary"], "hours": _hours_since(last_ok)},
+    ]
+    for f in fresh:
+        f["ok"] = f["hours"] is not None and f["hours"] <= f["limit_h"]
+
+    days = (rep or {}).get("days", [])
+    costed = [d for d in days[-7:] if d["costed"] and not d["floor"]]
+    per_report = (sum(d["agent_cost"] + d["tool_cost"] for d in costed)
+                  / sum(d["costed"] for d in costed)) if costed else None
+    reports_per_day = (sum(d["costed"] for d in costed) / len(costed)) if costed else None
+    return {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "reports": rep, "jobs": jobs, "alerts": out["alerts"], "data": data,
+        "freshness": fresh, "errors": errors,
+        "finops": {"per_report_7d": per_report, "reports_per_day_7d": reports_per_day,
+                   "month_projection": per_report * reports_per_day * 30
+                   if per_report and reports_per_day else None,
+                   "alert_usd": COST_ALERT_USD},
+    }
+
+
 # --------------------------------------------------------------------- app
 
 app = Flask(__name__)
@@ -324,6 +559,11 @@ def overview():
         to_grade=len(_grading_queue()),
         baseline_quality=(load_baseline() or {}).get("suite_quality"),
         tolerance=QUALITY_TOLERANCE, prod=prod[:10], prod_error=prod_err)
+
+
+@app.get("/api/tower")
+def tower():
+    return jsonify(_tower())
 
 
 @app.get("/api/reports")
