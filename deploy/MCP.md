@@ -97,7 +97,10 @@ gcloud run deploy news-mcp --project $P --region $R --image $IMG
 ```
 
 Any change to `gameday_agent/archive.py` reaches the agent on the agent's
-deploy and the MCP server on this one — redeploy both.
+deploy and the MCP server on this one — redeploy both. A push to master
+starts neither (only CI): run `nfl-dfs-deploy` by hand for the agent.
+
+Live as of 2026-10-22: revision `news-mcp-00002-hsh`, image `news-mcp:104795f`.
 
 ## Tests
 

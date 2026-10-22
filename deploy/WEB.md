@@ -37,9 +37,22 @@ on a PUT that named `uid: u1`; u1's lineup was unchanged.
 | Firebase | Added to the GCP project (`addFirebase`); web app `gameday-web` registered |
 | Auth | Identity Platform initialised; Email/Password provider on. Accounts u1-u4 created by `deploy/create_auth_users.py` with uids matching the Firestore docs, **no passwords** |
 | Rules | `deploy/firestore.rules` (deny all clients) released to `cloud.firestore` |
-| Identity | `web-app@` — `roles/datastore.user` only |
+| Identity | `web-app@` — `roles/datastore.user`; since 10/19 READER on `dfs` + `bigquery.jobUser` in the ML project (player pool); since 10/22 `aiplatform.user` here (Ask agent) and `run.invoker` on `news-mcp` |
 | Service | Cloud Run `gameday-web`, public (auth is in-app), max 2 instances, env `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `GOOGLE_CLOUD_PROJECT` |
 | Image | `deploy/Dockerfile.web`, `deploy/cloudbuild.web.yaml`, in the `agent-reports` repo as `web:<sha>` |
+
+## News archive card (added 2026-10-22)
+
+- `POST /api/news/history` — four weeks of notes on your lineup, one direct
+  MCP call to `news-mcp` (`webapp/news.py`).
+- `POST /api/news/ask` — a question answered by a Gemini 2.5 Flash agent whose
+  tools come from `news-mcp`'s `tools/list` (`webapp/ask.py`); at most 4 tool
+  calls, 20 questions per user per day, one `event=archive_ask` log line each
+  (~$0.002, 3-11 s).
+- Grants: `web-app@` has `run.invoker` on `news-mcp` (ML project) and
+  `aiplatform.user` in `advisor-agent-2026`. Remove the first and the card
+  answers 503; the rest of the site is unaffected.
+- Live: `gameday-web-00005-jdr`, image `web:4db1051`. See `deploy/MCP.md`.
 
 ## First sign-in (per user)
 
