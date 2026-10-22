@@ -1,6 +1,6 @@
 """Tests for the prefetch callback: python -m unittest discover -s tests
 
-Prefetch answers the agent's first model call with the seven core tool
+Prefetch answers the agent's first model call with the core tool
 calls -- but only for the standard report question. These pin down that it
 fires exactly then, and that its copy of the question still matches the one
 the scheduled report sends.
@@ -36,7 +36,7 @@ def _request(*contents):
 
 @unittest.skipIf(prefetch is None, "gameday_agent needs ADK")
 class PrefetchTest(unittest.TestCase):
-    def test_standard_question_gets_the_seven_core_calls(self):
+    def test_standard_question_gets_the_core_calls(self):
         resp = prefetch.prefetch_core_tools(_ctx(prefetch.STANDARD_QUERY), _request())
         names = [p.function_call.name for p in resp.content.parts]
         self.assertEqual(names, prefetch.CORE_TOOLS)

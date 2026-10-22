@@ -37,7 +37,7 @@ of reports, and the eval measured identical runs swinging ~±5 quality points.
 
   quality    judge mean more than QUALITY_TOLERANCE (10) below the prior weeks' mean
   fallback   more than a quarter of the week's reports were the rule-based fallback
-  core tools any agent report skipped a core tool (prefetch requests all seven)
+  core tools any agent report skipped a core tool (prefetch requests all of them)
   checks     report_check failure rate up more than 20 points on the prior weeks
   cost       cost per agent report more than 1.5x the prior weeks' mean
   judge      every judge call failed -- no quality number at all is not a pass
@@ -83,7 +83,10 @@ NFLVERSE = "https://github.com/nflverse/nflverse-data/releases/download"
 QUERY = "Check my lineup for this Sunday and tell me if anything needs my attention."
 CORE_TOOLS = ["get_lineup_status", "get_cb_matchups", "get_slate_weather",
               "get_vegas_context", "get_notable_scratches", "get_value_picks",
-              "get_team_news"]
+              "get_team_news", "get_player_history"]
+# A core tool added mid-season is required only of reports made on or after
+# the day it shipped; the old agent cannot have called it.
+CORE_SINCE = {"get_player_history": "2026-10-22"}
 
 RULED_OUT = {"O", "OUT", "IR", "D", "DOUBTFUL"}
 QUESTIONABLE = {"Q", "QUESTIONABLE"}
@@ -216,7 +219,8 @@ def grade(rows: list[dict], judge_fn: Callable | None, max_judged: int = MAX_JUD
                "reused_from": doc.get("reused_from"),
                "check_failed": bool(doc.get("problems")),
                "problems": list(doc.get("problems") or []),
-               "missing_core": ([t for t in CORE_TOOLS if t not in tools]
+               "missing_core": ([t for t in CORE_TOOLS if t not in tools
+                                 and r["date"][:10] >= CORE_SINCE.get(t, "")]
                                 if source == "agent" else []),
                # total_cost_usd (agent + in-tool calls) since 10/19; before
                # that only the agent's own cost_usd was stored.

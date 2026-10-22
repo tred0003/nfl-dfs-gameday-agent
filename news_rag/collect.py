@@ -92,17 +92,22 @@ def player_blurbs(players: list[dict], since: datetime) -> tuple[list[dict], lis
         for f in _get(PLAYER_NEWS.format(id=p["espn_id"])).get("feed", []):
             if not f.get("published") or _when(f["published"]) < since:
                 continue
+            url = (f.get("links") or {}).get("web", {}).get("href")
             out.append({
                 "id": f"blurb-{f['id']}",
                 "source": "ESPN fantasy (RotoWire)",
-                "kind": "player_blurb",
+                # The feed also carries ESPN's multi-player fantasy columns,
+                # up to 20K characters. They link to a /story/ page; the
+                # RotoWire notes have no link. A column is a story: chunked,
+                # and left out of get_player_history's per-player notes.
+                "kind": "story" if "/story/" in (url or "") else "player_blurb",
                 "published": f["published"],
                 "headline": _plain(f.get("headline")),
                 "text": _plain(f.get("story")) or _plain(f.get("description")),
                 "players": [{"espn_id": p["espn_id"], "name": p["name"],
                              "position": p["position"]}],
                 "teams": [p["team"]],
-                "url": (f.get("links") or {}).get("web", {}).get("href"),
+                "url": url,
             })
         return out
 
@@ -161,20 +166,31 @@ def league_stories(since: datetime) -> tuple[list[dict], int]:
     return rows, pages
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--since", default="2026-07-15", help="earliest publish date kept (UTC)")
-    a = p.parse_args()
-    since = datetime.fromisoformat(a.since).replace(tzinfo=timezone.utc)
+class CollectError(RuntimeError):
+    """Too much of the collection failed to call the result an archive update."""
 
+
+# More player feeds failing than this is ESPN refusing us, not a few bad ids.
+MAX_FEED_FAILURE = 0.25
+
+
+def collect(since: datetime, log=print) -> list[dict]:
+    """Every article published at or after `since`, de-duplicated on ESPN's id.
+
+    Shared by the full rebuild below and the daily refresh (refresh.py).
+    Raises CollectError when most of the per-player feeds fail: a refresh that
+    appends 40 of the usual 200 chunks would look like a quiet news day.
+    """
     players = skill_players()
-    print(f"rosters: {len(players)} skill players on 32 teams")
+    log(f"rosters: {len(players)} skill players on 32 teams")
     blurbs, errors = player_blurbs(players, since)
-    print(f"player blurbs: {len(blurbs)} ({len(errors)} player feeds failed)")
+    log(f"player blurbs: {len(blurbs)} ({len(errors)} player feeds failed)")
     for e in errors[:10]:
-        print(f"  failed: {e}")
+        log(f"  failed: {e}")
+    if players and len(errors) / len(players) > MAX_FEED_FAILURE:
+        raise CollectError(f"{len(errors)} of {len(players)} player feeds failed")
     stories, pages = league_stories(since)
-    print(f"league stories: {len(stories)} NFL stories from {pages} pages")
+    log(f"league stories: {len(stories)} NFL stories from {pages} pages")
 
     # A blurb about two players (a QB and his receiver) sits in both players'
     # feeds under one id. Merge their player and team lists rather than keep
@@ -187,7 +203,16 @@ def main() -> None:
         ids = {p["espn_id"] for p in kept["players"]}
         kept["players"] += [p for p in r["players"] if p["espn_id"] not in ids]
         kept["teams"] = sorted(set(kept["teams"]) | set(r["teams"]))
-    rows = sorted(by_id.values(), key=lambda r: r["published"])
+    return sorted(by_id.values(), key=lambda r: r["published"])
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--since", default="2026-07-15", help="earliest publish date kept (UTC)")
+    a = p.parse_args()
+    since = datetime.fromisoformat(a.since).replace(tzinfo=timezone.utc)
+
+    rows = collect(since)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with OUT.open("w", encoding="utf-8") as f:
         for r in rows:

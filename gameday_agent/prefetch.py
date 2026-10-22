@@ -8,7 +8,7 @@ trajectory checks fail a run that skips one -- so that call is ~40% of the
 agent loop's cost (2026-10-19) spent producing a constant.
 
 prefetch_core_tools is a before_model_callback. On the first model call of a
-run it answers in the model's place with those seven function calls, so ADK
+run it answers in the model's place with those core function calls, so ADK
 runs the tools through its normal path -- every tool callback (the
 source_warnings guard, usage metering) and every event, so report_check,
 the eval's trajectory and the stored tool_calls see exactly what they saw
@@ -36,8 +36,9 @@ import re
 from google.adk.models import LlmResponse
 from google.genai import types
 
-# The seven the instruction requires on every run, in the order the model
-# itself most often asked for them. find_replacements and search_news are
+# The ones the instruction requires on every run, in the order the model
+# itself most often asked for them (get_player_history, added 2026-10-22,
+# goes last). find_replacements, search_news and search_news_archive are
 # left to the model: their arguments are judgments.
 CORE_TOOLS = [
     "get_lineup_status",
@@ -47,6 +48,7 @@ CORE_TOOLS = [
     "get_notable_scratches",
     "get_value_picks",
     "get_team_news",
+    "get_player_history",
 ]
 
 

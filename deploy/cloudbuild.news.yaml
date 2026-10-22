@@ -1,0 +1,9 @@
+# Builds the news-archive job image. Same reason as cloudbuild.yaml for a
+# checked-in config rather than `--tag`: the Dockerfile is not at the root.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-f', 'deploy/Dockerfile.news', '-t', '${_IMAGE}', '.']
+images:
+  - '${_IMAGE}'
+options:
+  logging: CLOUD_LOGGING_ONLY

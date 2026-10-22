@@ -166,7 +166,8 @@ const usd = (x) => x == null ? "–" : (x < 0.1 ? `${(x * 100).toFixed(2)}¢` : 
 const avg = (xs) => { xs = xs.filter(x => x != null); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
 const get = async (u) => { const r = await fetch(u); const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status); return d; };
 const SHORT = { get_lineup_status: "LU", get_cb_matchups: "CB", get_slate_weather: "WX", get_vegas_context: "VG",
-  get_team_news: "NW", get_notable_scratches: "SC", get_value_picks: "VP", find_replacements: "FR", search_news: "SN" };
+  get_team_news: "NW", get_notable_scratches: "SC", get_value_picks: "VP", find_replacements: "FR", search_news: "SN",
+  get_player_history: "PH", search_news_archive: "SA" };
 let M = null;  // /api/meta
 
 function card(title, body, opts = {}) {
@@ -208,7 +209,7 @@ async function showOverview(sec) {
     <div class="tiles">
       ${tile(`${cp}/${ct}`, "scenario checks passed")}
       ${tile(num(avg(rows.map(r => r.quality)), 1), `judge quality /100 · baseline ${num(O.baseline_quality, 1)}`)}
-      ${tile(`${rows.filter(r => r.core_used === 7).length}/${rows.length}`, "reports that used all 7 core tools")}
+      ${tile(`${rows.filter(r => r.core_used === M.core_tools.length).length}/${rows.length}`, `reports that used all ${M.core_tools.length} core tools`)}
       ${tile(num(avg(rows.map(r => r.tool_count)), 1), "tool calls per report")}
       ${tile(num(avg(rows.map(r => r.tokens_total))), "tokens per report")}
       ${tile(usd(avg(rows.map(r => r.cost_usd))), "agent cost per report")}
@@ -278,7 +279,7 @@ function prodMini(O) {
   return `<div class="scroll"><table><thead><tr><th>Date</th><th>User</th><th>Source</th><th class="num">Fact-check</th><th class="num">Tools</th><th class="num">Cost</th></tr></thead><tbody>
     ${O.prod.map(p => `<tr class="click" onclick="location.hash='report/prod/${encodeURIComponent(p.who)}/${encodeURIComponent(p.date)}'">
       <td>${esc(p.date)}</td><td><b>${esc(p.who)}</b></td><td>${srcPill(p.source)}</td><td class="num">${rcPill(p)}</td>
-      <td class="num">${p.core_used}/7</td><td class="num">${usd(p.cost_usd)}</td></tr>`).join("")}</tbody></table></div>`;
+      <td class="num">${p.core_used}/${M.core_tools.length}</td><td class="num">${usd(p.cost_usd)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 const srcPill = (s) => s === "agent" ? `<span class="pill ok">agent</span>` : s === "fallback" ? `<span class="pill warn">fallback</span>` : `<span class="pill neutral">${esc(s)}</span>`;
 const rcPill = (p) => p.rc_total ? `<span class="pill ${p.rc_passed === p.rc_total ? "ok" : "bad"}">${p.rc_passed}/${p.rc_total}</span>`
@@ -320,7 +321,7 @@ function drawReports() {
       <td>${r.kind === "prod" ? srcPill(r.source) : `<span class="pill neutral">eval</span>`}</td>
       <td class="num">${r.checks ? `<span class="pill ${r.checks_ok ? "ok" : "bad"}">${r.checks}</span>` : "–"}</td>
       <td class="num">${rcPill(r)}</td><td class="num">${num(r.quality, 1)}</td>
-      <td class="num">${r.has_trace || r.kind === "prod" ? `${r.core_used}/7` : "–"}</td>
+      <td class="num">${r.has_trace || r.kind === "prod" ? `${r.core_used}/${M.core_tools.length}` : "–"}</td>
       <td class="num">${r.tool_count ?? "–"}</td><td class="num">${num(r.tokens_total)}</td><td class="num">${usd(r.cost_usd)}</td></tr>`;
   }).join("") || `<tr><td colspan="10" class="empty">Nothing matches.</td></tr>`;
   $("rep-body").querySelectorAll("tr[data-href]").forEach(tr => tr.onclick = () => location.hash = tr.dataset.href);

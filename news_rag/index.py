@@ -22,6 +22,22 @@ Chunking:
 Embeddings are cached in data/news/embeddings.parquet keyed on a hash of the
 chunk text, so a re-run after collecting new articles only pays for the new
 chunks.
+
+Two columns exist for the agent, not for search quality:
+  player_keys   the tagged players' names through predict_slate.normalize_name,
+                the same rule the lineup sheet is matched with, so a DK name
+                and an ESPN name meet on one spelling ("Kenneth Walker III"
+                and "Kenneth Walker" are both "kenneth walker").
+  screen        the injection screen's verdict on the chunk: clean,
+                instruction or unchecked. Retrieval returns only "clean", so
+                an unchecked chunk is withheld until a later run checks it --
+                fail closed, like everywhere else third-party text reaches
+                the agent. Screened per CHUNK, not per article: the screen
+                reads at most 1,800 characters of an item, and a story is
+                longer than that.
+
+This file rebuilds the whole table from the laptop's articles.jsonl. The
+daily cloud refresh that appends to it is refresh.py.
 """
 
 from __future__ import annotations
@@ -37,6 +53,7 @@ from pathlib import Path
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 ARTICLES = ROOT / "data" / "news" / "articles.jsonl"
 CACHE = ROOT / "data" / "news" / "embeddings.parquet"
 
@@ -80,6 +97,25 @@ def chunks(article: dict) -> list[dict]:
             for i, t in enumerate(parts)]
 
 
+def player_keys(names: list[str]) -> list[str]:
+    """Normalized names for the player_keys column. Same function the agent
+    uses on DK names (gameday_agent/archive.py), or the two never meet."""
+    from gameday_agent.archive import name_keys
+    return name_keys(names)
+
+
+def screen_texts(texts: list[str], workers: int = 4) -> list[str]:
+    """One injection verdict per text: "clean", "instruction" or "unchecked".
+
+    The agent's own screen (gameday_agent/injection.py), batched the way it
+    batches, with batches run in parallel -- a backfill is ~1,000 of them.
+    """
+    from gameday_agent.injection import BATCH, screen
+    groups = [texts[i:i + BATCH] for i in range(0, len(texts), BATCH)]
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return [v["verdict"] for g in ex.map(screen, groups) for v in g]
+
+
 def _client():
     from google import genai
     from google.genai import types
@@ -110,6 +146,23 @@ def embed(texts: list[str], task: str = "RETRIEVAL_DOCUMENT", client=None) -> li
     return out
 
 
+def schema_fields():
+    from google.cloud import bigquery
+    return [
+        bigquery.SchemaField("chunk_id", "STRING"), bigquery.SchemaField("article_id", "STRING"),
+        bigquery.SchemaField("chunk_index", "INT64"), bigquery.SchemaField("kind", "STRING"),
+        bigquery.SchemaField("source", "STRING"), bigquery.SchemaField("published", "TIMESTAMP"),
+        bigquery.SchemaField("headline", "STRING"), bigquery.SchemaField("text", "STRING"),
+        bigquery.SchemaField("players", "STRING", mode="REPEATED"),
+        bigquery.SchemaField("player_ids", "STRING", mode="REPEATED"),
+        bigquery.SchemaField("teams", "STRING", mode="REPEATED"),
+        bigquery.SchemaField("url", "STRING"), bigquery.SchemaField("text_hash", "STRING"),
+        bigquery.SchemaField("embedding", "FLOAT64", mode="REPEATED"),
+        bigquery.SchemaField("player_keys", "STRING", mode="REPEATED"),
+        bigquery.SchemaField("screen", "STRING"),
+    ]
+
+
 def main() -> None:
     articles = [json.loads(line) for line in ARTICLES.open(encoding="utf-8")]
     rows = pd.DataFrame([c for a in articles for c in chunks(a)])
@@ -133,20 +186,13 @@ def main() -> None:
 
     rows["embedding"] = rows["text_hash"].map(lambda h: [float(x) for x in known[h]])
     rows["published"] = pd.to_datetime(rows["published"], utc=True)
+    rows["player_keys"] = rows["players"].map(player_keys)
+    print(f"screening {len(rows)} chunks for injection")
+    rows["screen"] = screen_texts(rows["text"].tolist())
 
     from google.cloud import bigquery
     bq = bigquery.Client(project=BQ_PROJECT)
-    schema = [
-        bigquery.SchemaField("chunk_id", "STRING"), bigquery.SchemaField("article_id", "STRING"),
-        bigquery.SchemaField("chunk_index", "INT64"), bigquery.SchemaField("kind", "STRING"),
-        bigquery.SchemaField("source", "STRING"), bigquery.SchemaField("published", "TIMESTAMP"),
-        bigquery.SchemaField("headline", "STRING"), bigquery.SchemaField("text", "STRING"),
-        bigquery.SchemaField("players", "STRING", mode="REPEATED"),
-        bigquery.SchemaField("player_ids", "STRING", mode="REPEATED"),
-        bigquery.SchemaField("teams", "STRING", mode="REPEATED"),
-        bigquery.SchemaField("url", "STRING"), bigquery.SchemaField("text_hash", "STRING"),
-        bigquery.SchemaField("embedding", "FLOAT64", mode="REPEATED"),
-    ]
+    schema = schema_fields()
     cfg = bigquery.LoadJobConfig(schema=schema, write_disposition="WRITE_TRUNCATE",
                                  time_partitioning=bigquery.TimePartitioning(field="published"))
     bq.load_table_from_dataframe(rows[[f.name for f in schema]], TABLE, job_config=cfg).result()

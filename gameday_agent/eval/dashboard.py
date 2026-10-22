@@ -50,13 +50,14 @@ PORT = 8765
 PROJECT = "advisor-agent-2026"
 AGENT_MODEL = "gemini-2.5-flash"
 
-# Every tool in gameday_agent/tools.py TOOLS. The first seven are expected on
-# every full report; the last two are conditional (find_replacements only
-# when a player is OUT, search_news only when the agent goes looking).
+# Every tool in gameday_agent/tools.py TOOLS. The first eight are expected on
+# every full report; the last three are conditional (find_replacements only
+# when a player is OUT, the two searches only when the agent goes looking).
 TOOLS = ["get_lineup_status", "get_cb_matchups", "get_slate_weather",
-         "get_vegas_context", "get_team_news", "get_notable_scratches",
-         "get_value_picks", "find_replacements", "search_news"]
-CORE_TOOLS = TOOLS[:7]
+         "get_vegas_context", "get_team_news", "get_player_history",
+         "get_notable_scratches", "get_value_picks", "find_replacements",
+         "search_news", "search_news_archive"]
+CORE_TOOLS = TOOLS[:8]
 
 TOOL_ABOUT = {
     "get_lineup_status": "Your players: salary, injury status, and any name the slate didn't recognise",
@@ -68,6 +69,8 @@ TOOL_ABOUT = {
     "get_value_picks": "Cheap players the projection model likes this week",
     "find_replacements": "Swap-in options at a position, under a salary cap",
     "search_news": "A web search the agent can run when it wants more",
+    "get_player_history": "The last four weeks of archived news on each of your players",
+    "search_news_archive": "A question the agent asks the news archive (BigQuery vector search)",
 }
 
 

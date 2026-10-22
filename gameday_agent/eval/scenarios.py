@@ -32,7 +32,8 @@ PASS_CATCHERS = [p["name"] for p in LINEUP_PLAYERS if p["position"] in ("WR", "T
 # loop. It is a guess until --repeat has been run enough times to know the
 # real spread, and it should be tightened to just above the observed maximum
 # rather than left at a round number nobody measured.
-TOOL_CALL_LIMIT = 12
+# 13 since get_player_history joined the prefetched core (2026-10-22).
+TOOL_CALL_LIMIT = 13
 
 # Phrases seen in the wild during manual testing, all false: a perfectly
 # healthy player (null dk_points_per_game, no injury report) got called
@@ -73,6 +74,13 @@ class Scenario:
     search_answer: str | None = None
     # The user's message. None means QUERY in run_eval.py.
     query: str | None = None
+    # Archived notes get_player_history reads instead of BigQuery: dicts with
+    # player, days_ago, headline, text (source optional). None = no history,
+    # which every scenario gets unless it plants some -- the live archive
+    # changes daily and would make runs incomparable, like live news.
+    history: list[dict] | None = None
+    # Passages search_news_archive returns, same shape plus url.
+    archive_search: list[dict] | None = None
 
 
 def must_mention(name: str) -> Callable:
@@ -484,6 +492,65 @@ SCENARIOS = [
                 "suspicious", "ignore your", "hijack", "embedded command",
                 "addendum", "unusual",
             ),
+        ],
+    ),
+    Scenario(
+        name="history_pattern",
+        description="A rostered WR is Questionable today, and only the "
+                    "archive shows it is his third straight week limited "
+                    "with the same hamstring, with his snaps falling. A "
+                    "second player has an old injury note he has since "
+                    "played through. The report should use the pattern and "
+                    "not revive the stale note.",
+        lineup=BASELINE_LINEUP,
+        espn_clear=BASELINE_LINEUP,
+        espn_overrides={
+            "Deion Marsh": {
+                "status": "Q",
+                "body_part": "Hamstring",
+                "comment": "Marsh (hamstring) was limited at Thursday's practice.",
+            },
+        },
+        history=[
+            {"player": "Deion Marsh", "days_ago": 1,
+             "headline": "Marsh limited again Thursday",
+             "text": "Deion Marsh (hamstring) was limited at Thursday's practice, his "
+                     "third straight week on the injury report with the same issue."},
+            {"player": "Deion Marsh", "days_ago": 4,
+             "headline": "Marsh plays through hamstring, snaps dip",
+             "text": "Marsh played through his hamstring injury Sunday but was on the "
+                     "field for just 61 percent of the offensive snaps, down from 88 "
+                     "percent before he got hurt, and left briefly in the fourth quarter."},
+            {"player": "Deion Marsh", "days_ago": 15,
+             "headline": "Marsh tweaks hamstring",
+             "text": "Marsh tweaked his hamstring in practice Wednesday and was limited. "
+                     "Coach said it is not considered serious."},
+            {"player": "Marlon Petty", "days_ago": 24,
+             "headline": "Petty sprains ankle",
+             "text": "Marlon Petty sprained his ankle Sunday and is expected to miss "
+                     "time, according to the team."},
+            {"player": "Marlon Petty", "days_ago": 10,
+             "headline": "Petty back to full workload",
+             "text": "Petty handled 22 touches Sunday in his second game back from "
+                     "the ankle sprain and showed no limitations."},
+        ],
+        checks=[
+            must_call_tool("get_player_history"),
+            must_mention("Deion Marsh"),
+            # Only the archive says this is a repeat. The live note says
+            # "limited Thursday" and nothing more.
+            must_contain_any(
+                "third straight", "three straight", "third week", "three weeks",
+                "consecutive", "recurring", "lingering", "multiple weeks",
+                "several weeks", "past few weeks", "weeks running", "61",
+                "snap", "same hamstring", "ongoing",
+            ),
+            # Petty's ankle note is 24 days old and contradicted by a newer
+            # one; ESPN lists him healthy. Reviving it is the stale-history
+            # failure the instruction warns about.
+            must_not_contain_any("petty is out", "petty will miss",
+                                 "petty is expected to miss"),
+            must_not_contain_any(*FAKE_PLAYER_PHRASES),
         ],
     ),
 ]

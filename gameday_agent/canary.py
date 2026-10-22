@@ -63,7 +63,16 @@ EXPECTED = {
     "get_value_picks": "picks",
     "get_team_news": None,      # zero claims on a quiet week is legitimate
     "search_news": "sources",   # grounded search must come back with sources
+    "get_player_history": "players",
+    "search_news_archive": "passages",
 }
+
+# The archive is appended by a daily job (news_rag/refresh.py). If that job
+# stops, the history tools keep answering "ok" from a history that ends days
+# ago -- the quiet failure this canary exists for. Same limit the tool uses
+# for its own freshness_warning (archive.STALE_HOURS; copied, not imported,
+# for the reason EXPECTED is).
+ARCHIVE_STALE_HOURS = 36
 
 # Statuses that count as working, beyond "ok". The projection job runs Friday
 # evening and Sunday 11:00, so on a Thursday this slate has no projections yet
@@ -78,7 +87,9 @@ CANARY_QUERY = (
     "This is a scheduled health check, not a real report. Call each of these "
     "tools exactly once: get_lineup_status, get_cb_matchups, get_slate_weather, "
     "get_vegas_context, get_notable_scratches, get_value_picks, get_team_news, "
-    "search_news with query 'NFL injury news this week', and "
+    "get_player_history, "
+    "search_news with query 'NFL injury news this week', "
+    "search_news_archive with question 'injury update' and no player, and "
     "find_replacements with "
     "position WR and max_salary 5000. Then reply with one short line per tool "
     "saying whether it returned data."
@@ -106,6 +117,12 @@ def check(responses: list[dict]) -> list[tuple[str, bool, str]]:
             msg = str(resp.get("message") or resp)[:150]
             rows.append((tool, False, f"status={status!r}: {msg}"))
             continue
+        if tool == "get_player_history" and resp.get("players"):
+            hours = resp.get("archive_hours_old")
+            if hours is None or hours > ARCHIVE_STALE_HOURS:
+                rows.append((tool, False, f"news archive is stale (newest item {hours} h old) "
+                                          "-- check the news-archive job"))
+                continue
         if key is not None:
             n = len(resp.get(key) or [])
             if n == 0:

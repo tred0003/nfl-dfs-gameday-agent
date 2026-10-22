@@ -1,0 +1,27 @@
+# The news-archive Cloud Run job (news_rag/refresh.py): collect the last day
+# of ESPN news, screen it for injection, embed it, append it to
+# dfs.news_chunks. Runs daily in fantasy-football-ml-503718, next to the table.
+#
+# It installs the AGENT's requirements, not a list of its own: the injection
+# screen it runs is gameday_agent/injection.py, the same code the agent uses,
+# and importing that loads the agent package. One screen, not two copies that
+# drift apart.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+COPY gameday_agent/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY gameday_agent/ ./gameday_agent/
+COPY news_rag/ ./news_rag/
+
+# Fail the BUILD, not the 6 a.m. run, if an import is missing.
+# index.py imports the agent package lazily, so import it here by name.
+RUN python -c "import sys; sys.path.insert(0, '.'); import news_rag.refresh, gameday_agent.archive, gameday_agent.injection; print(news_rag.index.player_keys(['A.J. Brown']))"
+
+ENTRYPOINT ["python", "news_rag/refresh.py"]

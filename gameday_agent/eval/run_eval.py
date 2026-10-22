@@ -57,6 +57,7 @@ if hasattr(sys.stdout, "reconfigure"):
 import pandas as pd  # noqa: E402
 import requests  # noqa: E402
 
+import gameday_agent.archive as archive_mod  # noqa: E402
 import gameday_agent.news as news_mod  # noqa: E402
 import gameday_agent.tools as tools_mod  # noqa: E402
 from gameday_agent.slate import LINEUP_STATE_KEY  # noqa: E402
@@ -115,6 +116,35 @@ def _news_articles(scenario: Scenario) -> list[dict]:
     return [{k: v for k, v in a.items() if k != "hours_ago"}
             | {"published": now - timedelta(hours=a.get("hours_ago", 1))}
             for a in scenario.news_articles]
+
+
+def _archive_rows(notes: list[dict] | None, now: datetime) -> list[dict]:
+    """Scenario notes -> the row shape archive.py's BigQuery reads return."""
+    return [{"player_key": (archive_mod.name_keys([n["player"]]) or [""])[0],
+             "published": now - timedelta(days=n["days_ago"], hours=1),
+             "kind": n.get("kind", "player_blurb"),
+             "source": n.get("source", "ESPN fantasy (RotoWire)"),
+             "headline": n["headline"], "text": n["text"], "url": n.get("url")}
+            for n in notes or []]
+
+
+def _fake_history(scenario: Scenario):
+    """archive._history_rows over the scenario's notes, with the query's
+    filters done in Python: the asked-for players, the window, n per player.
+    The archive reads as refreshed six hours ago."""
+    def rows(keys, cutoff, days, n):
+        hits = sorted((r for r in _archive_rows(scenario.history, cutoff)
+                       if r["player_key"] in keys
+                       and r["published"] >= cutoff - timedelta(days=days)),
+                      key=lambda r: r["published"], reverse=True)
+        per: dict[str, int] = {}
+        kept = []
+        for r in hits:
+            per[r["player_key"]] = per.get(r["player_key"], 0) + 1
+            if per[r["player_key"]] <= n:
+                kept.append(r)
+        return kept, cutoff - timedelta(hours=6)
+    return rows
 
 
 class _FakeSearchClient:
@@ -256,6 +286,11 @@ async def _run_scenario(scenario: Scenario) -> Trace:
     news_mod.slate = tools_mod.slate
     articles = _news_articles(scenario) if scenario.news_articles is not None else []
     news_mod._gather = lambda *_a, **_kw: ([dict(a) for a in articles], [])
+    # The archive is BigQuery in production; here it is the scenario's notes.
+    # Patched for EVERY scenario, so none of them reads the live archive.
+    archive_mod._history_rows = _fake_history(scenario)
+    archive_mod._search_rows = lambda _q, _p, cutoff, *_a: _archive_rows(
+        scenario.archive_search, cutoff)
     if scenario.search_answer is not None:
         real = _NEWS_ORIGINALS[2]
         news_mod._client = lambda: _FakeSearchClient(real(), scenario.search_answer)

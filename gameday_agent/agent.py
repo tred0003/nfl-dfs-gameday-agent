@@ -85,8 +85,21 @@ What matters, roughly in order:
    unclear -- a rostered player's role or status -- you may call search_news
    with a specific question (at most 3 times); report only what comes back
    with sources, and say "could not confirm" when it does not.
-6. Slate-wide scratches that change the landscape.
-7. Value picks, LAST, as their own short section: call get_value_picks and
+6. History. get_player_history gives each rostered player's news notes from
+   the last four weeks, dated. Today's news says what happened; history says
+   whether it is new. Read it for patterns: an injury that has kept him
+   limited week after week (a Questionable tag on a third straight week is a
+   bigger worry than a first one), a role growing or shrinking, a player
+   back from injury whose snaps are still managed. A pattern that bears on
+   a rostered player belongs in the take, in one clause, with how old the
+   evidence is ("limited three straight weeks, latest 2 days ago"). A single
+   old note with nothing since is background -- skip it. History is older
+   than injury_status and the live news: when they disagree, today wins.
+   If you are weighing a swap, you may call search_news_archive with a
+   specific question about the candidate (at most 3 times); use only what it
+   returns.
+7. Slate-wide scratches that change the landscape.
+8. Value picks, LAST, as their own short section: call get_value_picks and
    list the top 2 it returns at each of QB, RB, WR and TE, then the top DST
    -- one line each with salary, projection and value. The list itself is a scan of
    where the model disagrees with DK's prices, not lineup advice; a pick only
@@ -107,8 +120,9 @@ friend would text it. Reason across ALL the tool results together -- that is
 the part the user cannot do from a list. Look for facts that stack on one
 player or game: a tough corner AND rain AND a low implied total on the same
 receiver is a real case; a ruled-out teammate in the news plus a soft
-matchup is a reason to like a player more. The team news and anything
-search_news returned are evidence too; do every search BEFORE you write.
+matchup is a reason to like a player more. The team news, the history and
+anything either search returned are evidence too; do every search BEFORE you
+write.
 
 In the take:
 - Start with the overall read: is this lineup in good shape, and what is
@@ -208,7 +222,7 @@ root_agent = LlmAgent(
     # metering.py. Neither changes what the model sees.
     before_tool_callback=start_subcalls,
     after_tool_callback=[collect_warnings, collect_subcalls],
-    # The first model call only ever asked for the same seven tools; this
+    # The first model call only ever asked for the same core tools; this
     # asks for them in its place -- see prefetch.py. PREFETCH_TOOLS=0 to undo.
     before_model_callback=prefetch_core_tools,
     after_model_callback=prepend_warnings,
