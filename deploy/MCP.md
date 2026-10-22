@@ -16,6 +16,17 @@ descriptions are new, because the reader is different (see the module docstring)
 | Search limit | 3 per run (session state) | none — no run to count against; IAM-only |
 | Descriptions | written for writing a lineup report | written for a person asking questions |
 
+## Who calls it
+
+| Client | How | Auth |
+|---|---|---|
+| Claude Code | `claude mcp add --transport http` through the gcloud proxy | your gcloud identity |
+| gameday-web, "My players" list | `webapp/news.py`, one direct tool call | ID token as `web-app@` (`run.invoker`) |
+| gameday-web, Ask box | `webapp/ask.py`: Gemini 2.5 Flash with tools built from this server's `tools/list`, up to 4 calls, then an answer with dates and sources | same |
+
+Add a tool here and the Ask agent sees it on the next question; nothing in
+the web app lists tool names.
+
 ## Shape
 
 - **Transport:** streamable HTTP at `/mcp`, stateless, JSON responses. Stateless
