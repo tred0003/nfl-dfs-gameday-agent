@@ -154,15 +154,16 @@
 
     <div class="card">
       <h2>News archive <span id="news-meta" class="muted"></span></h2>
-      <p class="muted">Dated notes and stories since training camp, refreshed daily, served by the
-        news-mcp server (the same tools an AI assistant connects to). A day or more behind live news:
-        today's injury status lives in your report.</p>
+      <p class="muted">Dated notes and stories since training camp, refreshed daily. Ask a question and
+        an AI agent searches the archive and answers with dates and sources; the list button shows the raw
+        notes. Both run on the news-mcp server, the same tools an AI assistant connects to. A day or more
+        behind live news: today's injury status lives in your report.</p>
       <div class="row" style="margin-top:6px">
         <button id="news-history" type="button">My players, last 4 weeks</button>
       </div>
       <form id="news-ask" class="ask">
         <input id="news-q" type="search" maxlength="300" aria-label="Question"
-               placeholder="e.g. how long has he been limited with the ankle?">
+               placeholder="e.g. is his ankle injury a trend or a one-off?">
         <select id="news-player" aria-label="Player"></select>
         <button class="primary" type="submit">Ask</button>
       </form>

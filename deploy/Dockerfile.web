@@ -1,7 +1,9 @@
 # The multi-user web app: sign in, edit your lineup, read your report.
 # Cloud Run service `gameday-web`. Only the store and the app go in -- no
-# model and no agent: the pool comes from the projection job's BigQuery table,
-# and src/optimize.py builds the suggested lineups. See deploy/WEB.md.
+# ML model and no gameday agent: the pool comes from the projection job's
+# BigQuery table, and src/optimize.py builds the suggested lineups. The one
+# Gemini call is the archive Q&A (webapp/ask.py), whose tools live on news-mcp;
+# token_cost.py prices it. See deploy/WEB.md and deploy/MCP.md.
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -12,7 +14,7 @@ WORKDIR /app
 COPY deploy/requirements-web.txt .
 RUN pip install --no-cache-dir -r requirements-web.txt
 
-COPY src/user_store.py src/optimize.py ./src/
+COPY src/user_store.py src/optimize.py src/token_cost.py ./src/
 COPY webapp/ ./webapp/
 
 # One worker, a few threads: four users do not need more, and one process

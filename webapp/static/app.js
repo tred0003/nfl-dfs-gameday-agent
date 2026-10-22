@@ -334,16 +334,35 @@ $("news-history").addEventListener("click", () => {
   });
 });
 
+// Ask: a small agent (webapp/ask.py) picks the archive tools, reads what they
+// return and answers. The answer is model output built from third-party news,
+// so it gets the same treatment as the report: escaped, then **bold** only.
+function toolLine(e) {
+  const a = e.args || {};
+  const what = e.tool === "player_history" ? `Looked up history: ${(a.players || []).join(", ")}`
+    : `Searched: "${a.question || ""}"${a.player ? ` (${a.player})` : ""}`;
+  return `${what} · ${e.items.length} item${e.items.length === 1 ? "" : "s"}`;
+}
+
 $("news-ask").addEventListener("submit", (ev) => {
   ev.preventDefault();
   const question = $("news-q").value.trim();
   if (!question) return;
-  newsCall("/api/news/search", { question, player: $("news-player").value }, (data) => {
-    $("news").replaceChildren(freshness(data) || "",
-      ...(data.status === "no_results" || !(data.passages || []).length
-        ? [el("p", { class: "muted" }, "No archived news matches that question.")]
-        : data.passages.map(noteEl)));
-  });
+  const btn = ev.submitter;
+  if (btn) btn.disabled = true;
+  newsCall("/api/news/ask", { question, player: $("news-player").value }, (data) => {
+    const answer = el("div", { class: "report" });
+    answer.innerHTML = renderReport(data.answer);
+    const evidence = data.evidence.length
+      ? el("details", { style: "margin-top:10px" },
+          el("summary", { class: "muted" }, `What it read (${data.evidence.length} lookup${data.evidence.length === 1 ? "" : "s"})`),
+          ...data.evidence.map((e) => el("div", { class: "news-player" },
+            el("div", { class: "muted" }, toolLine(e)), ...e.items.map(noteEl))))
+      : el("p", { class: "muted" }, "It answered without looking anything up.");
+    $("news").replaceChildren(answer, evidence,
+      el("p", { class: "muted", style: "margin-top:8px" },
+         `${data.tool_calls} tool call${data.tool_calls === 1 ? "" : "s"} · ${data.elapsed_s ?? "?"} s`));
+  }).finally(() => { if (btn) btn.disabled = false; });
 });
 
 // ---- load ----------------------------------------------------------------

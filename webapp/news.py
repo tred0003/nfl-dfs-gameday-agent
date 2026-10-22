@@ -26,6 +26,7 @@ HTML.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -58,12 +59,6 @@ class McpNews:
                 n["text"] = unfence(n["text"])
         return out
 
-    def search(self, question: str, player: str = "") -> dict:
-        out = self._call("search_news_archive", {"question": question, "player": player})
-        for p in out.get("passages", []):
-            p["text"] = unfence(p["text"])
-        return out
-
     def _call(self, tool: str, args: dict) -> dict:
         try:
             out = asyncio.run(self._acall(tool, args))
@@ -74,17 +69,28 @@ class McpNews:
         return out
 
     async def _acall(self, tool: str, args: dict) -> dict:
-        # Lazy imports: the unit tests run with neither the MCP SDK nor google-auth.
-        import google.auth.transport.requests
-        import google.oauth2.id_token
-        import httpx2
-        from mcp import Client
-        from mcp.client.streamable_http import streamable_http_client
-
-        token = google.oauth2.id_token.fetch_id_token(
-            google.auth.transport.requests.Request(), self.url)
-        async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"},
-                                      timeout=TIMEOUT) as http:
-            async with Client(streamable_http_client(f"{self.url}/mcp", http_client=http)) as c:
-                result = await c.call_tool(tool, args)
+        async with session(self.url) as c:
+            result = await c.call_tool(tool, args)
         return json.loads(result.content[0].text)
+
+
+@contextlib.asynccontextmanager
+async def session(url: str = NEWS_MCP_URL):
+    """An open MCP client session on news-mcp, authenticated as this service.
+
+    One session for one call above; one session for a whole question in
+    ask.py, so the tool list and every call the model makes share it.
+    """
+    # Lazy imports: the unit tests run with neither the MCP SDK nor google-auth.
+    import google.auth.transport.requests
+    import google.oauth2.id_token
+    import httpx2
+    from mcp import Client
+    from mcp.client.streamable_http import streamable_http_client
+
+    url = url.rstrip("/")
+    token = google.oauth2.id_token.fetch_id_token(google.auth.transport.requests.Request(), url)
+    async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"},
+                                  timeout=TIMEOUT) as http:
+        async with Client(streamable_http_client(f"{url}/mcp", http_client=http)) as c:
+            yield c

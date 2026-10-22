@@ -12,10 +12,11 @@ Firestore the 12:30 job writes to (src/user_store.py):
     GET  /api/slate      this week's player pool, to click players from
     GET  /api/suggested  the optimizer's top lineups for this week
     POST /api/news/history  four weeks of archived notes on named players
-    POST /api/news/search   a question over six weeks of archived news
+    POST /api/news/ask      a question, answered by a small agent from the archive
 
-The two news routes are an MCP client of the news-mcp service
-(webapp/news.py) -- the same tools Claude Code connects to.
+Both news routes go through the news-mcp service: history is a direct MCP
+call (webapp/news.py), ask is a Gemini agent whose tools come from news-mcp
+(webapp/ask.py) -- the same tools Claude Code connects to.
 
 The last two are the same for every user and cached per projection run
 (webapp/slate.py) -- they cost one query and one solve per run, not per user.
@@ -40,6 +41,8 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_from_directory
@@ -47,6 +50,7 @@ from flask import Flask, abort, jsonify, request, send_from_directory
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ask import ArchiveAgent, AskError  # noqa: E402
 from news import McpNews, NewsError  # noqa: E402
 from slate import BigQuerySlate, SlateError  # noqa: E402
 from user_store import FirestoreStore  # noqa: E402
@@ -58,6 +62,10 @@ STATIC = Path(__file__).resolve().parent / "static"
 MAX_PLAYERS = 12
 MAX_NAME = 60
 MAX_QUESTION = 300
+# Questions per user per day. Each is a few Gemini calls (~half a cent), so
+# this is a cost guard, not a product limit. Counted per instance in memory:
+# gameday-web runs at most 2, so the real ceiling is at most twice this.
+ASK_LIMIT = 20
 
 
 def verify_firebase_token(token: str) -> str:
@@ -77,12 +85,16 @@ def verify_firebase_token(token: str) -> str:
     return auth.verify_id_token(token)["uid"]
 
 
-def create_app(store=None, verify=verify_firebase_token, slate=None, news=None) -> Flask:
-    """Build the app. Tests pass a MemoryStore, a fake verifier, a fake slate and fake news."""
+def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
+               agent=None) -> Flask:
+    """Build the app. Tests pass a MemoryStore, a fake verifier and fakes for the rest."""
     app = Flask(__name__, static_folder=None)
     app.config["store"] = store
     slate = slate if slate is not None else BigQuerySlate()
     news = news if news is not None else McpNews()
+    agent = agent if agent is not None else ArchiveAgent()
+    asked: dict[str, tuple[str, int]] = {}     # uid -> (UTC date, questions asked)
+    asked_lock = threading.Lock()
 
     def get_store():
         # Created on first use, not at import: a missing credential should be
@@ -192,9 +204,9 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None) 
         except NewsError as e:
             abort(503, f"the news archive could not be read ({e})")
 
-    @app.post("/api/news/search")
-    def news_search():
-        current_user()
+    @app.post("/api/news/ask")
+    def news_ask():
+        user = current_user()
         body = request.get_json(silent=True) or {}
         question = body.get("question", "")
         player = body.get("player", "")
@@ -205,15 +217,23 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None) 
             abort(400, "ask a question")
         if len(question) > MAX_QUESTION or len(player) > MAX_NAME:
             abort(400, f"questions up to {MAX_QUESTION} characters, names up to {MAX_NAME}")
+        today = datetime.now(timezone.utc).date().isoformat()
+        with asked_lock:
+            day, n = asked.get(user.uid, (today, 0))
+            n = n if day == today else 0
+            if n >= ASK_LIMIT:
+                abort(429, f"{ASK_LIMIT} questions a day -- the limit resets at midnight UTC")
+            asked[user.uid] = (today, n + 1)
         try:
-            return jsonify(news.search(question, player))
-        except NewsError as e:
-            abort(503, f"the news archive could not be searched ({e})")
+            return jsonify(agent.ask(question, player, user.lineup, uid=user.uid))
+        except AskError as e:
+            abort(503, f"the question could not be answered ({e})")
 
     @app.errorhandler(400)
     @app.errorhandler(401)
     @app.errorhandler(403)
     @app.errorhandler(404)
+    @app.errorhandler(429)
     @app.errorhandler(503)
     def json_error(e):
         return jsonify(error=e.description), e.code
