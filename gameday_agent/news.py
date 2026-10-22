@@ -522,6 +522,26 @@ def check_claims(claims: list[dict]) -> tuple[list[dict], int]:
     return out, replaced
 
 
+def _log_dropped(article: dict, text: str, verdict: str, by: str, evidence: str) -> None:
+    """One structured log line per article the screen dropped.
+
+    A dropped article never reaches a tool result, so until 2026-10-22 its
+    text existed nowhere: the two articles dropped from u3's 10/21 report
+    (found by the dashboard's Tower view) could not be re-checked, because
+    both had rolled out of their feeds. Agent Engine writes stdout to Cloud
+    Logging, and a line that is a JSON object lands as jsonPayload --
+    filter jsonPayload.event="screen_dropped".
+    """
+    import json
+    print(json.dumps({
+        "severity": "WARNING",
+        "message": f"SCREEN_DROPPED [{article.get('source')}] {article.get('title', '')[:120]}",
+        "event": "screen_dropped", "verdict": verdict, "by": by,
+        "source": article.get("source"), "title": article.get("title"), "url": article.get("url"),
+        "evidence": (evidence or "")[:300], "text": text,
+    }, default=str), flush=True)
+
+
 def _screen_articles(articles: list[dict]) -> tuple[list[dict], list[str]]:
     """Drop articles written at an AI before the extractor reads them.
 
@@ -531,16 +551,21 @@ def _screen_articles(articles: list[dict]) -> tuple[list[dict], list[str]]:
     the extractor never has to resist what it never reads. An article the
     check could not screen is dropped too (fail closed), named in one warning.
     """
-    from .injection import screen, suspicious
+    from .injection import screen_confirmed, suspicious
     from .tools import _INJECTION_MARKERS
 
     texts = [f"{a['title']}\n{a['text'][:TEXT_CHARS]}" for a in articles]
     # "instruction", "unchecked" or None (clean), one per article.
     why = ["instruction" if _INJECTION_MARKERS.search(t) else None for t in texts]
+    by = ["regex" if w else None for w in why]
+    evidence = [""] * len(texts)
     rest = [i for i, w in enumerate(why) if w is None]
-    for i, v in zip(rest, screen([texts[i] for i in rest])):
+    for i, v in zip(rest, screen_confirmed([texts[i] for i in rest])):
         if suspicious(v):
-            why[i] = v["verdict"]
+            why[i], by[i], evidence[i] = v["verdict"], "model", v.get("evidence", "")
+    for a, t, w, b, e in zip(articles, texts, why, by, evidence):
+        if w:
+            _log_dropped(a, t, w, b, e)
     warnings = [f"Heads up: an article from {a['source']} (\"{a['title'][:80]}\") contained "
                 "text written as an instruction to this agent. It was left out."
                 for a, w in zip(articles, why) if w == "instruction"]
@@ -713,10 +738,10 @@ def search_news(query: str, tool_context: ToolContext = None) -> dict:
     # one step removed. Until 2026-10-14 it reached the agent raw: a planted
     # search result went unreported 3 runs of 3. Screened like an article, and
     # withheld whole when flagged or unscreenable.
-    from .injection import screen, suspicious
+    from .injection import screen_confirmed, suspicious
     from .tools import _INJECTION_MARKERS, _fence
     answer = (resp.text or "").strip()
-    if _INJECTION_MARKERS.search(answer) or suspicious(screen([answer])[0]):
+    if _INJECTION_MARKERS.search(answer) or suspicious(screen_confirmed([answer])[0]):
         return {"status": "withheld", "query": query,
                 "message": "The search result was withheld. Say this could not be confirmed.",
                 "source_warnings": ["Heads up: a web search result contained text written as an "

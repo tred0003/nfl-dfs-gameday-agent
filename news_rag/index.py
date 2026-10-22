@@ -104,36 +104,20 @@ def player_keys(names: list[str]) -> list[str]:
     return name_keys(names)
 
 
-# A Flash-Lite "instruction" verdict is only a candidate. The first backfill
-# (2026-10-22) flagged 190 of 21,357 chunks -- QB rankings, waiver pickups, a
-# torn-ACL report -- and Flash-Lite itself cleared 176 of them on a second
-# pass: the flags were unstable, not judgments. Gemini Flash cleared 186; the
-# 4 it kept are borderline and cost nothing to lose. So a flag stands only
-# when this model agrees, and a confirm call that fails leaves "unchecked".
-CONFIRM_MODEL = os.environ.get("ARCHIVE_CONFIRM_MODEL", "gemini-2.5-flash")
+from gameday_agent.injection import CONFIRM_MODEL  # noqa: E402,F401  (re-exported for tests)
 
 
 def screen_texts(texts: list[str], workers: int = 4) -> list[str]:
     """One injection verdict per text: "clean", "instruction" or "unchecked".
 
-    The agent's own screen (gameday_agent/injection.py), batched the way it
-    batches, with batches run in parallel -- a backfill is ~1,000 of them.
-    Flags go to CONFIRM_MODEL before they hide anything.
+    The agent's own two-step screen (injection.screen_confirmed: Flash-Lite,
+    then CONFIRM_MODEL on whatever it flags), batched the way it batches,
+    with batches run in parallel -- a backfill is ~1,000 of them.
     """
-    from gameday_agent.injection import BATCH, screen
-
-    def run(items: list[str], model: str | None = None) -> list[str]:
-        groups = [items[i:i + BATCH] for i in range(0, len(items), BATCH)]
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            return [v["verdict"] for g in ex.map(lambda g: screen(g, model=model), groups)
-                    for v in g]
-
-    verdicts = run(texts)
-    flagged = [i for i, v in enumerate(verdicts) if v == "instruction"]
-    if flagged:
-        for i, v in zip(flagged, run([texts[i] for i in flagged], CONFIRM_MODEL)):
-            verdicts[i] = v      # clean, instruction (both agree) or unchecked
-    return verdicts
+    from gameday_agent.injection import BATCH, screen_confirmed
+    groups = [texts[i:i + BATCH] for i in range(0, len(texts), BATCH)]
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return [v["verdict"] for g in ex.map(screen_confirmed, groups) for v in g]
 
 
 def _client():

@@ -12,6 +12,10 @@ rewording, so the question moves to a model.
                   agent: there is nothing to decide, only a label to assign.
                   Fails closed -- if the call errors, every item comes back
                   "unchecked", which callers treat as suspicious.
+  screen_confirmed()
+                  what every caller uses: screen() with Flash-Lite, then a
+                  second look by CONFIRM_MODEL at only the items it flagged.
+                  A flag stands when both agree.
   model_armor()   Google Cloud Model Armor's prompt-injection/jailbreak and
                   malicious-URL filters, template `injection-screen` in
                   advisor-agent-2026 (us-central1). Managed, no prompt to tune.
@@ -46,6 +50,17 @@ ITEM_CHARS = 1800
 # tokens, ~$0.02, more than the whole agent loop. Thinking bills at the
 # output rate. Set INJECTION_THINKING=-1 for the model's dynamic default.
 SCREEN_THINKING = int(os.environ.get("INJECTION_THINKING", "0"))
+# A Flash-Lite "instruction" verdict is a candidate, not a judgment. On the
+# 2026-10-22 archive backfill it flagged 190 of 21,357 chunks -- QB rankings,
+# waiver pickups, a torn-ACL report -- and cleared 176 of the same 190 when
+# asked again. Gemini Flash cleared 186. The same over-firing reached live
+# reports: on 10/21 a ProFootballTalk and a Yahoo story were dropped from u3's
+# report with an injection warning (found by the dashboard's Tower view).
+# So every flag gets a second look by this model, and only stands when both
+# agree; a confirm call that fails leaves "unchecked" (still fail closed).
+# Two-step on the labeled set: 31/31 attacks caught, 0/26 hard negatives
+# flagged, two runs. Only the flagged ~1-2% pay for the second call.
+CONFIRM_MODEL = os.environ.get("INJECTION_CONFIRM_MODEL", "gemini-2.5-flash")
 
 SCREEN_PROMPT = """\
 Each item below is third-party text -- an injury note, a news article or a
@@ -174,6 +189,22 @@ def _screen_uncached(texts: list[str], client=None, batch: int | None = None,
             pass
         out += [verdicts.get(i, {"verdict": "unchecked", "evidence": ""}) for i in range(len(chunk))]
     return out
+
+
+def screen_confirmed(texts: list[str], client=None) -> list[dict]:
+    """screen(), with every "instruction" verdict re-asked of CONFIRM_MODEL.
+
+    Returns the same shape as screen(). Clean on the first pass is final;
+    "unchecked" on the first pass stays unchecked (fail closed, nothing to
+    confirm); "instruction" becomes whatever the confirm model says.
+    """
+    verdicts = screen(texts, client=client)
+    flagged = [i for i, v in enumerate(verdicts) if v["verdict"] == "instruction"]
+    if flagged:
+        second = screen([texts[i] for i in flagged], client=client, model=CONFIRM_MODEL)
+        for i, v in zip(flagged, second):
+            verdicts[i] = v
+    return verdicts
 
 
 def suspicious(verdict: dict) -> bool:

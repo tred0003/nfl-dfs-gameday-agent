@@ -168,13 +168,13 @@ def _flagged_notes(rows: pd.DataFrame) -> set[str]:
     check counts as flagged: losing a note costs a sentence of colour, while
     the structured status beside it still comes through.
     """
-    from .injection import screen, suspicious
+    from .injection import screen_confirmed, suspicious
 
     shown = rows[rows["status"].notna() & rows["comment"].notna()].drop_duplicates("name")
     flagged = {r["name"] for _, r in shown.iterrows() if _INJECTION_MARKERS.search(str(r["comment"]))}
     rest = shown[~shown["name"].isin(flagged)]
     if len(rest):
-        verdicts = screen([str(c) for c in rest["comment"]])
+        verdicts = screen_confirmed([str(c) for c in rest["comment"]])
         flagged |= {n for n, v in zip(rest["name"], verdicts) if suspicious(v)}
     return flagged
 
