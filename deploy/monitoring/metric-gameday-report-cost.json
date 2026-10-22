@@ -1,0 +1,18 @@
+{
+  "name": "gameday/report_cost_usd",
+  "description": "Total cost of one agent report (agent + in-tool Gemini calls), USD",
+  "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"gameday-report\" AND jsonPayload.event=\"report\" AND jsonPayload.dry_run=false AND jsonPayload.source=\"agent\"",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "DISTRIBUTION",
+    "unit": "USD"
+  },
+  "valueExtractor": "EXTRACT(jsonPayload.total_cost_usd)",
+  "bucketOptions": {
+    "exponentialBuckets": {
+      "numFiniteBuckets": 20,
+      "growthFactor": 1.5,
+      "scale": 0.001
+    }
+  }
+}

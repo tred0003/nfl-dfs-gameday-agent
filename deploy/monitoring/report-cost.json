@@ -1,0 +1,29 @@
+{
+  "displayName": "Gameday report cost over $0.04",
+  "documentation": {
+    "content": "One report cost more than $0.04. Normal is $0.005-0.015 (10/9-10/21). Usually a tool loop or a huge tool result; the dashboard's per-model-call breakdown shows which.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Gameday report cost over $0.04",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"gameday-report\" AND jsonPayload.event=\"report\" AND jsonPayload.dry_run=false AND jsonPayload.total_cost_usd>0.04",
+        "labelExtractors": {
+          "uid": "EXTRACT(jsonPayload.uid)"
+        }
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {
+      "period": "3600s"
+    },
+    "autoClose": "86400s"
+  },
+  "notificationChannels": [
+    "projects/advisor-agent-2026/notificationChannels/3461839575053813109"
+  ],
+  "severity": "WARNING"
+}

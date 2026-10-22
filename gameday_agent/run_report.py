@@ -127,6 +127,65 @@ def log(msg: str) -> None:
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
 
 
+# Must match prefetch.CORE_TOOLS -- tests/test_fanout.py fails if they drift.
+# Copied, not imported, for the reason canary.EXPECTED is: this image ships
+# without the agent package.
+CORE_TOOLS = ["get_lineup_status", "get_cb_matchups", "get_slate_weather",
+              "get_vegas_context", "get_notable_scratches", "get_value_picks",
+              "get_team_news", "get_player_history"]
+
+
+def metric_event(uid: str, report_id: str, fields: dict | None, outcome: str | None = None,
+                 dry_run: bool = False) -> dict:
+    """The one structured line per user per run that Cloud Monitoring reads.
+
+    The log lines above are sentences for a person. Alerting on sentences
+    means regexes that break the day someone rewords one, and the cost was
+    only ever inside a sentence. This is the contract instead: Cloud Run
+    parses a stdout line that is a JSON object into jsonPayload, and every
+    log-based metric and alert policy (deploy/MONITORING.md) filters on
+    these field names. Rename one and the matching alert goes quiet.
+
+    The case it exists for: an agent failure FALLS BACK to the rule-based
+    report and the job exits 0, so the job-failure alert never fires. It
+    happened on 10/9 and nothing paged. `source` = "fallback" now does.
+
+    `outcome` overrides `source` for a user who got no report at all
+    ("no_lineup", "failed"); those runs also exit 1. Counting them here is
+    what lets a dashboard compute the share of users served.
+    """
+    fields = fields or {}
+    source = outcome or ("reused" if fields.get("reused_from") else fields.get("source", "?"))
+    tools = fields.get("tools") or []
+    missing = [t for t in CORE_TOOLS if t not in tools] if source == "agent" else []
+    problems = list(fields.get("problems") or [])
+    bad = source in ("fallback", "failed", "no_lineup") or bool(problems) or bool(missing)
+    reused = source == "reused"
+    return {
+        "severity": "WARNING" if bad else "INFO",
+        "message": (f"REPORT_METRICS [{uid}] source={source} check_failed={bool(problems)} "
+                    f"missing_core={len(missing)} cost={fields.get('total_cost_usd')} "
+                    f"elapsed_s={fields.get('elapsed_s')}"),
+        "event": "report",
+        "uid": uid,
+        "report_id": report_id,
+        "source": source,
+        "check_failed": bool(problems),
+        "problems": len(problems),
+        "missing_core": missing,
+        "missing_core_n": len(missing),
+        # A reused report cost nothing and took no time of its own; its
+        # numbers belong to the first user's line, not counted twice.
+        "total_cost_usd": None if reused else fields.get("total_cost_usd"),
+        "elapsed_s": None if reused else fields.get("elapsed_s"),
+        "dry_run": dry_run,
+    }
+
+
+def emit(event: dict) -> None:
+    print(json.dumps(event, default=str), flush=True)
+
+
 def _record_event(record: dict, usage, function_calls: list[dict],
                   wrote_text: bool) -> None:
     """Add one non-partial agent event to the run record (see run_agent_remote).
@@ -470,12 +529,15 @@ def run_users(users: list[User], store, produce: Callable[[User], dict],
                     seen[key] = (user.uid, fields)
         except LineupError as e:
             log(f"[{user.uid}] LINEUP UNAVAILABLE, no report: {e}")
+            emit(metric_event(user.uid, report_id, None, "no_lineup", dry_run))
             failed += 1
             continue
         except Exception as e:  # noqa: BLE001 -- one user must not stop the rest
             log(f"[{user.uid}] FAILED: {type(e).__name__}: {e}")
+            emit(metric_event(user.uid, report_id, None, "failed", dry_run))
             failed += 1
             continue
+        emit(metric_event(user.uid, report_id, fields, dry_run=dry_run))
 
         if dry_run:
             log(f"[{user.uid}] dry run -- not storing or sending")

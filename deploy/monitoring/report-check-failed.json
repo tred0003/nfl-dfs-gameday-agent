@@ -1,0 +1,29 @@
+{
+  "displayName": "Gameday report FAILED its fact-check",
+  "documentation": {
+    "content": "report_check found facts the agent left out (a missing or OUT player, a dropped source warning, or 'all clear' while something is wrong). The report was posted with a correction block on top. The `REPORT CHECK FAILED` line lists what was missed.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Gameday report FAILED its fact-check",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"gameday-report\" AND jsonPayload.event=\"report\" AND jsonPayload.dry_run=false AND jsonPayload.check_failed=true",
+        "labelExtractors": {
+          "uid": "EXTRACT(jsonPayload.uid)"
+        }
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {
+      "period": "3600s"
+    },
+    "autoClose": "86400s"
+  },
+  "notificationChannels": [
+    "projects/advisor-agent-2026/notificationChannels/3461839575053813109"
+  ],
+  "severity": "WARNING"
+}

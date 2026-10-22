@@ -1,0 +1,29 @@
+{
+  "displayName": "Gameday report SKIPPED core tools",
+  "documentation": {
+    "content": "An agent report did not call every core tool (prefetch should make that impossible). `jsonPayload.missing_core` names them. Likely cause: the report question no longer matches prefetch.STANDARD_QUERY, which silently turns prefetch off.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Gameday report SKIPPED core tools",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"gameday-report\" AND jsonPayload.event=\"report\" AND jsonPayload.dry_run=false AND jsonPayload.missing_core_n>0",
+        "labelExtractors": {
+          "uid": "EXTRACT(jsonPayload.uid)"
+        }
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {
+      "period": "3600s"
+    },
+    "autoClose": "86400s"
+  },
+  "notificationChannels": [
+    "projects/advisor-agent-2026/notificationChannels/3461839575053813109"
+  ],
+  "severity": "WARNING"
+}

@@ -1,0 +1,29 @@
+{
+  "displayName": "Gameday report FELL BACK to rule-based",
+  "documentation": {
+    "content": "The agent failed and the user got the rule-based report. The job still exits 0, so this is the ONLY alert that sees it. Look at the `agent failed:` line just above in the gameday-report logs. Happened once before alerts existed (10/9, Gemini 429).",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Gameday report FELL BACK to rule-based",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"gameday-report\" AND jsonPayload.event=\"report\" AND jsonPayload.dry_run=false AND jsonPayload.source=\"fallback\"",
+        "labelExtractors": {
+          "uid": "EXTRACT(jsonPayload.uid)"
+        }
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {
+      "period": "3600s"
+    },
+    "autoClose": "86400s"
+  },
+  "notificationChannels": [
+    "projects/advisor-agent-2026/notificationChannels/3461839575053813109"
+  ],
+  "severity": "WARNING"
+}

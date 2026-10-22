@@ -1,0 +1,18 @@
+{
+  "name": "gameday/report_elapsed_s",
+  "description": "Seconds to produce one report (agent or fallback)",
+  "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"gameday-report\" AND jsonPayload.event=\"report\" AND jsonPayload.dry_run=false AND (jsonPayload.source=\"agent\" OR jsonPayload.source=\"fallback\")",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "DISTRIBUTION",
+    "unit": "s"
+  },
+  "valueExtractor": "EXTRACT(jsonPayload.elapsed_s)",
+  "bucketOptions": {
+    "linearBuckets": {
+      "numFiniteBuckets": 20,
+      "width": 15,
+      "offset": 0
+    }
+  }
+}

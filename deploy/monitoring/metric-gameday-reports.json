@@ -1,0 +1,21 @@
+{
+  "name": "gameday/reports",
+  "description": "One per user per gameday-report run, by outcome (event line from run_report.metric_event)",
+  "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"gameday-report\" AND jsonPayload.event=\"report\" AND jsonPayload.dry_run=false",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "labels": [
+      {
+        "key": "source"
+      },
+      {
+        "key": "check_failed"
+      }
+    ]
+  },
+  "labelExtractors": {
+    "source": "EXTRACT(jsonPayload.source)",
+    "check_failed": "EXTRACT(jsonPayload.check_failed)"
+  }
+}

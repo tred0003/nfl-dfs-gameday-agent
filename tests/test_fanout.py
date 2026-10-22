@@ -174,3 +174,47 @@ class StoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MetricEventTest(unittest.TestCase):
+    """The JSON line Cloud Monitoring's alerts filter on (deploy/MONITORING.md)."""
+
+    def test_fallback_is_a_warning_even_though_the_run_succeeds(self):
+        e = rr.metric_event("u1", DAY, {"source": "fallback", "problems": [], "tools": []})
+        self.assertEqual((e["source"], e["severity"]), ("fallback", "WARNING"))
+
+    def test_clean_agent_report_is_info_with_its_cost_and_time(self):
+        e = rr.metric_event("u1", DAY, {"source": "agent", "problems": [], "tools": rr.CORE_TOOLS,
+                                         "total_cost_usd": 0.011, "elapsed_s": 31.5})
+        self.assertEqual(e["severity"], "INFO")
+        self.assertEqual((e["missing_core_n"], e["total_cost_usd"], e["elapsed_s"]), (0, 0.011, 31.5))
+
+    def test_failed_check_and_missing_core_tools_are_flagged(self):
+        e = rr.metric_event("u1", DAY, {"source": "agent", "problems": ["x"],
+                                         "tools": rr.CORE_TOOLS[:-1]})
+        self.assertTrue(e["check_failed"])
+        self.assertEqual(e["missing_core"], ["get_player_history"])
+        self.assertEqual(e["severity"], "WARNING")
+
+    def test_reused_report_carries_no_cost_or_time_of_its_own(self):
+        e = rr.metric_event("u2", DAY, {"source": "agent", "reused_from": "u1", "tools": [],
+                                         "total_cost_usd": 0.0, "elapsed_s": 40})
+        self.assertEqual((e["source"], e["total_cost_usd"], e["elapsed_s"], e["missing_core_n"]),
+                         ("reused", None, None, 0))
+
+    def test_every_user_gets_exactly_one_line_including_failures(self):
+        store = MemoryStore(users())
+        store.put_user(User(uid="u2", lineup=["  "]))
+        lines = []
+        with mock.patch.object(rr, "log"), mock.patch.object(rr, "emit", lines.append):
+            rr.run_users(store.active_users(), store, echo, None, DAY)
+        self.assertEqual([(l["uid"], l["source"]) for l in lines],
+                         [("u1", "agent"), ("u2", "no_lineup"), ("u3", "agent")])
+
+    def test_core_tools_match_prefetch(self):
+        try:
+            from gameday_agent import prefetch
+        except ImportError:
+            self.skipTest("gameday_agent needs ADK")
+        self.assertEqual(rr.CORE_TOOLS, prefetch.CORE_TOOLS)
+

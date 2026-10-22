@@ -1,0 +1,27 @@
+{
+  "displayName": "Cloud Scheduler trigger FAILED (agent project)",
+  "documentation": {
+    "content": "A scheduler could not start its job, so the job never ran and no job-failure alert fires. The 10/12 cause was a missing role (status 7 PERMISSION_DENIED).",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Cloud Scheduler trigger FAILED (agent project)",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_scheduler_job\" AND severity>=ERROR",
+        "labelExtractors": {}
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {
+      "period": "3600s"
+    },
+    "autoClose": "86400s"
+  },
+  "notificationChannels": [
+    "projects/advisor-agent-2026/notificationChannels/3461839575053813109"
+  ],
+  "severity": "WARNING"
+}

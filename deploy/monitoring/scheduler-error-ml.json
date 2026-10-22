@@ -1,0 +1,27 @@
+{
+  "displayName": "Cloud Scheduler trigger FAILED (ML project)",
+  "documentation": {
+    "content": "A scheduler in the ML project (project-slate-*, news-archive-daily) could not start its job, so nothing ran and no job-failure alert fires.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Cloud Scheduler trigger FAILED (ML project)",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_scheduler_job\" AND severity>=ERROR",
+        "labelExtractors": {}
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {
+      "period": "3600s"
+    },
+    "autoClose": "86400s"
+  },
+  "notificationChannels": [
+    "projects/fantasy-football-ml-503718/notificationChannels/7749069965460716564"
+  ],
+  "severity": "WARNING"
+}
