@@ -292,6 +292,15 @@ def _grading_queue() -> list[dict]:
 ML_PROJECT = "fantasy-football-ml-503718"
 REGION = "us-central1"
 TOWER_DAYS = 14
+# The service level, in SRE terms. SLI (what is measured): the share of
+# user-days that got the AGENT's report -- a fallback is delivered, but it is
+# the failure the job's exit code hides, so it counts as a miss, as does no
+# report at all. SLO (the target): 95% over a rolling 28 days. There is no SLA
+# (an agreement with consequences) -- nobody pays for this. With 4 users a
+# 28-day window is ~112 user-days, so the error budget is ~5 misses: one bad
+# Sunday for everyone is most of it. Small numbers make an SLO jumpy.
+SLO_TARGET = 0.95
+SLO_WINDOW_DAYS = 28
 COST_ALERT_USD = 0.04          # same line as deploy/monitoring/report-cost.json
 JOBS = [  # (project, job, what it is)
     (PROJECT, "gameday-report", "Daily report, 12:30 ET"),
@@ -321,11 +330,11 @@ def _hours_since(ts) -> float | None:
     return round((datetime.now(timezone.utc) - ts).total_seconds() / 3600, 1)
 
 
-def _tower_days() -> list[str]:
+def _tower_days(n: int = TOWER_DAYS) -> list[str]:
     from datetime import timedelta
     from zoneinfo import ZoneInfo
     today = datetime.now(ZoneInfo("America/New_York")).date()
-    return [(today - timedelta(days=i)).isoformat() for i in range(TOWER_DAYS - 1, -1, -1)]
+    return [(today - timedelta(days=i)).isoformat() for i in range(n - 1, -1, -1)]
 
 
 def _warned(tool_calls: list[dict]) -> list[str]:
@@ -344,7 +353,7 @@ def _warned(tool_calls: list[dict]) -> list[str]:
 def _t_reports() -> dict:
     """SLA, business rules, FinOps and policy hits, from the stored reports."""
     db = _db()
-    days = _tower_days()
+    days = _tower_days(max(TOWER_DAYS, SLO_WINDOW_DAYS))
     active = [s.id for s in db.collection("users").where("active", "==", True).stream()]
     by_day = {d: {"date": d, "agent": 0, "fallback": 0, "missing": 0, "reports": 0,
                   "agent_cost": 0.0, "tool_cost": 0.0, "costed": 0, "floor": False} for d in days}
@@ -384,7 +393,18 @@ def _t_reports() -> dict:
         # shows as missing on the days before they existed.
         by_day[d]["missing"] = len([u for u in active if u not in seen[d]]) if by_day[d]["reports"] else 0
     fails.sort(key=lambda f: f["date"], reverse=True)
-    return {"days": list(by_day.values()), "active_users": len(active),
+    window = list(by_day.values())[-SLO_WINDOW_DAYS:]
+    good = sum(d["agent"] for d in window)
+    total = sum(d["agent"] + d["fallback"] + d["missing"] for d in window)
+    allowed = (1 - SLO_TARGET) * total
+    slo = {"target": SLO_TARGET, "window_days": SLO_WINDOW_DAYS,
+           # Days with any report: the archive of stored reports began 10/16,
+           # so early on the window is shorter than its name.
+           "days_with_data": sum(1 for d in window if d["reports"]),
+           "good": good, "total": total, "sli": good / total if total else None,
+           "budget_allowed": round(allowed, 1), "budget_used": total - good,
+           "budget_left": round(allowed - (total - good), 1)}
+    return {"days": list(by_day.values())[-TOWER_DAYS:], "slo": slo, "active_users": len(active),
             "rules": sorted(rules.values(), key=lambda r: -r["failed"]),
             "checked": checked, "failures": fails[:20], "warnings": warnings[-20:],
             "latest_report": latest}

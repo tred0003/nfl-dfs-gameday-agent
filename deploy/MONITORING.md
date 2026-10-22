@@ -11,6 +11,22 @@ looking, so every alert lives here. **The eval dashboard explains** — trends
 and the per-report drill-down (Control Tower view, next step) read the same
 signals. A dashboard tab cannot email anyone when the laptop is shut.
 
+## Service level: SLI, SLO, no SLA
+
+- **SLI** (what is measured): the share of user-days that got the **agent's**
+  report. A fallback is delivered, but it is the failure the job's exit code
+  hides, so it counts as a miss, as does no report at all.
+- **SLO** (the target): **95% over a rolling 28 days**
+  (`dashboard.SLO_TARGET`, `SLO_WINDOW_DAYS`). The error budget is the misses
+  that still allows: (1 − 0.95) × user-days in the window.
+- **No SLA.** An SLA is an agreement with a paying customer, with consequences
+  for missing it. Nobody pays for this.
+
+With 4 users, 28 days is ~112 user-days, so the budget is ~5 misses: one bad
+Sunday for everyone spends most of it. Small numbers make an SLO jumpy; at real
+scale it would be set per tier and paired with a burn-rate alert. Shown on the
+dashboard's Tower tab; not yet an alert policy.
+
 ## The signal: one structured line per report
 
 `run_report.metric_event()` prints one JSON object per user per run. Cloud Run

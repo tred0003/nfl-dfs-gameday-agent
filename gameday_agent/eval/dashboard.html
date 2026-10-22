@@ -143,8 +143,8 @@
   .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
   .chart .ax { fill: var(--faint); font-size: 11px; font-family: inherit; }
   .chart .gl { stroke: var(--grid); stroke-width: 1; }
-  .chart .ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
-  .chart .reft { fill: var(--muted); font-size: 11px; }
+  .chart .ref { stroke: var(--text); stroke-width: 1.5; stroke-dasharray: 5 3; }
+  .chart .reft { fill: var(--text); font-size: 11px; font-weight: 600; }
   .chart .lbl { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
   .chart .hit { fill: transparent; }
   .chart .hit:hover { fill: var(--accent-soft); opacity: .45; }
@@ -548,11 +548,11 @@ const hideTip = () => { $("tip").hidden = true; };
 /* Bars over days, one stack per day. Marks per the dataviz spec: 4px rounded
    top on the topmost segment only, a 2px surface gap between segments and
    between bars, recessive grid, a full-height hover target per day. */
-function bars(days, series, { fmt = (v) => num(v), ref = null, tip, label = null, faded = () => false }) {
+function bars(days, series, { fmt = (v) => num(v), ref = null, tip, label = null, faded = () => false, top = null }) {
   // Drawn at roughly the card's real width, so 11px text renders near 11px.
   const W = 1120, H = 210, L = 48, B = 24, T = 16, R = 8;
   const totals = days.map(d => series.reduce((a, s) => a + (d[s.key] || 0), 0));
-  const max = Math.max(...totals, ref ? ref.v * 1.25 : 0) || 1;
+  const max = top ?? (Math.max(...totals, ref ? ref.v * 1.25 : 0) || 1);
   const y = (v) => H - B - (v / max) * (H - B - T);
   const bw = (W - L - R) / days.length, gap = 2, w = Math.max(4, bw - gap * 2);
   let svg = [0, max / 2, max].map(v => `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>
@@ -592,20 +592,28 @@ const panelErr = (T, k) => T.errors[k] ? `<div class="notice">This panel's sourc
 async function showTower(sec) {
   const T = await get("/api/tower");
   const R = T.reports || { days: [], rules: [], failures: [], warnings: [], checked: 0 };
-  const days = R.days.map(d => ({ ...d, cost: d.costed ? (d.agent_cost + d.tool_cost) / d.costed : 0 }));
+  const days = R.days.map(d => {
+    const n = d.agent + d.fallback + d.missing;
+    return { ...d, n, cost: d.costed ? (d.agent_cost + d.tool_cost) / d.costed : 0,
+      agent_p: n ? 100 * d.agent / n : 0, fallback_p: n ? 100 * d.fallback / n : 0, missing_p: n ? 100 * d.missing / n : 0 };
+  });
   const sum = (k) => days.reduce((a, d) => a + d[k], 0);
-  const served = sum("agent"), total = served + sum("fallback") + sum("missing");
+  const S = R.slo || {};
   const rcRuns = R.rules.reduce((a, r) => a + r.runs, 0), rcFail = R.rules.reduce((a, r) => a + r.failed, 0);
   const F = T.finops, A = T.alerts || { policies: [], events: [] };
   const stale = T.freshness.filter(f => !f.ok);
   const fired = A.events.filter(e => e.uid !== "alert-test");
   const jobs = T.jobs || [];
 
-  const slaCard = card("SLA · did every user get a real report?", `${panelErr(T, "reports")}
+  const sloPct = Math.round((S.target ?? 0.95) * 100);
+  const slaCard = card("Service level · did every user get a real report?", `${panelErr(T, "reports")}
+    <div class="muted small" style="margin-bottom:8px"><b>SLI</b> (what's measured): share of user-days that got the agent's report. A fallback or no report is a miss.
+      <b>SLO</b> (the target): ${sloPct}% over a rolling ${S.window_days ?? 28} days. No SLA: that would be a promise to a paying customer.</div>
     ${legend(Object.values(ST))}
-    ${bars(days, Object.entries(ST).map(([k, [c]]) => ({ key: k, color: c })), {
-      label: (d, t) => d.fallback || d.missing ? `${d.agent}/${t}` : "",
-      tip: (d) => `<b>${shortDate(d.date)}</b><br>${d.reports ? `${d.agent} agent · ${d.fallback} fallback · ${d.missing} no report` : "no reports stored (the daily run is 12:30 ET)"}` })}
+    ${bars(days, Object.keys(ST).map(k => ({ key: `${k}_p`, color: ST[k][0] })), {
+      top: 100, fmt: (v) => `${Math.round(v)}%`, ref: { v: sloPct, label: `SLO ${sloPct}%` },
+      label: (d) => d.n && d.agent < d.n ? `${d.agent}/${d.n}` : "",
+      tip: (d) => `<b>${shortDate(d.date)}</b><br>${d.n ? `${pct(d.agent / d.n)} served by the agent<br>${d.agent} agent · ${d.fallback} fallback · ${d.missing} no report` : "no reports stored (before 10/16, or today before the 12:30 ET run)"}` })}
     <details class="tbl"><summary>Show as table</summary><div class="scroll"><table><thead><tr><th>Date</th><th class="num">Agent</th><th class="num">Fallback</th><th class="num">No report</th></tr></thead>
       <tbody>${days.slice().reverse().map(d => `<tr><td>${d.date}</td><td class="num">${d.agent}</td><td class="num">${d.fallback}</td><td class="num">${d.missing}</td></tr>`).join("")}</tbody></table></div></details>
     <h3 style="margin:16px 0 6px">Scheduled jobs · newest run first</h3>
@@ -614,7 +622,7 @@ async function showTower(sec) {
       ${jobs.map(j => `<tr><td><b>${esc(j.job)}</b><div class="faint small">${esc(j.about)} · ${j.project === "advisor-agent-2026" ? "agent project" : "ML project"}</div></td>
         <td>${j.error ? `<span class="pill bad">${esc(j.error)}</span>` : `<div class="runs">${j.runs.map(r => `<span class="run ${r.status === "failed" ? "f" : r.status === "running" ? "r" : ""}" title="${esc(r.name)}">${r.status === "ok" ? "✓" : r.status === "failed" ? "✗ failed" : esc(r.status)} ${etTime(r.created)}${r.seconds != null ? ` · ${r.seconds}s` : ""}</span>`).join("")}</div>
           <a class="small" href="${j.console}" target="_blank">Console ↗</a>`}</td></tr>`).join("")}</tbody></table></div>`,
-    { say: `availability is measured per user per day: did they get the agent's report, the rule-based fallback, or nothing. A fallback is still delivered, so it counts against the agent but not against delivery, and it is the one failure the job's own exit code hides, which is why it has its own alert.` });
+    { say: `I measure an SLI, set an SLO, and have no SLA, because nobody pays for this. The SLI is the share of user-days that got the agent's report, the SLO is 95% over 28 days, and the error budget is how many misses that still allows. With four users the budget is about five misses a month, so one bad Sunday spends most of it: small numbers make an SLO jumpy, and I'd set it differently at real scale.` });
 
   const rulesCard = card("Business rules · report_check.py", `${panelErr(T, "reports")}
     <div class="scroll"><table><thead><tr><th>Rule</th><th class="num">Runs</th><th class="num">Failed</th></tr></thead><tbody>
@@ -664,8 +672,8 @@ async function showTower(sec) {
       <div class="muted small">Production, last ${R.days.length} days · read ${esc(T.generated_at.replace("T", " "))}.
         Cloud Monitoring is what pages you; this view explains. <a href="javascript:void 0" onclick="route()">Refresh</a></div></div></div>
     <div class="tiles">
-      ${tile(total ? pct(served / total) : "–", `user-days served by the agent · ${served}/${total}`)}
-      ${tile(String(sum("fallback")), "fallbacks to the rule-based report")}
+      ${tile(S.sli == null ? "–" : pct(S.sli), `SLI vs SLO ${sloPct}% · ${S.good}/${S.total} user-days, ${S.window_days}-day window${S.days_with_data < S.window_days ? ` (${S.days_with_data} days of data)` : ""}`)}
+      ${tile(S.budget_left == null ? "–" : `${num(S.budget_left, 1)} left`, `error budget · ${S.budget_used} of ${num(S.budget_allowed, 1)} allowed misses used`)}
       ${tile(rcRuns ? pct(1 - rcFail / rcRuns) : "–", `fact-check rules passed · ${rcRuns - rcFail}/${rcRuns}`)}
       ${tile(usd(F.per_report_7d), "full cost per report, last 7 days")}
       ${tile(F.month_projection == null ? "–" : `$${F.month_projection.toFixed(2)}`, `per month at ${num(F.reports_per_day_7d, 0)} reports/day`)}
