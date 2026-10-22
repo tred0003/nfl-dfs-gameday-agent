@@ -1,0 +1,3 @@
+# The MCP server's one addition to the agent's requirements. Pinned: mcp 2.x
+# renamed FastMCP to MCPServer, and a major version moves APIs again.
+mcp==2.3.0

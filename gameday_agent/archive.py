@@ -311,31 +311,42 @@ def get_player_history(tool_context: ToolContext = None) -> dict:
                 "message": "No rostered player matched the slate, so there was no "
                            "history to look up."}
 
-    key_of = {r["name"]: (name_keys([r["name"]]) or [""])[0] for _, r in mine.iterrows()}
-    cutoff = _now()
     try:
-        rows, newest = _history_rows(sorted({k for k in key_of.values() if k}),
-                                     cutoff, HISTORY_DAYS, NOTES_PER_PLAYER)
+        notes_of, fresh = player_notes(mine["name"].tolist())
     except Exception as e:  # noqa: BLE001 -- a read failure is reported, not raised
         return {"status": "error",
                 "message": f"The news archive could not be read ({type(e).__name__}: "
                            f"{str(e)[:150]}). Say history could not be checked."}
+
+    out = [{"player": r["name"], "position": r["position"], "team": r["team"],
+            "notes": notes_of[r["name"]]} for _, r in mine.iterrows()]
+    return {"status": "ok", "days": HISTORY_DAYS, **fresh, "players": out}
+
+
+def player_notes(names: list[str], days: int = HISTORY_DAYS, n: int = NOTES_PER_PLAYER
+                 ) -> tuple[dict[str, list[dict]], dict]:
+    """({name: notes newest first}, archive freshness), one query for every name.
+
+    The lookup behind get_player_history, without the slate: the agent
+    resolves its lineup against DK first, mcp_server/ passes names straight
+    in. Every name comes back, with [] when the archive has nothing on him.
+    Raises on a read failure -- each caller words that for its own reader.
+    """
+    key_of = {name: (name_keys([name]) or [""])[0] for name in names}
+    cutoff = _now()
+    rows, newest = _history_rows(sorted({k for k in key_of.values() if k}), cutoff, days, n)
 
     by_key: dict[str, list[dict]] = {}
     for r in sorted(rows, key=lambda r: pd.Timestamp(r["published"]), reverse=True):
         notes = by_key.setdefault(r["player_key"], [])
         # A blurb about two players is one article tagged twice; and ESPN
         # re-issues a note under a new id now and then. Same text, one note.
-        if all(n["_text"] != r["text"] for n in notes):
+        if all(x["_text"] != r["text"] for x in notes):
             notes.append({"_text": r["text"], **_note(r, cutoff, "Archived note")})
 
-    out = []
-    for _, r in mine.iterrows():
-        notes = [{k: v for k, v in n.items() if k != "_text"}
-                 for n in by_key.get(key_of[r["name"]], [])]
-        out.append({"player": r["name"], "position": r["position"], "team": r["team"],
-                    "notes": notes})
-    return {"status": "ok", "days": HISTORY_DAYS, **_freshness(newest, cutoff), "players": out}
+    out = {name: [{k: v for k, v in x.items() if k != "_text"} for x in by_key.get(key, [])]
+           for name, key in key_of.items()}
+    return out, _freshness(newest, cutoff)
 
 
 def search_news_archive(question: str, player: str = "",
