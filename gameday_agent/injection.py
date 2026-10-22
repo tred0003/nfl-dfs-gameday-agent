@@ -100,9 +100,9 @@ _VERDICTS_MAX = 5000
 _verdicts_lock = threading.Lock()
 
 
-def _key(text: str) -> str:
+def _key(text: str, model: str | None = None) -> str:
     h = hashlib.sha256()
-    for part in (SCREEN_MODEL, str(SCREEN_THINKING), SCREEN_PROMPT, text[:ITEM_CHARS]):
+    for part in (model or SCREEN_MODEL, str(SCREEN_THINKING), SCREEN_PROMPT, text[:ITEM_CHARS]):
         h.update(part.encode("utf-8"))
         h.update(b"|")
     return h.hexdigest()
@@ -117,7 +117,7 @@ def _remember(key: str, verdict: dict) -> None:
 
 
 def screen(texts: list[str], client=None, batch: int | None = None,
-           cache: bool = True) -> list[dict]:
+           cache: bool = True, model: str | None = None) -> list[dict]:
     """One verdict per text: {"verdict": "instruction"|"clean"|"unchecked", "evidence"}.
 
     A text screened before in this process, by this model and prompt, is not
@@ -127,12 +127,12 @@ def screen(texts: list[str], client=None, batch: int | None = None,
     if not texts:
         return []
     if not cache:
-        return _screen_uncached(texts, client, batch)
-    keys = [_key(t) for t in texts]
+        return _screen_uncached(texts, client, batch, model)
+    keys = [_key(t, model) for t in texts]
     with _verdicts_lock:
         known = {i: dict(_VERDICTS[k]) for i, k in enumerate(keys) if k in _VERDICTS}
     todo = [i for i in range(len(texts)) if i not in known]
-    fresh = _screen_uncached([texts[i] for i in todo], client, batch) if todo else []
+    fresh = _screen_uncached([texts[i] for i in todo], client, batch, model) if todo else []
     for i, v in zip(todo, fresh):
         known[i] = v
         if v["verdict"] != "unchecked":
@@ -140,7 +140,8 @@ def screen(texts: list[str], client=None, batch: int | None = None,
     return [known[i] for i in range(len(texts))]
 
 
-def _screen_uncached(texts: list[str], client=None, batch: int | None = None) -> list[dict]:
+def _screen_uncached(texts: list[str], client=None, batch: int | None = None,
+                     model: str | None = None) -> list[dict]:
     if client is None:
         from .news import _client
         client = _client()
@@ -161,7 +162,7 @@ def _screen_uncached(texts: list[str], client=None, batch: int | None = None) ->
         try:
             resp = generate(
                 client, "injection_screen",
-                model=SCREEN_MODEL, contents=SCREEN_PROMPT.format(items=items),
+                model=model or SCREEN_MODEL, contents=SCREEN_PROMPT.format(items=items),
                 config=types.GenerateContentConfig(
                     temperature=0.0, response_mime_type="application/json",
                     response_schema=_schema(),

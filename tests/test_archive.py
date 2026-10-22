@@ -154,6 +154,20 @@ class RefreshTest(unittest.TestCase):
         self.assertEqual(len(refresh.new_chunks([art], set())), 1)
         self.assertTrue(refresh.new_chunks([art], {"blurb-1"}).empty)
 
+    def test_a_flag_stands_only_when_the_confirm_model_agrees(self):
+        from gameday_agent import injection
+        from news_rag import index
+
+        def fake(texts, model=None, **_kw):
+            first = {"a": "clean", "b": "instruction", "c": "instruction", "d": "instruction"}
+            confirm = {"b": "clean", "c": "instruction", "d": "unchecked"}
+            table = confirm if model == index.CONFIRM_MODEL else first
+            return [{"verdict": table[t], "evidence": ""} for t in texts]
+
+        with mock.patch.object(injection, "screen", fake):
+            self.assertEqual(index.screen_texts(["a", "b", "c", "d"]),
+                             ["clean", "clean", "instruction", "unchecked"])
+
 
 if __name__ == "__main__":
     unittest.main()
