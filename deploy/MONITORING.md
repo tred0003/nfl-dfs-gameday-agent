@@ -1,0 +1,89 @@
+# Production monitoring — what pages, and why
+
+Built 2026-10-22. Config lives in `deploy/monitoring/` (one JSON file per log
+metric and per alert policy), so it is reviewed and recreated from git, not
+clicked together in the console.
+
+## The split
+
+**Cloud Monitoring detects and pages.** It runs whether or not anyone is
+looking, so every alert lives here. **The eval dashboard explains** — trends
+and the per-report drill-down (Control Tower view, next step) read the same
+signals. A dashboard tab cannot email anyone when the laptop is shut.
+
+## The signal: one structured line per report
+
+`run_report.metric_event()` prints one JSON object per user per run. Cloud Run
+parses a stdout line that is a JSON object into `jsonPayload`, so every metric
+and alert filters on field names, not on English sentences that change when
+someone rewords a log message.
+
+| field | meaning |
+|---|---|
+| `source` | `agent`, `fallback`, `reused`, `no_lineup`, `failed` |
+| `check_failed`, `problems` | report_check found missed facts |
+| `missing_core`, `missing_core_n` | core tools the agent report did not call |
+| `total_cost_usd` | agent + in-tool Gemini calls (null when reused) |
+| `elapsed_s` | seconds for this user's report (null when reused) |
+| `dry_run` | true for manual dry runs; every alert excludes them |
+
+Why it exists: **a fallback exits 0.** When the agent fails, the client sends
+the rule-based report and the job succeeds, so the job-failure alert never
+fired for the 10/9 fallback. `source = "fallback"` now pages.
+
+## Alerts
+
+| Policy | Project | Fires on | Normal |
+|---|---|---|---|
+| Gameday report FELL BACK to rule-based | agent | `source="fallback"` | never |
+| Gameday report FAILED its fact-check | agent | `check_failed=true` | never (report posts with a correction) |
+| Gameday report SKIPPED core tools | agent | `missing_core_n>0` | never (prefetch) |
+| Gameday report cost over $0.04 | agent | `total_cost_usd>0.04` | $0.005-0.015 before 10/22; ~$0.020 after the history tool |
+| Gameday report took over 240 s | agent | `elapsed_s>240` | 20-130 s; the client gives up at 300 |
+| Cloud Scheduler trigger FAILED | both | scheduler log severity ≥ ERROR | never |
+| Scheduled agent report FAILED | agent | any failed Cloud Run job execution (existing) | never |
+| ML project job FAILED (project-slate, news-archive) | ML | any failed Cloud Run job execution (existing, renamed) | never |
+
+Log-match alerts notify at most once an hour per policy and auto-close after a
+day. All go to the existing email channels.
+
+The scheduler alerts close a gap the job alerts cannot see: if Cloud Scheduler
+cannot start a job (the 10/12 `PERMISSION_DENIED`, status 7), there is no
+execution, so there is no failed execution to alert on.
+
+## Log-based metrics (for charts, not alerts)
+
+- `gameday/reports` — counter, labels `source`, `check_failed`: share of users
+  served by the agent vs fallback, fact-check pass rate.
+- `gameday/report_cost_usd` — distribution of cost per agent report.
+- `gameday/report_elapsed_s` — distribution of time per report.
+
+## Verified 2026-10-22
+
+- Dry run of `gameday-report` on image `reports:23fcf57` for u2: the line
+  arrived as `jsonPayload` (agent, check passed, 0 missing core, $0.020377,
+  44.6 s, dry_run true).
+- Alert path: one synthetic fallback event (uid `alert-test`) written to the
+  report job's log to prove a page reaches email. It is the one `alert-test`
+  fallback in `gameday/reports`; ignore it in charts.
+
+## Not covered (known)
+
+- **"The report never ran at all."** If the scheduler is deleted or paused,
+  nothing errors. A metric-absence alert cannot express "one run a day" (the
+  absence window tops out below 24 h). The Thursday canary is the backstop.
+- **Report correctness beyond the five rules.** That is the LLM judge's job in
+  the weekly review, not a real-time alert.
+- **Outcome checks** (did the warnings come true) — weekly review, not paging.
+
+## Recreate
+
+```bash
+cd deploy/monitoring
+gcloud logging metrics create gameday/reports --project advisor-agent-2026 --config-from-file metric-gameday-reports.json
+gcloud logging metrics create gameday/report_cost_usd --project advisor-agent-2026 --config-from-file metric-gameday-report-cost.json
+gcloud logging metrics create gameday/report_elapsed_s --project advisor-agent-2026 --config-from-file metric-gameday-report-elapsed.json
+for p in report-fallback report-check-failed report-missing-core report-cost report-slow scheduler-error-agent; do
+  gcloud alpha monitoring policies create --project advisor-agent-2026 --policy-from-file $p.json; done
+gcloud alpha monitoring policies create --project fantasy-football-ml-503718 --policy-from-file scheduler-error-ml.json
+```
