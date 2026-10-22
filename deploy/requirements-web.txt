@@ -9,3 +9,8 @@ google-cloud-bigquery>=3.20
 db-dtypes>=1.2
 pandas>=2.1
 pulp>=2.8
+# The news archive card: this app is an MCP client of news-mcp (webapp/news.py).
+# google-auth mints the ID token for the private service; it also arrives via
+# firebase-admin, named here because news.py imports it directly.
+mcp==2.3.0
+google-auth>=2.30

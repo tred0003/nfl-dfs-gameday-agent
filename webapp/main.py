@@ -11,6 +11,11 @@ Firestore the 12:30 job writes to (src/user_store.py):
     PUT  /api/lineup     replace your lineup  {"lineup": ["name", ...]}
     GET  /api/slate      this week's player pool, to click players from
     GET  /api/suggested  the optimizer's top lineups for this week
+    POST /api/news/history  four weeks of archived notes on named players
+    POST /api/news/search   a question over six weeks of archived news
+
+The two news routes are an MCP client of the news-mcp service
+(webapp/news.py) -- the same tools Claude Code connects to.
 
 The last two are the same for every user and cached per projection run
 (webapp/slate.py) -- they cost one query and one solve per run, not per user.
@@ -42,6 +47,7 @@ from flask import Flask, abort, jsonify, request, send_from_directory
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from news import McpNews, NewsError  # noqa: E402
 from slate import BigQuerySlate, SlateError  # noqa: E402
 from user_store import FirestoreStore  # noqa: E402
 
@@ -51,6 +57,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 # a hard cap so nobody stores a novel in their lineup field.
 MAX_PLAYERS = 12
 MAX_NAME = 60
+MAX_QUESTION = 300
 
 
 def verify_firebase_token(token: str) -> str:
@@ -70,11 +77,12 @@ def verify_firebase_token(token: str) -> str:
     return auth.verify_id_token(token)["uid"]
 
 
-def create_app(store=None, verify=verify_firebase_token, slate=None) -> Flask:
-    """Build the app. Tests pass a MemoryStore, a fake verifier and a fake slate."""
+def create_app(store=None, verify=verify_firebase_token, slate=None, news=None) -> Flask:
+    """Build the app. Tests pass a MemoryStore, a fake verifier, a fake slate and fake news."""
     app = Flask(__name__, static_folder=None)
     app.config["store"] = store
     slate = slate if slate is not None else BigQuerySlate()
+    news = news if news is not None else McpNews()
 
     def get_store():
         # Created on first use, not at import: a missing credential should be
@@ -164,6 +172,43 @@ def create_app(store=None, verify=verify_firebase_token, slate=None) -> Flask:
             return jsonify(slate.suggested())
         except SlateError as e:
             abort(503, f"suggested lineups could not be built ({e})")
+
+    # Signed-in only, for the same reason as the slate: no anonymous traffic
+    # reaches BigQuery or the embedding model through this app.
+    @app.post("/api/news/history")
+    def news_history():
+        user = current_user()
+        body = request.get_json(silent=True) or {}
+        players = body.get("players", user.lineup)
+        if not isinstance(players, list) or not all(isinstance(n, str) for n in players):
+            abort(400, "players must be a list of names")
+        names = [n.strip() for n in players if n.strip()]
+        if not names:
+            abort(400, "name at least one player")
+        if len(names) > MAX_PLAYERS or any(len(n) > MAX_NAME for n in names):
+            abort(400, f"at most {MAX_PLAYERS} players, {MAX_NAME} characters each")
+        try:
+            return jsonify(news.history(names))
+        except NewsError as e:
+            abort(503, f"the news archive could not be read ({e})")
+
+    @app.post("/api/news/search")
+    def news_search():
+        current_user()
+        body = request.get_json(silent=True) or {}
+        question = body.get("question", "")
+        player = body.get("player", "")
+        if not isinstance(question, str) or not isinstance(player, str):
+            abort(400, "question and player must be text")
+        question, player = question.strip(), player.strip()
+        if not question:
+            abort(400, "ask a question")
+        if len(question) > MAX_QUESTION or len(player) > MAX_NAME:
+            abort(400, f"questions up to {MAX_QUESTION} characters, names up to {MAX_NAME}")
+        try:
+            return jsonify(news.search(question, player))
+        except NewsError as e:
+            abort(503, f"the news archive could not be searched ({e})")
 
     @app.errorhandler(400)
     @app.errorhandler(401)

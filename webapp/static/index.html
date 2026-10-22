@@ -85,6 +85,17 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
   td { padding: 3px 4px; border-top: 1px solid var(--line); }
   td.pos { color: var(--muted); width: 44px; }
+
+  /* news archive */
+  .ask { display: grid; grid-template-columns: 1fr 200px auto; gap: 8px; margin-top: 10px; }
+  @media (max-width: 600px) { .ask { grid-template-columns: 1fr; } }
+  select { padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px;
+           background: var(--bg); color: var(--text); font: inherit; }
+  .news-player { margin-top: 14px; }
+  .note { border-left: 3px solid var(--line); padding: 4px 0 4px 10px; margin-top: 8px; }
+  .note .when { font-size: 12px; color: var(--muted); }
+  .note .text { overflow-wrap: anywhere; }
+  .note a { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -139,6 +150,23 @@
       <h2>Suggested lineups <span id="suggest-meta" class="muted"></span></h2>
       <p class="muted">The optimizer's best lineups by model projection, under the $50,000 cap. Ruled-out players are excluded.</p>
       <div id="suggested"><p class="muted">Loading…</p></div>
+    </div>
+
+    <div class="card">
+      <h2>News archive <span id="news-meta" class="muted"></span></h2>
+      <p class="muted">Dated notes and stories since training camp, refreshed daily, served by the
+        news-mcp server (the same tools an AI assistant connects to). A day or more behind live news:
+        today's injury status lives in your report.</p>
+      <div class="row" style="margin-top:6px">
+        <button id="news-history" type="button">My players, last 4 weeks</button>
+      </div>
+      <form id="news-ask" class="ask">
+        <input id="news-q" type="search" maxlength="300" aria-label="Question"
+               placeholder="e.g. how long has he been limited with the ankle?">
+        <select id="news-player" aria-label="Player"></select>
+        <button class="primary" type="submit">Ask</button>
+      </form>
+      <div id="news"></div>
     </div>
 
     <div class="card">

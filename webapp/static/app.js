@@ -261,6 +261,7 @@ function renderAll() {
   renderSlots();
   renderChips();
   renderPool();
+  fillPlayerSelect();
 }
 
 // ---- suggested lineups ---------------------------------------------------
@@ -285,6 +286,65 @@ function renderSuggested(data) {
       el("td", { class: "num" }, money(p.salary)),
       el("td", { class: "num muted" }, `${p.projection}`))))))));
 }
+
+// ---- news archive (served by news-mcp) -----------------------------------
+// Everything below is third-party news text. It goes in as text nodes via
+// el(), never as HTML, and a link is only drawn for an http(s) URL.
+const lineupNames = () => slots.filter((p) => p && p.position !== "DST").map((p) => p.name);
+
+function fillPlayerSelect() {
+  const sel = $("news-player"), keep = sel.value;
+  sel.replaceChildren(el("option", { value: "" }, "Any player"),
+    ...lineupNames().map((n) => el("option", { value: n }, n)));
+  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+}
+
+function noteEl(n) {
+  const safeUrl = /^https?:\/\//.test(n.url || "") ? n.url : null;
+  return el("div", { class: "note" },
+    el("div", { class: "when" }, `${n.date} · ${n.days_ago === 0 ? "today" : `${n.days_ago}d ago`} · ${n.source}`,
+       safeUrl ? " · " : null, safeUrl ? el("a", { href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, "article") : null),
+    n.headline && !n.text.startsWith(n.headline.replace(/ \.\.\.$/, "")) ? el("div", {}, el("strong", {}, n.headline)) : null,
+    el("div", { class: "text" }, n.text));
+}
+
+function freshness(data) {
+  $("news-meta").textContent = data.archive_updated ? `· updated ${data.archive_updated}` : "";
+  return data.freshness_warning ? el("p", { class: "msg bad" }, data.freshness_warning) : null;
+}
+
+async function newsCall(path, body, render) {
+  const box = $("news");
+  box.replaceChildren(el("p", { class: "muted" }, "Reading the archive…"));
+  try {
+    render(await api("POST", path, body));
+  } catch (e) {
+    box.replaceChildren(el("p", { class: "msg bad" }, e.message));
+  }
+}
+
+$("news-history").addEventListener("click", () => {
+  const names = lineupNames();
+  if (!names.length) return $("news").replaceChildren(el("p", { class: "msg bad" }, "Add players to your lineup first."));
+  newsCall("/api/news/history", { players: names }, (data) => {
+    $("news").replaceChildren(freshness(data) || "", ...data.players.map((p) => el("div", { class: "news-player" },
+      el("h3", {}, p.player),
+      ...(p.notes.length ? p.notes.map(noteEl)
+        : [el("p", { class: "muted", style: "margin:4px 0" }, "Nothing archived in four weeks -- not the same as healthy.")]))));
+  });
+});
+
+$("news-ask").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const question = $("news-q").value.trim();
+  if (!question) return;
+  newsCall("/api/news/search", { question, player: $("news-player").value }, (data) => {
+    $("news").replaceChildren(freshness(data) || "",
+      ...(data.status === "no_results" || !(data.passages || []).length
+        ? [el("p", { class: "muted" }, "No archived news matches that question.")]
+        : data.passages.map(noteEl)));
+  });
+});
 
 // ---- load ----------------------------------------------------------------
 async function load() {
