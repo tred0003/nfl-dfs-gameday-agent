@@ -344,13 +344,28 @@ function toolLine(e) {
   return `${what} · ${e.items.length} item${e.items.length === 1 ? "" : "s"}`;
 }
 
+// Search: the retriever alone (the same search_news_archive tool the agent
+// calls), so you can see what Ask had to work with before a model touched it.
+function showSearch(data) {
+  const hits = data.passages || [];
+  $("news").replaceChildren(
+    el("p", { class: "muted" }, hits.length
+      ? `${hits.length} passage${hits.length === 1 ? "" : "s"}${data.player ? ` about ${data.player}` : ""}, newest first · retriever only, no AI`
+      : "Nothing in the archive matches."),
+    ...hits.map(noteEl));
+}
+
 $("news-ask").addEventListener("submit", (ev) => {
   ev.preventDefault();
   const question = $("news-q").value.trim();
   if (!question) return;
   const btn = ev.submitter;
-  if (btn) btn.disabled = true;
-  newsCall("/api/news/ask", { question, player: $("news-player").value }, (data) => {
+  const buttons = [...ev.target.querySelectorAll("button")];
+  buttons.forEach((b) => { b.disabled = true; });
+  const done = () => buttons.forEach((b) => { b.disabled = false; });
+  const body = { question, player: $("news-player").value };
+  if (btn && btn.value === "search") return newsCall("/api/news/search", body, showSearch).finally(done);
+  newsCall("/api/news/ask", body, (data) => {
     const answer = el("div", { class: "report" });
     answer.innerHTML = renderReport(data.answer);
     const evidence = data.evidence.length
@@ -362,7 +377,7 @@ $("news-ask").addEventListener("submit", (ev) => {
     $("news").replaceChildren(answer, evidence,
       el("p", { class: "muted", style: "margin-top:8px" },
          `${data.tool_calls} tool call${data.tool_calls === 1 ? "" : "s"} · ${data.elapsed_s ?? "?"} s`));
-  }).finally(() => { if (btn) btn.disabled = false; });
+  }).finally(done);
 });
 
 // ---- load ----------------------------------------------------------------

@@ -12,11 +12,14 @@ Firestore the 12:30 job writes to (src/user_store.py):
     GET  /api/slate      this week's player pool, to click players from
     GET  /api/suggested  the optimizer's top lineups for this week
     POST /api/news/history  four weeks of archived notes on named players
+    POST /api/news/search   a question, answered by the retriever alone (ranked passages)
     POST /api/news/ask      a question, answered by a small agent from the archive
 
-Both news routes go through the news-mcp service: history is a direct MCP
-call (webapp/news.py), ask is a Gemini agent whose tools come from news-mcp
-(webapp/ask.py) -- the same tools Claude Code connects to.
+All news routes go through the news-mcp service: history and search are
+direct MCP calls (webapp/news.py), ask is a Gemini agent whose tools come
+from news-mcp (webapp/ask.py) -- the same tools Claude Code connects to.
+Search and ask run the same retriever, so a bad answer can be traced: did
+search miss the passage, or did the model misread it?
 
 The last two are the same for every user and cached per projection run
 (webapp/slate.py) -- they cost one query and one solve per run, not per user.
@@ -66,6 +69,9 @@ MAX_QUESTION = 300
 # this is a cost guard, not a product limit. Counted per instance in memory:
 # gameday-web runs at most 2, so the real ceiling is at most twice this.
 ASK_LIMIT = 20
+# Searches per user per day. One embedding call and two BigQuery queries, no
+# model -- far cheaper than a question, so a looser guard of the same kind.
+SEARCH_LIMIT = 100
 
 
 def verify_firebase_token(token: str) -> str:
@@ -93,8 +99,31 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
     slate = slate if slate is not None else BigQuerySlate()
     news = news if news is not None else McpNews()
     agent = agent if agent is not None else ArchiveAgent()
-    asked: dict[str, tuple[str, int]] = {}     # uid -> (UTC date, questions asked)
-    asked_lock = threading.Lock()
+    used: dict[tuple[str, str], tuple[str, int]] = {}   # (uid, route) -> (UTC date, count)
+    used_lock = threading.Lock()
+
+    def spend(uid: str, route: str, limit: int, what: str) -> None:
+        """Count one call against a user's daily limit for this route, or 429."""
+        today = datetime.now(timezone.utc).date().isoformat()
+        with used_lock:
+            day, n = used.get((uid, route), (today, 0))
+            n = n if day == today else 0
+            if n >= limit:
+                abort(429, f"{limit} {what} a day -- the limit resets at midnight UTC")
+            used[(uid, route)] = (today, n + 1)
+
+    def read_question() -> tuple[str, str]:
+        body = request.get_json(silent=True) or {}
+        question = body.get("question", "")
+        player = body.get("player", "")
+        if not isinstance(question, str) or not isinstance(player, str):
+            abort(400, "question and player must be text")
+        question, player = question.strip(), player.strip()
+        if not question:
+            abort(400, "ask a question")
+        if len(question) > MAX_QUESTION or len(player) > MAX_NAME:
+            abort(400, f"questions up to {MAX_QUESTION} characters, names up to {MAX_NAME}")
+        return question, player
 
     def get_store():
         # Created on first use, not at import: a missing credential should be
@@ -204,26 +233,21 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
         except NewsError as e:
             abort(503, f"the news archive could not be read ({e})")
 
+    @app.post("/api/news/search")
+    def news_search():
+        user = current_user()
+        question, player = read_question()
+        spend(user.uid, "search", SEARCH_LIMIT, "searches")
+        try:
+            return jsonify(news.search(question, player))
+        except NewsError as e:
+            abort(503, f"the news archive could not be searched ({e})")
+
     @app.post("/api/news/ask")
     def news_ask():
         user = current_user()
-        body = request.get_json(silent=True) or {}
-        question = body.get("question", "")
-        player = body.get("player", "")
-        if not isinstance(question, str) or not isinstance(player, str):
-            abort(400, "question and player must be text")
-        question, player = question.strip(), player.strip()
-        if not question:
-            abort(400, "ask a question")
-        if len(question) > MAX_QUESTION or len(player) > MAX_NAME:
-            abort(400, f"questions up to {MAX_QUESTION} characters, names up to {MAX_NAME}")
-        today = datetime.now(timezone.utc).date().isoformat()
-        with asked_lock:
-            day, n = asked.get(user.uid, (today, 0))
-            n = n if day == today else 0
-            if n >= ASK_LIMIT:
-                abort(429, f"{ASK_LIMIT} questions a day -- the limit resets at midnight UTC")
-            asked[user.uid] = (today, n + 1)
+        question, player = read_question()
+        spend(user.uid, "ask", ASK_LIMIT, "questions")
         try:
             return jsonify(agent.ask(question, player, user.lineup, uid=user.uid))
         except AskError as e:

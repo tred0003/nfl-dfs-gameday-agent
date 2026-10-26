@@ -59,6 +59,13 @@ class McpNews:
                 n["text"] = unfence(n["text"])
         return out
 
+    def search(self, question: str, player: str = "") -> dict:
+        """The retriever alone: ranked passages, no model reading them."""
+        out = self._call("search_news_archive", {"question": question, "player": player})
+        for p in out.get("passages", []):
+            p["text"] = unfence(p["text"])
+        return out
+
     def _call(self, tool: str, args: dict) -> dict:
         try:
             out = asyncio.run(self._acall(tool, args))
