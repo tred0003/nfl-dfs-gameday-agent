@@ -39,3 +39,5 @@ deploy/customjob.train.yaml
 
 # generated per-run from batchjob.predict.json.template
 deploy/batchjob.predict.json
+embed_tune/review-packet.html
+embed_tune/review-packet.pdf

@@ -1,0 +1,464 @@
+# One verdict per line: ok | cut | bad 2 4 | note <text>
+# Leave _ to skip. Then: python embed_tune/packet.py --import
+
+# How bad is Nico Collins' hamstring, is he going to miss the Bengals game?
+q001: _
+
+# How much is Justice Hill playing behind Derrick Henry?
+q002: _
+
+# Is Kenny Gainwell the clear backup to Bucky Irving in Tampa?
+q003: _
+
+# Did Aaron Jones get hurt in the rainy game in Chicago?
+q004: _
+
+# Is Aaron Rodgers looking DK Metcalf's way a lot?
+q005: _
+
+# Who returns kicks for the Colts if Ashton Dulin can't go?
+q006: _
+
+# Is RJ Harvey going to play against Jacksonville?
+q007: _
+
+# Is Tank Bigsby getting any snaps in the Eagles backfield?
+q008: _
+
+# What happened to Samaje Perine's knee?
+q009: _
+
+# Did the Cowboys bring Israel Abanikanda back?
+q010: _
+
+# Why couldn't Breece Hall run the ball against Green Bay?
+q011: _
+
+# Why did Emeka Egbuka barely get used against Cleveland?
+q012: _
+
+# How many touchdowns did Josh Allen score against Detroit?
+q013: _
+
+# Who is filling in for Dylan Sampson in Cleveland's backfield?
+q014: _
+
+# How long is Jordan Mason out with the thumb?
+q015: _
+
+# How many turnovers did Drake Maye have in the Jacksonville blowout?
+q016: _
+
+# Is Baker Mayfield's thumb injury serious?
+q017: _
+
+# Is Jaxson Dart's season over?
+q018: _
+
+# Is Kyle Monangai going to play Monday night against the Eagles?
+q019: _
+
+# Is Sean Tucker back from his injury and playing yet?
+q020: _
+
+# Who is getting more of the Seattle backfield work, George Holani or Emanuel Wilson?
+q021: _
+
+# What injury does Mike Evans have after the Cardinals game?
+q022: _
+
+# Why isn't Ja'Tavion Sanders playing for Carolina?
+q023: _
+
+# How did Dak Prescott play against Washington?
+q024: _
+
+# Is Jakobi Meyers getting targets in Jacksonville?
+q025: _
+
+# Will Mason Taylor miss the Lions game?
+q026: _
+
+# Did Rachaad White get hurt against Seattle?
+q027: _
+
+# What's going on with the Packers' running game?
+q028: _
+
+# How did Terry McLaurin do with Marcus Mariota at quarterback?
+q029: _
+
+# Who takes over the Jets backfield with Breece Hall hurt?
+q030: _
+
+# Is Keaton Mitchell getting more work for the Chargers?
+q031: _
+
+# Is Ray Davis still the Bills' backup running back?
+q032: _
+
+# Why is Isaiah Williams playing so much for the Jets?
+q033: _
+
+# Is Kenyon Sadiq hurt?
+q034: _
+
+# How big was Christian McCaffrey's workload against Arizona?
+q035: _
+
+# Who replaces De'Von Achane in Miami after his knee injury?
+q036: _
+
+# What's the injury for Vikings tight end Josh Oliver?
+q037: _
+
+# Will Chig Okonkwo play in London?
+q038: _
+
+# Is Bucky Irving dealing with an injury?
+q039: _
+
+# Is Ashton Jeanty a workhorse back for the Raiders?
+q040: _
+
+# What injury is Keenan Allen dealing with before the London game?
+q041: _
+
+# Which teams are working out Audric Estime?
+q042: _
+
+# Will Rico Dowdle play Thursday against Cleveland?
+q043: _
+
+# Did Rashee Rice come back in the Raiders game?
+q044: _
+
+# Is Stefon Diggs playing against the Giants?
+q045: _
+
+# Who is starting at quarterback for Tampa Bay against Pittsburgh?
+q046: _
+
+# Is Ladd McConkey playing against Denver?
+q047: _
+
+# Is Rhamondre Stevenson practicing this week?
+q048: _
+
+# Is Barion Brown healthy for the Vikings game?
+q049: _
+
+# How involved is Michael Mayer next to Brock Bowers?
+q050: _
+
+# How has Deshaun Watson played late in games for Cleveland?
+q051: _
+
+# Is Ollie Gordon the Dolphins' lead running back now?
+q052: _
+
+# When will Caleb Williams be back from his hamstring?
+q053: _
+
+# How is rookie Denzel Boston producing for the Browns?
+q054: _
+
+# Is Keenan Allen active against Pittsburgh?
+q055: _
+
+# Who plays tight end for Baltimore now that Durham Smythe is done for the year?
+q056: _
+
+# What happened to Tyquan Thornton against the Raiders?
+q057: _
+
+# Who starts at quarterback for the Ravens against Atlanta?
+q058: _
+
+# How did the Falcons score so much against the Saints?
+q059: _
+
+# When does Trevor Etienne make his season debut?
+q060: _
+
+# Did Dalton Kincaid get hurt against the Raiders?
+q061: _
+
+# Is Cooper Kupp getting more targets lately?
+q062: _
+
+# How long will TreVeyon Henderson be out with the ankle?
+q063: _
+
+# When can Roman Wilson come back?
+q064: _
+
+# Is Omar Cooper Jr. finally back from his ankle?
+q065: _
+
+# Why is Evan Engram so quiet in Denver's offense?
+q066: _
+
+# Are Ja'Marr Chase and Tee Higgins healthy?
+q067: _
+
+# How bad is Michael Penix Jr.'s rib injury?
+q068: _
+
+# Who led the Texans backfield with David Montgomery out?
+q069: _
+
+# How did Rashod Bateman do in the overtime win over Atlanta?
+q070: _
+
+# Did Jaylen Warren have a big game against the Colts?
+q071: _
+
+# Is Alvin Kamara's back going to keep him out against the Giants?
+q072: _
+
+# Is Lamar Jackson practicing this week before the Browns game?
+q073: _
+
+# What's the new injury for Tyjae Spears?
+q074: _
+
+# When could Eli Stowers make his debut for the Eagles?
+q075: _
+
+# Is Josh Downs' hamstring a concern?
+q076: _
+
+# How did Joe Burrow play against Baltimore?
+q077: _
+
+# Which Packers receivers are banged up this week?
+q078: _
+
+# How are the Eagles receivers doing with Tanner McKee at quarterback?
+q079: _
+
+# Is Darren Waller losing tight end snaps in Carolina?
+q080: _
+
+# Is Seth McGowan getting work behind Jonathan Taylor?
+q081: _
+
+# Is Brian Robinson Jr. going to play against the 49ers?
+q082: _
+
+# Is KC Concepcion past his concussion?
+q083: _
+
+# Did Brenen Thompson actually play against Kansas City?
+q084: _
+
+# Who is the third running back in Kansas City after Brashard Smith got hurt?
+q085: _
+
+# How did Jayden Daniels play against San Francisco?
+q086: _
+
+# What happened to Jawhar Jordan after his debut?
+q087: _
+
+# Is Jordan Love a good streaming quarterback this week?
+q088: _
+
+# What do the experts predict for Jaguars at Broncos in Week 2?
+q089: _
+
+# Who is the Eagles' new offensive coordinator?
+q090: _
+
+# Are the Chiefs using less shotgun with Mahomes this year?
+q091: _
+
+# Will the Vikings throw more now that Kyler Murray is back?
+q092: _
+
+# What's wrong with the Chargers offense under Mike McDaniel?
+q093: _
+
+# Why are the Texans 0-2?
+q094: _
+
+# Is Michael Penix healthy enough to start against Green Bay?
+q095: _
+
+# How has Jameis Winston played as the Giants starter?
+q096: _
+
+# Is Tyler Warren a good start in Week 4?
+q097: _
+
+# Who should I pick in my survivor pool for Week 4?
+q098: _
+
+# Why isn't Travis Hunter getting used on offense?
+q099: _
+
+# Will the 49ers trade Mac Jones at the deadline?
+q100: _
+
+# Is Josh Allen on pace for a rushing touchdown record?
+q101: _
+
+# What's Jacoby Brissett's contract situation?
+q102: _
+
+# Why do the Saints keep starting games so slowly?
+q103: _
+
+# How injured are the 49ers this season?
+q104: _
+
+# Did the Jets finally get an interception?
+q105: _
+
+# What did the Ravens give up to get Cam Jurgens?
+q106: _
+
+# What does the Marvin Harrison Jr. trade mean for C.J. Stroud?
+q107: _
+
+# When are A.J. Brown and Gonzalez coming back for New England?
+q108: _
+
+# How will Denver's defense cope without Pat Surtain?
+q109: _
+
+# What's going on with the Rams offense this year?
+q110: _
+
+# Why is the Dallas running game struggling?
+q111: _
+
+# How good is the Vikings defense this year?
+q112: _
+
+# Is Roman Wilson worth a flex play this week?
+q113: _
+
+# What happened to David Montgomery against the Titans?
+q114: _
+
+# Who is predicted to score a touchdown in Eagles vs Panthers?
+q115: _
+
+# Is Dan Quinn on the hot seat?
+q116: _
+
+# Could the Eagles trade Saquon Barkley?
+q117: _
+
+# What's the projected score for Dolphins at Jets?
+q118: _
+
+# How are the Steelers splitting carries between Warren and Dowdle?
+q119: _
+
+# Are the Rams in trouble after starting 2-4?
+q120: _
+
+# Did John Harbaugh win his first game with the Giants?
+q121: _
+
+# How long is De'Zhaun Stribling out?
+q122: _
+
+# How did Kyler Murray get his concussion?
+q123: _
+
+# How is Patrick Mahomes' knee after the ACL surgery?
+q124: _
+
+# Is Sam Darnold coming back this week?
+q125: _
+
+# When will Myles Garrett be back from knee surgery?
+q126: _
+
+# Is Jalen Coker playing through his ankle injury?
+q127: _
+
+# Why did the Colts put Alec Pierce on IR?
+q128: _
+
+# Who starts at quarterback for Chicago Monday night against the Eagles?
+q129: _
+
+# Is Jayden Daniels going to London with the team?
+q130: _
+
+# How did Case Keenum play against the Eagles?
+q131: _
+
+# Will Joey Porter Jr. play Thursday?
+q132: _
+
+# When is Mason Taylor coming back from the thumb?
+q133: _
+
+# Is D'Andre Swift fumbling too much?
+q134: _
+
+# Is Jerry Jeudy going to be traded?
+q135: _
+
+# What did Sam LaPorta say about his contract?
+q136: _
+
+# Why was Cam Skattebo benched?
+q137: _
+
+# What happened with Jalen Hurts' medical care?
+q138: _
+
+# Why did the Giants cut Najee Harris?
+q139: _
+
+# Who kicked the winning field goal for Green Bay against the Jets?
+q140: _
+
+# How did the Saints beat the Ravens?
+q141: _
+
+# How bad was De'Von Achane's injury against the Chiefs?
+q142: _
+
+# How did Jonathan Taylor run against Houston?
+q143: _
+
+# What injury did Justin Jefferson suffer against Tampa?
+q144: _
+
+# How did the Cowboys come back against Houston?
+q145: _
+
+# Which Rams players got hurt against the Broncos?
+q146: _
+
+# Why was Kingsley Suamataia benched?
+q147: _
+
+# Did Justin Jefferson play through his ankle in New Orleans?
+q148: _
+
+# How close is Ja'Marr Chase to the receptions record?
+q149: _
+
+# Can the Eagles stop the Bears' running game?
+q150: _
+
+# How is the Patriots' offensive line holding up?
+q151: _
+
+# Is Brock Bowers lining up as a wide receiver?
+q152: _
+
+# Is Lamar Jackson out against Atlanta?
+q153: _
+
+# Are George Kittle and Fred Warner healthy for Seattle?
+q154: _
