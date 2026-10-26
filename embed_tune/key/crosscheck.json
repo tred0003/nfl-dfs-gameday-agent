@@ -1,0 +1,1096 @@
+{
+ "q001": {
+  "not_answer": [
+   5
+  ],
+  "question_bad": false,
+  "why": "5 only says status remains in doubt pending the report; no severity or outcome"
+ },
+ "q002": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q003": {
+  "not_answer": [
+   2,
+   3,
+   4,
+   5,
+   6,
+   8,
+   9,
+   10,
+   16,
+   21,
+   23
+  ],
+  "question_bad": false,
+  "why": "Irving/Tucker/Williams notes with only passing depth mentions of Gainwell or hypotheticals (who takes work if X is out); no statement of Gainwell's backup role or usage"
+ },
+ "q004": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q005": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q006": {
+  "not_answer": [
+   1,
+   2
+  ],
+  "question_bad": false,
+  "why": "1 is a vague practice-squad signing with no returner named; 2 is about WR depth, not returns"
+ },
+ "q007": {
+  "not_answer": [
+   1,
+   3,
+   11
+  ],
+  "question_bad": false,
+  "why": "1 is a later-week usage note; 3 and 11 say he missed/is inactive for Week 2 without tying it to Jacksonville"
+ },
+ "q008": {
+  "not_answer": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   12,
+   13,
+   17,
+   18,
+   19,
+   21,
+   26
+  ],
+  "question_bad": false,
+  "why": "Passing IR mentions inside Shipley/Pierce/Steele/Barkley/other notes, anticipatory 'will share work' lines, or no Bigsby content (12); no Bigsby snaps/usage"
+ },
+ "q009": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q010": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q011": {
+  "not_answer": [
+   1
+  ],
+  "question_bad": true,
+  "why": "Passage gives the stat line ('didn't find much running room') but no reason why; the 'why' is unanswerable from the archive"
+ },
+ "q012": {
+  "not_answer": [
+   3,
+   4,
+   5
+  ],
+  "question_bad": false,
+  "why": "3 is about Mayfield being out of sync (Egbuka actually scored); 4 is a pre-game preview; 5 is Week 1 vs Bengals. Note: premise is shaky - Egbuka had 5 targets and a TD vs CLE"
+ },
+ "q013": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": "6, 7, 9 answer only via the '5-TD outing' headline text"
+ },
+ "q014": {
+  "not_answer": [
+   1,
+   2
+  ],
+  "question_bad": false,
+  "why": "1 and 2 are about Sampson returning and fill-ins reverting to depth, not who is filling in"
+ },
+ "q015": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q016": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q017": {
+  "not_answer": [
+   2,
+   12
+  ],
+  "question_bad": false,
+  "why": "2 is a practice/questionable note with no severity; 12 is a Gainwell note with a passing Mayfield mention"
+ },
+ "q018": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": "14 is the early (later superseded) 'not season-ending' report but still addresses the question"
+ },
+ "q019": {
+  "not_answer": [
+   4,
+   5
+  ],
+  "question_bad": false,
+  "why": "4 and 5 are midweek practice notes leaving status open"
+ },
+ "q020": {
+  "not_answer": [
+   3,
+   6
+  ],
+  "question_bad": false,
+  "why": "3 is an Irving note with a passing Tucker mention; 6 is a Gainwell note mentioning Tucker inactive only in passing"
+ },
+ "q021": {
+  "not_answer": [
+   16,
+   17
+  ],
+  "question_bad": false,
+  "why": "16 and 17 are Holani/Price practice notes with conditional speculation, no actual workload split"
+ },
+ "q022": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q023": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q024": {
+  "not_answer": [
+   6,
+   11
+  ],
+  "question_bad": false,
+  "why": "6 is locker-room/record speech color with no game performance; 11 is boilerplate"
+ },
+ "q025": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q026": {
+  "not_answer": [
+   1,
+   2,
+   3,
+   4,
+   6
+  ],
+  "question_bad": false,
+  "why": "1-3 are Browns-week return notes ('two-game absence') without naming the Lions game; 4 and 6 are about the Bears game"
+ },
+ "q027": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q028": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q029": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q030": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q031": {
+  "not_answer": [
+   18
+  ],
+  "question_bad": false,
+  "why": "18 is a preseason-trend blurb about Hampton owning the backfield in Weeks 1-2, mostly Raiders content; no Mitchell usage"
+ },
+ "q032": {
+  "not_answer": [
+   6
+  ],
+  "question_bad": false,
+  "why": "6 is a Johnson practice note; only says he is 'vying with' Davis, does not establish who is the backup"
+ },
+ "q033": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q034": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q035": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q036": {
+  "not_answer": [
+   4,
+   19
+  ],
+  "question_bad": false,
+  "why": "4 is career background on Wright/Gordon/Hunter with no statement of who replaces Achane; 19 predates the injury (Gordon behind a healthy Achane)"
+ },
+ "q037": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q038": {
+  "not_answer": [
+   4
+  ],
+  "question_bad": false,
+  "why": "4 is about Williams/Diggs with McLaurin out; Okonkwo only named as 'in the mix', no status"
+ },
+ "q039": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q040": {
+  "not_answer": [
+   1,
+   3,
+   4,
+   5,
+   7,
+   9,
+   10,
+   12,
+   16
+  ],
+  "question_bad": false,
+  "why": "1 is a Washington note; 3/4/5 are health/practice status; 7 is injury plus yardage only; 9/10 are team run-game analysis; 12 is a betting prediction; 16 is a yardage prediction. None gives Jeanty's carry or snap share"
+ },
+ "q041": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q042": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q043": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q044": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q045": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q046": {
+  "not_answer": [
+   11
+  ],
+  "question_bad": false,
+  "why": "11 (Sep 28) names Daniels as the replacement for a three-week minimum but does not reach or mention the Week 6 Pittsburgh game"
+ },
+ "q047": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q048": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": "'this week' is relative; every passage is Week 5 prep, so answerable only for that week"
+ },
+ "q049": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q050": {
+  "not_answer": [
+   1,
+   2,
+   9,
+   15
+  ],
+  "question_bad": false,
+  "why": "1/2 are Ian Thomas injury notes naming Mayer only as a depth-chart entry; 9 is a passing mention in a Kincaid/Bowers piece; 15 is a Bowers activation note with a one-line projection for Mayer"
+ },
+ "q051": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q052": {
+  "not_answer": [
+   9,
+   16,
+   17,
+   18
+  ],
+  "question_bad": false,
+  "why": "9 is a Washington signing note that only lists depth order; 16 is the in-game Achane injury note; 17/18 predate Achane's injury (Achane was the lead back)"
+ },
+ "q053": {
+  "not_answer": [
+   4
+  ],
+  "question_bad": false,
+  "why": "4 is post-return stats and teammate quotes, no return timing"
+ },
+ "q054": {
+  "not_answer": [
+   9,
+   21,
+   24
+  ],
+  "question_bad": false,
+  "why": "9 award odds only; 21 is a Concepcion note; 24 combined rookie stat passing mention"
+ },
+ "q055": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q056": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q057": {
+  "not_answer": [
+   4,
+   7,
+   9,
+   13,
+   14
+  ],
+  "question_bad": false,
+  "why": "4/7/13/14 are notes on Allen/Rice/Worthy/Mahomes with passing Thornton mention; 9 combined Rice+Thornton season stats"
+ },
+ "q058": {
+  "not_answer": [
+   10
+  ],
+  "question_bad": false,
+  "why": "10 is a one-line record note"
+ },
+ "q059": {
+  "not_answer": [
+   2,
+   12
+  ],
+  "question_bad": false,
+  "why": "2 power-rankings blurb on Saints; 12 Saints reactions, no explanation of Falcons scoring"
+ },
+ "q060": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q061": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q062": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q063": {
+  "not_answer": [
+   1,
+   13,
+   16
+  ],
+  "question_bad": false,
+  "why": "1 Kiner note, no timeline; 13 Campbell article passing mention; 16 about Larison"
+ },
+ "q064": {
+  "not_answer": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   8
+  ],
+  "question_bad": false,
+  "why": "1-5 only list Wilson as out/on IR without return timing; 8 is season stats"
+ },
+ "q065": {
+  "not_answer": [
+   13
+  ],
+  "question_bad": false,
+  "why": "13 about Ossai"
+ },
+ "q066": {
+  "not_answer": [
+   2,
+   3,
+   4,
+   6,
+   7,
+   8,
+   9,
+   10,
+   12,
+   13
+  ],
+  "question_bad": false,
+  "why": "Waddle/Nix/team-offense pieces and early-game recaps that do not explain Engram's low usage"
+ },
+ "q067": {
+  "not_answer": [
+   12,
+   23
+  ],
+  "question_bad": false,
+  "why": "12 about Kenneth Grant; 23 Gesicki note passing mention"
+ },
+ "q068": {
+  "not_answer": [
+   2,
+   4,
+   8,
+   12
+  ],
+  "question_bad": false,
+  "why": "2 about pass protection; 4 and 12 are stat lines; 8 vague practice snap-share comment"
+ },
+ "q069": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q070": {
+  "not_answer": [
+   2
+  ],
+  "question_bad": false,
+  "why": "2 is an Andrews note"
+ },
+ "q071": {
+  "not_answer": [
+   5,
+   7,
+   12
+  ],
+  "question_bad": false,
+  "why": "5 quotes/play description without results; 7 Metcalf note; 12 Colts field goals and Taylor"
+ },
+ "q072": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q073": {
+  "not_answer": [
+   4
+  ],
+  "question_bad": false,
+  "why": "4 is a Flowers note with passing Jackson mention"
+ },
+ "q074": {
+  "not_answer": [
+   1
+  ],
+  "question_bad": false,
+  "why": "1 is a Singleton note"
+ },
+ "q075": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q076": {
+  "not_answer": [
+   2
+  ],
+  "question_bad": false,
+  "why": "2 is a Pierce note with passing Downs mention"
+ },
+ "q077": {
+  "not_answer": [
+   4,
+   5
+  ],
+  "question_bad": false,
+  "why": "4 team halves stats/injuries; 5 Ravens history and Jackson"
+ },
+ "q078": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q079": {
+  "not_answer": [
+   3,
+   5,
+   6,
+   7
+  ],
+  "question_bad": false,
+  "why": "3,5,6,7 focus on McKee's own play / O-line; Smith TD is a passing mention, no receiver-level usage"
+ },
+ "q080": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q081": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q082": {
+  "not_answer": [
+   4,
+   5
+  ],
+  "question_bad": false,
+  "why": "4,5 are midweek practice reports that leave status unresolved (5 even suggests not serious); 1-3 give the ruled-out answer"
+ },
+ "q083": {
+  "not_answer": [
+   6,
+   7,
+   8,
+   9,
+   10
+  ],
+  "question_bad": false,
+  "why": "6,8,9,10 say he is still in protocol (superseded); 7 is about Denzel Boston"
+ },
+ "q084": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q085": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q086": {
+  "not_answer": [
+   1,
+   4
+  ],
+  "question_bad": false,
+  "why": "1 covers only a single fourth-down throwaway; 4 is a 49ers/Evans recap with a passing Daniels mention"
+ },
+ "q087": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q088": {
+  "not_answer": [
+   2,
+   3,
+   4
+  ],
+  "question_bad": false,
+  "why": "2,3,4 are passing mentions of Love in lists about other players; note 'this week' is ambiguous across weeks 2-7"
+ },
+ "q089": {
+  "not_answer": [
+   3,
+   8
+  ],
+  "question_bad": false,
+  "why": "3 is a Jaguars safety tackle prop; 8 is AP preview with odds/history but no expert prediction"
+ },
+ "q090": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q091": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q092": {
+  "not_answer": [
+   1,
+   3
+  ],
+  "question_bad": false,
+  "why": "1 is post-game quotes about scrambles/struggles, not passing volume; 3 is historical passing stats without addressing whether they will throw more"
+ },
+ "q093": {
+  "not_answer": [
+   15,
+   18,
+   21
+  ],
+  "question_bad": false,
+  "why": "15 is a TE roster move; 18 is a minor route-detail quote; 21 is rhetorical questions with no explanation"
+ },
+ "q094": {
+  "not_answer": [
+   1,
+   3,
+   7,
+   12,
+   16
+  ],
+  "question_bad": false,
+  "why": "1 FPI division ranking; 3 survivor pick; 7 betting blurb; 12 game preview with history; 16 FPI/2025 context, no reasons for losses"
+ },
+ "q095": {
+  "not_answer": [
+   1
+  ],
+  "question_bad": false,
+  "why": "1 is about Week 6 vs Bears, not health for the Green Bay start"
+ },
+ "q096": {
+  "not_answer": [
+   11
+  ],
+  "question_bad": false,
+  "why": "11 is about J.J. McCarthy, QBR cited is his"
+ },
+ "q097": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q098": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q099": {
+  "not_answer": [
+   9
+  ],
+  "question_bad": false,
+  "why": "9 is Hunter quotes on feeling progress, no reason for low offensive usage"
+ },
+ "q100": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q101": {
+  "not_answer": [
+   2
+  ],
+  "question_bad": false,
+  "why": "2 is about Bills career total-TD record and taking hits, not a rushing TD record pace"
+ },
+ "q102": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q103": {
+  "not_answer": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7
+  ],
+  "question_bad": false,
+  "why": "1-6 discuss general offensive/run-game/injury problems, not slow starts; 5 and 7 note slow starts but give no reason"
+ },
+ "q104": {
+  "not_answer": [
+   5,
+   14,
+   19
+  ],
+  "question_bad": false,
+  "why": "5 only Samuel IR timing; 14 brief concussion evals that cleared; 19 single-player injury report snippet"
+ },
+ "q105": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q106": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q107": {
+  "not_answer": [
+   3,
+   6,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   18,
+   19
+  ],
+  "question_bad": false,
+  "why": "these cover trade terms, Stroud being consulted or excited, Harrison's own fit and metrics, contract details, or Anderson history; they don't say what the trade means for Stroud"
+ },
+ "q108": {
+  "not_answer": [
+   24,
+   26
+  ],
+  "question_bad": false,
+  "why": "24 only says 'in the weeks to come'; 26 is a betting note on a Gonzalez matchup with no return info"
+ },
+ "q109": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q110": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q111": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q112": {
+  "not_answer": [
+   11,
+   17
+  ],
+  "question_bad": false,
+  "why": "11 is a Jaguars piece that mentions the Vikings in passing; 17 is a Bears fantasy note about one Vikings secondary game"
+ },
+ "q113": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q114": {
+  "not_answer": [
+   1
+  ],
+  "question_bad": false,
+  "why": "1 is a Marks game note from a later week that only says Montgomery 'left early' in an unnamed game"
+ },
+ "q115": {
+  "not_answer": [],
+  "question_bad": true,
+  "why": "no passages were retrieved; TD predictions aren't in the archive"
+ },
+ "q116": {
+  "not_answer": [
+   4,
+   7,
+   8
+  ],
+  "question_bad": false,
+  "why": "4 recaps the botched play and only mentions questions about his job; 7 is about Bowles with a bare Quinn header; 8 covers Quinn's meeting and accepting blame, not his job status"
+ },
+ "q117": {
+  "not_answer": [
+   5
+  ],
+  "question_bad": false,
+  "why": "5 covers Eagles cap and dead money and leads into a player without naming Barkley"
+ },
+ "q118": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q119": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q120": {
+  "not_answer": [
+   8
+  ],
+  "question_bad": false,
+  "why": "8 covers preseason expectations and the offseason, with no read on the current trouble"
+ },
+ "q121": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q122": {
+  "not_answer": [
+   11
+  ],
+  "question_bad": false,
+  "why": "11 is a Shanahan quote ('we will get him back') with no timeline"
+ },
+ "q123": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q124": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q125": {
+  "not_answer": [
+   7
+  ],
+  "question_bad": false,
+  "why": "7 is a Kupp practice note with only a passing mention of Darnold's return"
+ },
+ "q126": {
+  "not_answer": [
+   9
+  ],
+  "question_bad": false,
+  "why": "9 is about Aaron Donald and mentions Garrett only in a closing line"
+ },
+ "q127": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q128": {
+  "not_answer": [
+   3,
+   4,
+   5,
+   8,
+   9,
+   10,
+   12,
+   13
+  ],
+  "question_bad": false,
+  "why": "these are notes about teammates or replacements, or fantasy and betting notes that only mention Pierce (heel, IR) in passing"
+ },
+ "q129": {
+  "not_answer": [
+   13
+  ],
+  "question_bad": false,
+  "why": "13 is an outdated pre-decision report saying Bagent would start, which turned out wrong"
+ },
+ "q130": {
+  "not_answer": [
+   1
+  ],
+  "question_bad": false,
+  "why": "1 covers his later return and brace and says nothing about London"
+ },
+ "q131": {
+  "not_answer": [
+   2,
+   3
+  ],
+  "question_bad": false,
+  "why": "2 and 3 are one-line passing mentions ('played well', 'lit up the defense') inside articles about Williams' injury and an Eagles-Rams preview"
+ },
+ "q132": {
+  "not_answer": [],
+  "question_bad": true,
+  "why": "Ambiguous: 'Thursday' could mean the Steelers-Browns game on Oct 1 or the Cowboys-Bucs game on Oct 8 (two teams). The passages answer both readings"
+ },
+ "q133": {
+  "not_answer": [
+   5,
+   6,
+   7,
+   10,
+   12,
+   13,
+   14,
+   16,
+   19,
+   21,
+   23
+  ],
+  "question_bad": false,
+  "why": "Passing mentions of Taylor's status inside notes on Sadiq, Ruckert, Mitchell, Hardy or other players; 16 is unrelated injury notes; 23 is about the in-game injury on Sept 20 and gives no return timeline"
+ },
+ "q134": {
+  "not_answer": [
+   1
+  ],
+  "question_bad": false,
+  "why": "1 is a one-line passing mention inside an inactives roundup"
+ },
+ "q135": {
+  "not_answer": [
+   3
+  ],
+  "question_bad": false,
+  "why": "3 covers his game-winning catch and mentions the trade buzz but says nothing about whether he will be traded"
+ },
+ "q136": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q137": {
+  "not_answer": [
+   7
+  ],
+  "question_bad": false,
+  "why": "7 has Skattebo saying he 'got punished' but never says what for"
+ },
+ "q138": {
+  "not_answer": [
+   7,
+   9
+  ],
+  "question_bad": false,
+  "why": "7 is the senator's letter and its questions, 9 is commentary on the union's push; neither describes his care"
+ },
+ "q139": {
+  "not_answer": [
+   3,
+   4
+  ],
+  "question_bad": false,
+  "why": "3 only says Harris started that game; 4 is a Skattebo note that mentions Harris's stat line"
+ },
+ "q140": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q141": {
+  "not_answer": [
+   1,
+   2,
+   3,
+   4
+  ],
+  "question_bad": false,
+  "why": "1 and 2 are passing mentions in later-week articles; 3 and 4 analyze the Ravens' collapse and history without describing how the Saints won"
+ },
+ "q142": {
+  "not_answer": [
+   1
+  ],
+  "question_bad": false,
+  "why": "1 is a Dulcich note with a passing 'serious injury' mention"
+ },
+ "q143": {
+  "not_answer": [
+   1,
+   4,
+   5
+  ],
+  "question_bad": false,
+  "why": "1 gives combined stats for three running backs against Houston; 4 and 5 cover the clock and timeout controversy around one 5-yard Taylor run"
+ },
+ "q144": {
+  "not_answer": [
+   2,
+   9,
+   13,
+   15,
+   20
+  ],
+  "question_bad": false,
+  "why": "2 is his return game and does not tie the injury to Tampa; 9, 13, 15 and 20 are passing mentions in Addison, Jennings or offense notes"
+ },
+ "q145": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q146": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q147": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q148": {
+  "not_answer": [
+   4
+  ],
+  "question_bad": false,
+  "why": "4 is a Beckham inactive note that only lists Jefferson among the available receivers"
+ },
+ "q149": {
+  "not_answer": [],
+  "question_bad": true,
+  "why": "The only passage covers a 4th-most-receptions-in-first-six-seasons milestone (7 catches to pass Hopkins), not 'the receptions record'. The question misstates it and is ambiguous"
+ },
+ "q150": {
+  "not_answer": [
+   1,
+   3,
+   7,
+   8
+  ],
+  "question_bad": false,
+  "why": "1 gives the Eagles' run-defense rank inside a Rams preview; 3 covers the Bears' run game with no Eagles context; 7 is about the Bears' QB situation and scheme; 8 is game logistics plus a DT-vs-C matchup that never mentions the run game"
+ },
+ "q151": {
+  "not_answer": [
+   1,
+   15
+  ],
+  "question_bad": false,
+  "why": "1 is a center snap-count stat inside a notes column; 15 is a passing injury mention inside a Week 3 piece mostly about other teams"
+ },
+ "q152": {
+  "not_answer": [],
+  "question_bad": false,
+  "why": ""
+ },
+ "q153": {
+  "not_answer": [
+   11
+  ],
+  "question_bad": false,
+  "why": "11 is a one-line fragment with no status information"
+ },
+ "q154": {
+  "not_answer": [
+   2,
+   4
+  ],
+  "question_bad": false,
+  "why": "2 is about Kittle's injury last season; 4 is a fantasy column with a passing 'healthy Kittle' mention and no game status"
+ }
+}
