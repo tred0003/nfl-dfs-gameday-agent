@@ -1,0 +1,20 @@
+{
+ "base": "BAAI/bge-small-en-v1.5",
+ "pairs": 2499,
+ "holdout": 200,
+ "epochs": 1,
+ "batch": 32,
+ "lr": 2e-05,
+ "max_len": 384,
+ "minutes": 32.5,
+ "holdout_before": {
+  "top1": 0.77,
+  "top5": 0.95,
+  "mrr": 0.8511180119166015
+ },
+ "holdout_after": {
+  "top1": 0.79,
+  "top5": 0.985,
+  "mrr": 0.876429910616961
+ }
+}

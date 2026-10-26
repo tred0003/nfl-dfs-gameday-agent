@@ -22,7 +22,7 @@ Two modes, because production uses both:
 
 Passages the judge never saw count as not relevant. That is fine for the base
 model, which helped build the pool; before a tuned model is compared, its own
-top 10 must be added to the pool and judged (pool.py --add), or it gets no
+top 10 must be added to the pool and judged (pool_add.py), or it gets no
 credit for finding something new.
 
 Pure vector search on purpose: no "two newest" slot, no keyword step. The
@@ -40,6 +40,8 @@ from common import KEY, QUESTIONS, embed_queries, load_window, name_mask, unit
 
 JUDGED = KEY / "judged.jsonl"
 REVIEW = KEY / "review.json"
+ADDED = KEY / "judged_add.jsonl"
+CHECKED = KEY / "crosscheck_add.json"
 K_HIT, K = 6, 10
 
 
@@ -70,6 +72,7 @@ def score(qs, qrels, qvec, docs, df) -> dict:
                 "hit": float(any(g == 2 for g in gains[:K_HIT])),
                 "recall": sum(g == 2 for g in gains) / min(n2, K),
                 "ndcg": ndcg(gains, list(rel.values())),
+                "top": top,                 # for pool_add.py: what this model would show
             })
     return out
 
@@ -89,7 +92,15 @@ def load_qrels(approved_only: bool):
     for line in JUDGED.open(encoding="utf-8"):
         r = json.loads(line)
         qrels[r["qid"]] = {g["doc_id"]: g["grade"] for g in r["grades"]}
-    if REVIEW.exists():           # the person's fixes override the judge
+    if ADDED.exists():            # pool_add.py: passages new models surfaced
+        for line in ADDED.open(encoding="utf-8"):
+            r = json.loads(line)
+            for g in r["grades"]:
+                qrels.setdefault(r["qid"], {}).setdefault(g["doc_id"], g["grade"])
+    if CHECKED.exists():          # ...and Claude's cross-check of their 2s
+        for qid, fix in json.loads(CHECKED.read_text(encoding="utf-8")).items():
+            qrels[qid].update(fix)
+    if REVIEW.exists():           # the cross-check (or a person's) fixes override the judge
         review = json.loads(REVIEW.read_text(encoding="utf-8"))
         for qid, fix in review.items():
             for doc_id, grade in fix.get("grades", {}).items():
