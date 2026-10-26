@@ -41,3 +41,4 @@ deploy/customjob.train.yaml
 deploy/batchjob.predict.json
 embed_tune/review-packet.html
 embed_tune/review-packet.pdf
+embed_tune/review.html

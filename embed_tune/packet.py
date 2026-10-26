@@ -5,6 +5,9 @@
     ... type your verdicts into embed_tune/review.txt ...
     python embed_tune/packet.py --import     # review.txt -> embed_tune/key/review.json
 
+Or click through embed_tune/review.html instead (review_app.py) and import
+the review.txt it downloads with --file.
+
 Per question you answer two things: would a real person ask this, and do the
 passages shown actually answer it. In review.txt each line takes one of:
 
@@ -32,6 +35,7 @@ import json
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 from common import KEY, QUESTIONS, ROOT, load_window
 
@@ -144,9 +148,9 @@ def to_pdf() -> bool:
     return PDF_OUT.exists()
 
 
-def import_sheet(qs, judged, df) -> None:
+def import_sheet(qs, judged, df, sheet=SHEET) -> None:
     review = {}
-    for line in SHEET.read_text(encoding="utf-8").splitlines():
+    for line in sheet.read_text(encoding="utf-8").splitlines():
         m = re.match(r"^(q\d{3}):\s*(.*)$", line.strip())
         if not m or m.group(2).strip() in ("", "_"):
             continue
@@ -160,7 +164,7 @@ def import_sheet(qs, judged, df) -> None:
             ids = shown(qid, judged, df)
             nums = [int(n) for n in re.findall(r"\d+", verdict)]
             review[qid] = {"status": "ok",
-                           "grades": {ids[n - 1]: 1 for n in nums if 1 <= n <= min(SHOW, len(ids))}}
+                           "grades": {ids[n - 1]: 1 for n in nums if 1 <= n <= len(ids)}}
         elif word == "note":
             review[qid] = {"status": "note", "note": verdict[4:].strip()}
         else:
@@ -174,10 +178,11 @@ def import_sheet(qs, judged, df) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--import", dest="imp", action="store_true")
+    ap.add_argument("--file", default=str(SHEET), help="the sheet to import (review.html downloads one)")
     args = ap.parse_args()
     qs, judged, df = load()
     if args.imp:
-        import_sheet(qs, judged, df)
+        import_sheet(qs, judged, df, Path(args.file))
         return
     HTML_OUT.write_text(build(qs, judged, df), encoding="utf-8")
     write_sheet(qs)
