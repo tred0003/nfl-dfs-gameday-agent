@@ -103,7 +103,45 @@ to a real answer.
 Conclusion: on this archive, fine-tuning a small open model does not beat
 it off the shelf, and neither comes near text-embedding-005 (0.721).
 
+## A stronger model, and a re-ranker
+
+```
+python embed_tune/gemini_embed.py              # gemini-embedding-001, 3072 and 768 dims
+python embed_tune/rerank.py --first base       # 005's top 50 -> Vertex AI Ranking API
+python embed_tune/rerank.py --first gemini_emb
+python embed_tune/pool_add.py key/eval_<run>.json ...   # fair pool, then --merge
+python embed_tune/eval.py --rescore            # every saved run on the final key
+python embed_tune/compare.py                   # vs base: change, 95% interval, by kind
+```
+
+Every run's top 10 was pooled, graded by Gemini Pro and cross-checked by
+Claude (461 new answers over four rounds, 78.1% agreement), then all runs
+were re-scored on that one final key. Open mode, 150 questions:
+
+| run                                  | hit@6 | recall@10 | nDCG@10 | vs base (95% interval) |
+|--------------------------------------|-------|-----------|---------|------------------------|
+| gemini-embedding-001 + ranker        | 1.000 | 0.823     | 0.869   | +0.172 (+0.145..+0.199) |
+| text-embedding-005 + ranker          | 1.000 | 0.800     | 0.849   | +0.152 (+0.128..+0.177) |
+| gemini-embedding-001 (3072)          | 0.953 | 0.625     | 0.714   | +0.017 (-0.008..+0.042) |
+| gemini-embedding-001 (cut to 768)    | 0.953 | 0.626     | 0.708   | +0.011 (-0.016..+0.037) |
+| text-embedding-005 (today's search)  | 0.973 | 0.619     | 0.697   |                        |
+| bge-small-en-v1.5                    | 0.927 | 0.540     | 0.613   | -0.084                 |
+| bge-small tuned, v2 data             | 0.887 | 0.533     | 0.610   | -0.087                 |
+| bge-small tuned, v1 data             | 0.880 | 0.507     | 0.598   | -0.099                 |
+
+- The re-ranker is the win: +0.15 nDCG over today's search, 124 questions
+  better and 17 worse, every kind of question up, injury the most (+0.17).
+  A ranker reads question and passage together; an embedding model never
+  does. That is the near-miss problem tuning could not fix.
+- A bigger embedding model alone: a small, not significant gain. Cut to 768
+  numbers it scores about the same as at 3,072.
+- Fine-tuning the small open model: never beat it off the shelf.
+- The final key is larger than the one the earlier tables used (every new
+  run added answers), so base reads 0.697 here, not 0.721.
+
 ## Next
 
-1. Tune `text-embedding-005` on Vertex AI (paid GPU job + temporary endpoint)
-   with the v2 pairs -- needs GPU quota first (0 on demand).
+1. Put the ranker in production search (news-mcp `search_news_archive`):
+   one Ranking API call per search, ~$1 per 1,000.
+2. Optional: tune `text-embedding-005` on Vertex AI -- needs GPU quota (0 on
+   demand); with the ranker in place, the embedding model matters less.

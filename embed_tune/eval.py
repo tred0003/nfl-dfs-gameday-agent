@@ -111,13 +111,42 @@ def load_qrels(approved_only: bool):
     return [q for q in qs if q["qid"] in qrels], qrels
 
 
+def rescore(qrels) -> None:
+    """Re-grade every saved run's top 10 against the current key. The key grows
+    each time pool_add.py adds a model's finds, and every run must be scored on
+    the same key -- this needs no model and no API call."""
+    rows = []
+    for f in sorted(KEY.glob("eval_*.json")):
+        res = json.loads(f.read_text(encoding="utf-8"))
+        if not all("top" in r for rs in res.values() for r in rs):
+            continue
+        for rs in res.values():
+            for r in rs:
+                rel = qrels[r["qid"]]
+                gains = [rel.get(d, 0) for d in r["top"]]
+                n2 = sum(g == 2 for g in rel.values())
+                r.update(hit=float(any(g == 2 for g in gains[:K_HIT])),
+                         recall=sum(g == 2 for g in gains) / min(n2, K),
+                         ndcg=ndcg(gains, list(rel.values())))
+        f.write_text(json.dumps(res, indent=1), encoding="utf-8")
+        m = {k: np.mean([r[k] for r in res["open"]]) for k in ("hit", "recall", "ndcg")}
+        rows.append((m["ndcg"], f.stem.removeprefix("eval_"), m))
+    print(f"{'run (open mode)':<24}{'hit@6':>8}{'recall@10':>11}{'nDCG@10':>9}")
+    for _, name, m in sorted(rows, reverse=True):
+        print(f"{name:<24}{m['hit']:>8.3f}{m['recall']:>11.3f}{m['ndcg']:>9.3f}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--approved", action="store_true", help="only questions marked ok in review")
     ap.add_argument("--out", default=str(KEY / "eval_base.json"))
+    ap.add_argument("--rescore", action="store_true", help="re-grade all saved runs on the current key")
     args = ap.parse_args()
 
     qs, qrels = load_qrels(args.approved)
+    if args.rescore:
+        rescore(qrels)
+        return
     df = load_window()
     docs = unit(np.vstack(df.embedding.to_numpy()))
     qvec = embed_queries([q["question"] for q in qs])
