@@ -7,6 +7,8 @@ What these pin down, with BigQuery replaced by fakes:
     note and fences its text
   - a stale archive says so, and a failed read is an error, not "no news"
   - search_news_archive stops at its limit and says "no_results" honestly
+  - the re-ranker's order is used, and a failure or the daily cap falls back
+    to the embedding's order instead of breaking search
   - the refresh never re-appends a chunk the table already has
 """
 
@@ -143,6 +145,78 @@ class SearchTest(unittest.TestCase):
         self.assertEqual(out["status"], "ok")
         self.assertEqual([p["days_ago"] for p in out["passages"]], [1, 3])
         self.assertEqual(out["passages"][0]["url"], "u2")
+
+
+class _FakeRanker:
+    def __init__(self, order=None, error=None):
+        self.order_, self.error, self.calls = order, error, 0
+
+    def order(self, question, texts, titles):
+        self.calls += 1
+        self.seen = (question, titles)
+        if self.error:
+            raise self.error
+        return self.order_
+
+
+@unittest.skipIf(archive is None, "gameday_agent needs ADK")
+class RerankTest(unittest.TestCase):
+    """The re-ranker may only make search better: any failure keeps the
+    embedding's order, and the daily cap stops calls without stopping search."""
+
+    def setUp(self):
+        self.rows = [{"text": t, "published": NOW - timedelta(days=d)} for t, d in (("a", 1), ("b", 2), ("c", 30))]
+        patches = [mock.patch.object(archive, "_now", lambda: NOW),
+                   mock.patch.object(archive, "_rerank_day", None),
+                   mock.patch.object(archive, "_rerank_calls", 0)]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def _with(self, ranker):
+        p = mock.patch.object(archive, "_ranker", ranker)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_ranker_order_is_used(self):
+        self._with(_FakeRanker(order=[2, 0, 1]))
+        self.assertEqual([r["text"] for r in archive._rerank("q", self.rows)], ["c", "a", "b"])
+
+    def test_the_ranker_is_told_the_dates(self):
+        ranker = _FakeRanker(order=[0, 1, 2])
+        self._with(ranker)
+        archive._rerank("When is he back?", self.rows)
+        question, titles = ranker.seen
+        self.assertEqual(question, "Today is Thu Oct 22, 2026. When is he back?")
+        self.assertEqual(titles, ["Published Wed Oct 21, 2026", "Published Tue Oct 20, 2026",
+                                  "Published Tue Sep 22, 2026"])
+
+    def test_rows_the_ranker_leaves_out_are_kept_at_the_end(self):
+        self._with(_FakeRanker(order=[1]))
+        self.assertEqual([r["text"] for r in archive._rerank("q", self.rows)], ["b", "a", "c"])
+
+    def test_a_failure_keeps_the_embedding_order(self):
+        self._with(_FakeRanker(error=TimeoutError("slow")))
+        with self.assertLogs(archive.log, "WARNING"):
+            self.assertEqual(archive._rerank("q", self.rows), self.rows)
+
+    def test_past_the_daily_cap_no_call_is_made(self):
+        ranker = _FakeRanker(order=[2, 1, 0])
+        self._with(ranker)
+        with mock.patch.object(archive, "RERANK_DAILY_CAP", 2), self.assertLogs(archive.log, "WARNING"):
+            for _ in range(3):
+                out = archive._rerank("q", self.rows)
+        self.assertEqual(ranker.calls, 2)
+        self.assertEqual(out, self.rows)
+
+    def test_the_cap_resets_each_day(self):
+        ranker = _FakeRanker(order=[0, 1, 2])
+        self._with(ranker)
+        with mock.patch.object(archive, "RERANK_DAILY_CAP", 1):
+            archive._rerank("q", self.rows)
+            with mock.patch.object(archive, "_now", lambda: NOW + timedelta(days=1)):
+                archive._rerank("q", self.rows)
+        self.assertEqual(ranker.calls, 2)
 
 
 @unittest.skipIf(archive is None, "gameday_agent needs ADK")

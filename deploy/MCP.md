@@ -62,6 +62,13 @@ gcloud projects add-iam-policy-binding $P --member serviceAccount:$SA \
 # dataViewer on the dfs dataset only
 bq add-iam-policy-binding --member serviceAccount:$SA \
   --role roles/bigquery.dataViewer $P:dfs
+# The search's re-ranker (Vertex AI Ranking API, since 2026-10-27). Without
+# it search still works, in the embedding's order, and logs
+# "archive_rerank fallback". The agent needs the same in advisor-agent-2026
+# (API enabled + this role for its Agent Engine service agent).
+gcloud services enable discoveryengine.googleapis.com --project $P
+gcloud projects add-iam-policy-binding $P --member serviceAccount:$SA \
+  --role roles/discoveryengine.viewer --condition None
 
 # Service: private, scales to zero
 gcloud run deploy news-mcp --project $P --region $R --image $IMG \

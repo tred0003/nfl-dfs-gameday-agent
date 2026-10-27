@@ -22,10 +22,21 @@ news_rag/refresh.py. Two tools read it:
   search_news_archive   OPTIONAL -- the model calls it with a question, e.g.
                         about a replacement candidate it is weighing. This is
                         the retrieval part: metadata does precision (player,
-                        date window), the embedding ranks by meaning, and the
+                        date window), the embedding fetches the closest 50 by
+                        meaning, a re-ranker picks the best of those, and the
                         newest items get guaranteed slots because embeddings
                         encode meaning, not time (news_rag/retrieve.py has the
                         Week 5 miss that taught that).
+
+The re-ranker (since 2026-10-27): the Vertex AI Ranking API reads the
+question and each passage TOGETHER and scores the pair. The embedding never
+reads them together -- it compares two sets of numbers made separately --
+which is why it confuses last month's note on an ankle with this week's.
+It is given each passage's date and today's date (see _rerank). Measured
+offline on 150 questions (embed_tune/, program reference section 18):
+nDCG@10 0.696 -> 0.811, 107 questions better and 31 worse. One call per
+search, ~0.2 s, ~$0.001. It can only make search better, never break it: a
+failed call, a timeout or the daily cap returns the embedding's own order.
 
 Defenses, same as the rest of the agent:
   - Only chunks the injection screen marked "clean" are ever returned; an
@@ -46,6 +57,7 @@ in tokens, so it never appears in token_cost.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from datetime import datetime, timezone
@@ -67,13 +79,23 @@ SEARCH_DAYS = 42
 SEARCH_K = 6
 SEARCH_RECENT = 2        # newest items guaranteed a slot in every search
 SEARCH_LIMIT = 3         # search_news_archive calls per run, like search_news
+RERANK_FETCH = 50        # embedding candidates handed to the re-ranker
+RERANK_MODEL = "semantic-ranker-default@latest"
+RERANK_TIMEOUT = 8       # seconds; past it, the embedding's order is used
+# Ranker calls per process per UTC day, a cost ceiling (~$1 per 1,000). Per
+# process, like the web app's Ask limit: news-mcp runs at most 2 instances.
+# Normal use is a few dozen a day; past the cap search keeps working, unranked.
+RERANK_DAILY_CAP = 300
 # The refresh runs daily. Past this, at least one run was missed: the report
 # says so, and the canary fails.
 STALE_HOURS = 36
 
 _bq_client = None
 _embed_client = None
+_ranker = None
+_rerank_day, _rerank_calls = None, 0
 _lock = threading.Lock()
+log = logging.getLogger(__name__)
 
 
 def name_keys(names) -> list[str]:
@@ -109,6 +131,85 @@ def _embedder():
                                          project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
                                          http_options=types.HttpOptions(retry_options=retry))
         return _embed_client
+
+
+class _Ranker:
+    """The Vertex AI Ranking API (Discovery Engine), billed to the caller's own
+    project -- the same project that pays for its query embedding. Needs the
+    Discovery Engine API enabled there and roles/discoveryengine.viewer."""
+
+    def __init__(self):
+        import google.auth
+        import google.auth.transport.requests
+        self.creds, adc_project = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        self.project = os.environ.get("GOOGLE_CLOUD_PROJECT") or adc_project
+        self.req = google.auth.transport.requests.Request()
+        self.http = requests.Session()
+        self.url = (f"https://discoveryengine.googleapis.com/v1/projects/{self.project}/"
+                    "locations/global/rankingConfigs/default_ranking_config:rank")
+
+    def order(self, question: str, texts: list[str], titles: list[str]) -> list[int]:
+        """Indexes of `texts`, best answer first. `titles` go in each record's
+        title field (here: the publish date)."""
+        with _lock:
+            if not self.creds.valid:
+                self.creds.refresh(self.req)
+            token = self.creds.token
+        r = self.http.post(self.url, timeout=RERANK_TIMEOUT, json={
+            "model": RERANK_MODEL, "query": question, "topN": len(texts),
+            "ignoreRecordDetailsInResponse": True,
+            "records": [{"id": str(i), "title": h, "content": t}
+                        for i, (h, t) in enumerate(zip(titles, texts))]},
+            headers={"Authorization": f"Bearer {token}", "x-goog-user-project": self.project})
+        r.raise_for_status()
+        return [int(rec["id"]) for rec in r.json()["records"]]
+
+
+def _take_rerank_call() -> bool:
+    """Count one ranker call against today's cap; False once it is spent."""
+    global _rerank_day, _rerank_calls
+    with _lock:
+        today = _now().date()
+        if today != _rerank_day:
+            _rerank_day, _rerank_calls = today, 0
+        if _rerank_calls >= RERANK_DAILY_CAP:
+            return False
+        _rerank_calls += 1
+        return True
+
+
+def _rerank(question: str, rows: list[dict]) -> list[dict]:
+    """`rows` best answer first by the ranker; on any failure, unchanged.
+
+    Never raises: the embedding's order is the fallback, so a ranker outage,
+    a missing permission or the daily cap makes search a little worse, never
+    broken. Every fallback is logged with its reason."""
+    global _ranker
+    if len(rows) < 2:
+        return rows
+    if not _take_rerank_call():
+        log.warning("archive_rerank fallback: daily cap of %d reached", RERANK_DAILY_CAP)
+        return rows
+    # Dated: the ranker reads text and knows no calendar. Undated, asked when
+    # Puka Nacua would be back, it ranked September notes on an old hip injury
+    # above this week's calf injury. With each passage's date and today's
+    # date it put the Oct 22-25 calf notes first. Offline that costs some
+    # nDCG (0.848 -> 0.811), because the test's key counts a September "back
+    # in Week 4" as an answer; it is still +0.115 over no ranker.
+    when = [f"Published {pd.Timestamp(r['published']):%a %b %d, %Y}" for r in rows]
+    try:
+        with _lock:
+            if _ranker is None:
+                _ranker = _Ranker()
+        order = _ranker.order(f"Today is {_now():%a %b %d, %Y}. {question}",
+                              [r["text"] for r in rows], when)
+    except Exception as e:  # noqa: BLE001 -- any failure falls back to the embedding's order
+        log.warning("archive_rerank fallback: %s: %s", type(e).__name__, str(e)[:200])
+        return rows
+    ranked = [rows[i] for i in order if 0 <= i < len(rows)]
+    seen = {id(r) for r in ranked}
+    return ranked + [r for r in rows if id(r) not in seen]
 
 
 def _now() -> datetime:
@@ -199,7 +300,8 @@ PLAYER_FILTER = "AND (@key IN UNNEST(player_keys) OR STRPOS(LOWER(text), @lname)
 
 def _search_rows(question: str, player: str | None, cutoff: datetime, days: int,
                  k: int, recent: int) -> list[dict]:
-    """The `recent` newest matching chunks, then the closest by meaning, to k."""
+    """The `recent` newest matching chunks, then the best answers: the
+    RERANK_FETCH closest by meaning, re-ordered by the ranker (at least k)."""
     from google.cloud import bigquery
     from google.genai import types
 
@@ -221,9 +323,9 @@ def _search_rows(question: str, player: str | None, cutoff: datetime, days: int,
             query_parameters=base + [bigquery.ScalarQueryParameter("n", "INT64", recent)])).result()]
     similar = [dict(r) for r in _bq().query(
         SEARCH_SQL.format(player=flt), job_config=bigquery.QueryJobConfig(
-            query_parameters=base + [bigquery.ScalarQueryParameter("k", "INT64", k),
+            query_parameters=base + [bigquery.ScalarQueryParameter("k", "INT64", max(k, RERANK_FETCH)),
                                      bigquery.ArrayQueryParameter("q", "FLOAT64", list(vec))])).result()]
-    return newest + similar
+    return newest + _rerank(question, similar)
 
 
 def _clip(text: str, limit: int = NOTE_CHARS) -> str:

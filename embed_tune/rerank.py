@@ -29,8 +29,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+import requests
 
-from common import KEY, embed_queries, load_window, name_mask, unit
+from common import CUTOFF, KEY, embed_queries, load_window, name_mask, unit
 from eval import K, K_HIT, load_qrels, ndcg, summary
 
 PROJECT = "fantasy-football-ml-503718"
@@ -54,19 +55,28 @@ class Ranker:
     def __init__(self):
         import google.auth
         import google.auth.transport.requests
-        import requests
         self.creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
         self.req = google.auth.transport.requests.Request()
         self.http = requests.Session()
 
-    def rank(self, question: str, ids: list[str], texts: list[str]) -> list[str]:
+    def rank(self, question: str, ids: list[str], texts: list[str],
+             titles: list[str] | None = None) -> list[str]:
         if not self.creds.valid:
             self.creds.refresh(self.req)
+        records = [{"id": str(i), "content": t} for i, t in enumerate(texts)]
+        for rec, title in zip(records, titles or []):
+            rec["title"] = title
         body = {"model": RANKER, "query": question, "topN": len(ids), "ignoreRecordDetailsInResponse": True,
-                "records": [{"id": str(i), "content": t} for i, t in enumerate(texts)]}
+                "records": records}
         for attempt in range(5):
-            r = self.http.post(URL, json=body, timeout=60, headers={
-                "Authorization": f"Bearer {self.creds.token}", "x-goog-user-project": PROJECT})
+            try:
+                r = self.http.post(URL, json=body, timeout=60, headers={
+                    "Authorization": f"Bearer {self.creds.token}", "x-goog-user-project": PROJECT})
+            except requests.ConnectionError:      # dropped connections, as in gemini_embed.py
+                if attempt == 4:
+                    raise
+                time.sleep(2 ** attempt)
+                continue
             if r.status_code not in (429, 500, 503):
                 break
             time.sleep(2 ** attempt)
@@ -77,11 +87,18 @@ class Ranker:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--first", choices=["base", "gemini_emb"], default="base")
+    ap.add_argument("--dated", action="store_true",
+                    help="give the ranker each passage's date (as its title) and today's date")
     args = ap.parse_args()
 
     qs, qrels = load_qrels(False)
     df = load_window()
     ids, text = df.doc_id.to_numpy(), dict(zip(df.doc_id, df.text))
+    # --dated: the ranker reads text and knows no calendar, so "back in Week 4"
+    # and "back this week" look alike to it. Found live on 2026-10-27: asked
+    # when Puka Nacua would be back, it ranked September notes above Friday's.
+    when = dict(zip(df.doc_id, df.published.dt.strftime("Published %a %b %d, %Y")))
+    today = f"Today is {CUTOFF:%a %b %d, %Y}. " if args.dated else ""
     qvec, docs = first_stage(args.first, qs, df)
 
     jobs = []                                   # (qid, mode, question, 50 candidate ids)
@@ -98,7 +115,9 @@ def main() -> None:
 
     ranker = Ranker()
     with ThreadPoolExecutor(max_workers=4) as ex:
-        ranked = list(ex.map(lambda j: ranker.rank(j[2], j[3], [text[d] for d in j[3]]), jobs))
+        ranked = list(ex.map(lambda j: ranker.rank(
+            today + j[2], j[3], [text[d] for d in j[3]],
+            [when[d] for d in j[3]] if args.dated else None), jobs))
 
     out = {"open": [], "player": []}
     for (qid, mode, _, _), order in zip(jobs, ranked):
@@ -109,7 +128,7 @@ def main() -> None:
         out[mode].append({"qid": qid, "hit": float(any(g == 2 for g in gains[:K_HIT])),
                           "recall": sum(g == 2 for g in gains) / min(n2, K),
                           "ndcg": ndcg(gains, list(rel.values())), "top": top})
-    name = f"rerank_{args.first}"
+    name = f"rerank_{args.first}" + ("_dated" if args.dated else "")
     with open(KEY / f"eval_{name}.json", "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1)
     print(f"{len(jobs)} ranker calls (~${len(jobs) / 1000:.2f})")

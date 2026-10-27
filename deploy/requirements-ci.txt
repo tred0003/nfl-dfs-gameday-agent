@@ -5,7 +5,7 @@
 # on-demand build (cloudbuild.eval.yaml) with the agent's own requirements.
 pandas>=2.0
 numpy>=1.24
-pulp>=2.8
+pulp>=2.8,<4
 # projection_checks.check_pool calls Series.corr(method="spearman"), which
 # imports scipy at call time. Nothing imports scipy by name, so CI's first run
 # was the first place it was ever missing (14 of 22 tests errored).
