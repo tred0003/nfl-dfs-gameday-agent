@@ -62,7 +62,48 @@ templated (6.7 words; "What is", "How did", "Who is" open 27% of them),
 the test's are longer and varied (8.6 words) -- the model learned Gemini's
 phrasing. The different-writer rule is what exposed it.
 
+## v2: better data, trained on Vertex AI
+
+```
+python embed_tune/gen_pairs.py                 # styled questions -> key/train_pairs_v2.jsonl
+python embed_tune/mine.py                      # + one hard negative each -> key/train_triplets.jsonl
+python embed_tune/bge.py cloud --data v2       # Vertex AI custom job, c2-standard-16
+python embed_tune/bge.py fetch --data v2       # download the model when it succeeds
+```
+
+- Questions: each passage gets an assigned style (worried manager, why/how
+  bad, start/sit, terse query, last name only, team-level). 3,240 pairs,
+  10.5 words on average (v1: 6.7), sd 4.0 (v1: 1.7).
+- Hard negatives: the highest-ranked passage under text-embedding-005 that is
+  from a different article and scores below 95% of the answer (positive-aware
+  filter, so a second real answer is not used as a "wrong" one).
+- Where it ran: the laptop ran out of memory twice (65 s a step). Vertex
+  custom job: the project has 0 on-demand GPU quota and its 1 Spot T4 sat
+  1 h 40 min on "resources are insufficient", so 16 CPUs, 17 min, under $1.
+- Fair pool again: 86 more unseen passages, 12 new answers, 6 rejected by
+  the cross-check (all rounds: 118 new answers, 72.9% agreement).
+
+Final, open mode, 150 questions, one enlarged answer key:
+
+| model                       | hit@6 | recall@10 | nDCG@10 |
+|-----------------------------|-------|-----------|---------|
+| text-embedding-005 (base)   | 0.973 | 0.667     | 0.721   |
+| bge-small-en-v1.5           | 0.927 | 0.579     | 0.634   |
+| bge-small tuned, v1 data    | 0.880 | 0.542     | 0.618   |
+| bge-small tuned, v2 data    | 0.887 | 0.569     | 0.631   |
+
+v2 recovered most of v1's loss and ties untuned BGE: nDCG -0.003, 95%
+bootstrap interval -0.027 to +0.022, 66 questions better and 69 worse. It
+gains on role (+0.040) and team (+0.033) questions and loses on injury
+(-0.036), the biggest group. Held-out training pairs: top-1 0.825 -> 0.865.
+Hypothesis for injury, untested: injury news is time-sensitive, and an older
+note on the same player's injury is a likely "hard negative" that is close
+to a real answer.
+
+Conclusion: on this archive, fine-tuning a small open model does not beat
+it off the shelf, and neither comes near text-embedding-005 (0.721).
+
 ## Next
 
-1. Better training data: varied question styles, hard negatives.
-2. Tune `text-embedding-005` on Vertex AI (paid GPU job + temporary endpoint).
+1. Tune `text-embedding-005` on Vertex AI (paid GPU job + temporary endpoint)
+   with the v2 pairs -- needs GPU quota first (0 on demand).

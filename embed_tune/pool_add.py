@@ -88,9 +88,10 @@ def add(files: list[str]) -> None:
 
 def merge(src: Path) -> None:
     """addverdict*.json: {qid: {"not_answer": [doc_id, ...]}} from the Claude agents."""
-    verdicts = {}
-    for f in sorted(src.glob("addverdict*.json")):
-        verdicts.update(json.loads(f.read_text(encoding="utf-8")))
+    verdicts: dict[str, dict] = {}
+    for f in sorted(src.glob("addverdict*.json")):      # one file per round; a qid can recur
+        for qid, v in json.loads(f.read_text(encoding="utf-8")).items():
+            verdicts.setdefault(qid, {"not_answer": []})["not_answer"] += v.get("not_answer", [])
     checks = [json.loads(line) for line in TO_CHECK.open(encoding="utf-8")]
     out = {}
     rejected = 0

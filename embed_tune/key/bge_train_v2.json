@@ -1,0 +1,27 @@
+{
+ "base": "BAAI/bge-small-en-v1.5",
+ "rows": 3040,
+ "columns": [
+  "anchor",
+  "positive",
+  "negative"
+ ],
+ "holdout": 200,
+ "epochs": 1,
+ "batch": 32,
+ "mini_batch": 8,
+ "lr": 2e-05,
+ "max_len": 384,
+ "device": "cpu",
+ "minutes": 17.3,
+ "holdout_before": {
+  "top1": 0.825,
+  "top5": 0.945,
+  "mrr": 0.878613578715746
+ },
+ "holdout_after": {
+  "top1": 0.865,
+  "top5": 0.965,
+  "mrr": 0.9103060583033988
+ }
+}
