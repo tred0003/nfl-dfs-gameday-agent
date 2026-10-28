@@ -76,12 +76,16 @@ def pin_check() -> dict:
             "ok": scores[archive.RERANK_MODEL] != scores["nonsense-model"]}
 
 
-def run() -> dict:
+def run(search=None) -> dict:
+    """`search(question, player) -> {"passages": [{"id", "date"}...], "meta": {...}}`
+    defaults to the shipped archive search. Another retriever passed here is
+    scored by exactly this code (embed_tune/llamaindex_gate.py)."""
     from gameday_agent import archive
     cutoff = CUTOFF.to_pydatetime().astimezone(timezone.utc)
     archive._now = lambda: cutoff
     archive.RERANK_DAILY_CAP = 10_000
-    pin = pin_check()
+    pin = pin_check() if search is None else {"ok": True, "skipped": "not the shipped search"}
+    search = search or archive.search_news_archive
 
     qs, qrels = load_qrels(approved_only=False)
     labels = json.loads(LABELS.read_text(encoding="utf-8"))
@@ -95,7 +99,7 @@ def run() -> dict:
         return max(cur, key=lambda d: d.rsplit("@", 1)[1]) if cur else None
 
     def one(q):
-        out = archive.search_news_archive(q["question"], q.get("player") or "")
+        out = search(q["question"], q.get("player") or "")
         got = {(p["id"], p["date"]) for p in out.get("passages", [])}
         rel = qrels[q["qid"]]
         hit = any(g == 2 and _day(d) in got for d, g in rel.items())

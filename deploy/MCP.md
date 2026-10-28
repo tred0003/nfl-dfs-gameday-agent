@@ -48,7 +48,7 @@ R=us-central1
 SA=news-mcp@$P.iam.gserviceaccount.com
 IMG=$R-docker.pkg.dev/$P/nfl-dfs/news-mcp:$(git rev-parse --short HEAD)
 
-# Image (the build fails if the tool list is not exactly the two tools)
+# Image (the build fails if the tool list is not exactly the three tools)
 gcloud builds submit --project $P --config deploy/cloudbuild.mcp.yaml \
   --substitutions _IMAGE=$IMG .
 
