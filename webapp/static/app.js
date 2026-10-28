@@ -261,7 +261,6 @@ function renderAll() {
   renderSlots();
   renderChips();
   renderPool();
-  fillPlayerSelect();
 }
 
 // ---- suggested lineups ---------------------------------------------------
@@ -286,130 +285,6 @@ function renderSuggested(data) {
       el("td", { class: "num" }, money(p.salary)),
       el("td", { class: "num muted" }, `${p.projection}`))))))));
 }
-
-// ---- news archive (served by news-mcp) -----------------------------------
-// Everything below is third-party news text. It goes in as text nodes via
-// el(), never as HTML, and a link is only drawn for an http(s) URL.
-const lineupNames = () => slots.filter((p) => p && p.position !== "DST").map((p) => p.name);
-
-function fillPlayerSelect() {
-  const sel = $("news-player"), keep = sel.value;
-  sel.replaceChildren(el("option", { value: "" }, "Any player"),
-    ...lineupNames().map((n) => el("option", { value: n }, n)));
-  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
-}
-
-function noteEl(n) {
-  const safeUrl = /^https?:\/\//.test(n.url || "") ? n.url : null;
-  const ref = /^P\d+$/.test(n.ref || "") ? n.ref : null;
-  return el("div", { class: "note", ...(ref ? { id: `ref-${ref}` } : {}) },
-    el("div", { class: "when" }, ref ? el("strong", {}, `[${ref.slice(1)}] `) : null, `${n.date} · ${n.days_ago === 0 ? "today" : `${n.days_ago}d ago`} · ${n.source}`,
-       safeUrl ? " · " : null, safeUrl ? el("a", { href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, "article") : null),
-    n.headline && !n.text.startsWith(n.headline.replace(/ \.\.\.$/, "")) ? el("div", {}, el("strong", {}, n.headline)) : null,
-    el("div", { class: "text" }, n.text));
-}
-
-function freshness(data) {
-  $("news-meta").textContent = data.archive_updated ? `· updated ${data.archive_updated}` : "";
-  return data.freshness_warning ? el("p", { class: "msg bad" }, data.freshness_warning) : null;
-}
-
-async function newsCall(path, body, render) {
-  const box = $("news");
-  box.replaceChildren(el("p", { class: "muted" }, "Reading the archive…"));
-  try {
-    render(await api("POST", path, body));
-  } catch (e) {
-    box.replaceChildren(el("p", { class: "msg bad" }, e.message));
-  }
-}
-
-$("news-history").addEventListener("click", () => {
-  const names = lineupNames();
-  if (!names.length) return $("news").replaceChildren(el("p", { class: "msg bad" }, "Add players to your lineup first."));
-  newsCall("/api/news/history", { players: names }, (data) => {
-    $("news").replaceChildren(freshness(data) || "", ...data.players.map((p) => el("div", { class: "news-player" },
-      el("h3", {}, p.player),
-      ...(p.notes.length ? p.notes.map(noteEl)
-        : [el("p", { class: "muted", style: "margin:4px 0" }, "Nothing archived in four weeks -- not the same as healthy.")]))));
-  });
-});
-
-// Ask: a small agent (webapp/ask.py) picks the archive tools, reads what they
-// return and answers. The answer is model output built from third-party news,
-// so it gets the same treatment as the report: escaped, then **bold** only.
-function toolLine(e) {
-  const a = e.args || {};
-  const what = e.tool === "player_history" ? `Looked up history: ${(a.players || []).join(", ")}`
-    : `Searched: "${a.question || ""}"${a.player ? ` (${a.player})` : ""}`;
-  return `${what} · ${e.items.length} item${e.items.length === 1 ? "" : "s"}`;
-}
-
-// Citations: the answer's [P3] refs (checked server-side by citations.py)
-// become numbered links to the passage in "What it read". Runs on the
-// already-escaped HTML; the pattern only ever emits our own markup.
-function linkRefs(html) {
-  return html.replace(/\[(P\d+(?:\s*,\s*P\d+)*)\]/g, (_, refs) => refs.split(/\s*,\s*/).map(
-    (r) => `<sup><a href="#ref-${r}" class="cite" data-ref="${r}">${r.slice(1)}</a></sup>`).join(""));
-}
-
-function citeLine(data) {
-  const bits = [];
-  if (data.answer_type === "abstained") bits.push("nothing in the archive on this");
-  else if (data.answer_type === "partial") bits.push("partial: the exact answer is not in the archive");
-  if (data.answer_type === "unsupported") bits.push("unsupported: no fact here cites a source");
-  else if (data.cited_share != null && data.answer_type !== "abstained") bits.push(`${Math.round(data.cited_share * 100)}% of facts cited`);
-  const kinds = (data.problems || []).map((p) => p.kind);
-  if (kinds.length) bits.push(`flagged: ${[...new Set(kinds)].join(", ").replace(/_/g, " ")}`);
-  return bits.join(" · ");
-}
-
-// Search: the retriever alone (the same search_news_archive tool the agent
-// calls), so you can see what Ask had to work with before a model touched it.
-function showSearch(data) {
-  const hits = data.passages || [];
-  $("news").replaceChildren(
-    el("p", { class: "muted" }, hits.length
-      ? `${hits.length} passage${hits.length === 1 ? "" : "s"}${data.player ? ` about ${data.player}` : ""}, newest first · retriever only, no AI`
-      : "Nothing in the archive matches."),
-    ...hits.map(noteEl));
-}
-
-$("news-ask").addEventListener("submit", (ev) => {
-  ev.preventDefault();
-  const question = $("news-q").value.trim();
-  if (!question) return;
-  const btn = ev.submitter;
-  const buttons = [...ev.target.querySelectorAll("button")];
-  buttons.forEach((b) => { b.disabled = true; });
-  const done = () => buttons.forEach((b) => { b.disabled = false; });
-  const body = { question, player: $("news-player").value };
-  if (btn && btn.value === "search") return newsCall("/api/news/search", body, showSearch).finally(done);
-  newsCall("/api/news/ask", body, (data) => {
-    const answer = el("div", { class: "report" });
-    answer.innerHTML = linkRefs(renderReport(data.answer));
-    const evidence = data.evidence.length
-      ? el("details", { style: "margin-top:10px", id: "evidence" },
-          el("summary", { class: "muted" }, `What it read (${data.evidence.length} lookup${data.evidence.length === 1 ? "" : "s"})`),
-          ...data.evidence.map((e) => el("div", { class: "news-player" },
-            el("div", { class: "muted" }, toolLine(e)), ...e.items.map(noteEl))))
-      : el("p", { class: "muted" }, "It answered without looking anything up.");
-    answer.addEventListener("click", (e) => {
-      const a = e.target.closest("a.cite");
-      if (!a) return;
-      e.preventDefault();
-      if (evidence.tagName === "DETAILS") evidence.open = true;
-      const target = document.getElementById(`ref-${a.dataset.ref}`);
-      if (target) { target.scrollIntoView({ behavior: "smooth", block: "center" }); target.classList.add("hit"); setTimeout(() => target.classList.remove("hit"), 1600); }
-    });
-    const cost = data.cost_usd != null ? ` · $${data.cost_usd.toFixed(4)}` : "";
-    $("news").replaceChildren(answer,
-      citeLine(data) ? el("p", { class: "muted", style: "margin-top:6px" }, citeLine(data)) : "",
-      evidence,
-      el("p", { class: "muted", style: "margin-top:8px" },
-         `${data.tool_calls} tool call${data.tool_calls === 1 ? "" : "s"} · ${data.elapsed_s ?? "?"} s${cost}`));
-  }).finally(done);
-});
 
 // ---- load ----------------------------------------------------------------
 async function load() {

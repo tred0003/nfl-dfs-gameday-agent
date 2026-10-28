@@ -46,6 +46,9 @@
   .tag.bad { color: var(--bad); border-color: var(--bad); }
   .num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
   [hidden] { display: none !important; }
+  nav.top { display: flex; gap: 18px; margin-bottom: 14px; font-size: 14px; }
+  nav.top a { color: var(--muted); text-decoration: none; padding-bottom: 4px; }
+  nav.top a[aria-current] { color: var(--text); font-weight: 600; border-bottom: 2px solid var(--accent); }
 
   /* lineup slots */
   .slots { display: grid; gap: 6px; }
@@ -103,6 +106,7 @@
 </head>
 <body>
 <main>
+  <nav class="top"><a href="/" aria-current="page">Lineup</a><a href="/news">News desk</a></nav>
   <header>
     <h1>Gameday Lineup</h1>
     <span id="who" class="muted"></span>
@@ -156,25 +160,9 @@
     </div>
 
     <div class="card">
-      <h2>News archive <span id="news-meta" class="muted"></span></h2>
-      <p class="muted">Dated notes and stories since training camp, refreshed daily. Search returns the
-        archive's best-matching passages, ranked, with no AI in between. Ask runs the same search, then an
-        AI agent reads what it found and answers with dates and sources. The list button shows your players'
-        raw notes. All three run on the news-mcp server, the same tools an AI assistant connects to. A day or
-        more behind live news: today's injury status lives in your report.</p>
-      <div class="row" style="margin-top:6px">
-        <button id="news-history" type="button">My players, last 4 weeks</button>
-      </div>
-      <form id="news-ask" class="ask">
-        <input id="news-q" type="search" maxlength="300" aria-label="Question"
-               placeholder="e.g. is his ankle injury a trend or a one-off?">
-        <select id="news-player" aria-label="Player"></select>
-        <div class="row">
-          <button type="submit" value="search">Search</button>
-          <button class="primary" type="submit" value="ask">Ask</button>
-        </div>
-      </form>
-      <div id="news"></div>
+      <h2>News desk</h2>
+      <p class="muted">Ask the news archive about your players: cited answers from dated notes and stories
+        since training camp. <a href="/news">Open the News desk &rarr;</a></p>
     </div>
 
     <div class="card">

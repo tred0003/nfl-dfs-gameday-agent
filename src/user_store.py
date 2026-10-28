@@ -40,6 +40,12 @@ from datetime import datetime, timezone
 
 USERS = "users"
 REPORTS = "reports"
+# users/{uid}/asks/{ask_id}: every News desk answer -- question, answer,
+# the passage ids it cited, versions, cost -- and the user's feedback on it.
+# The audit trail ("who asked what, and what did they see") and the seed of
+# a live eval set. A subcollection, like reports: one user cannot name
+# another's.
+ASKS = "asks"
 # One document per NFL week, written by gameday_agent/weekly_review.py: the
 # week's judge scores, check pass rate, fallback rate, cost and the warning
 # outcomes. Top level, not under a user -- it spans every user -- and only the
@@ -130,6 +136,18 @@ class FirestoreStore:
         snap = self._user(uid).collection(REPORTS).document(report_id).get()
         return snap.to_dict() if snap.exists else None
 
+    def save_ask(self, uid: str, ask_id: str, fields: dict) -> None:
+        self._user(uid).collection(ASKS).document(_require_uid(ask_id)).set(
+            {**fields, "created_at": self._fs.SERVER_TIMESTAMP})
+
+    def get_ask(self, uid: str, ask_id: str) -> dict | None:
+        snap = self._user(uid).collection(ASKS).document(_require_uid(ask_id)).get()
+        return snap.to_dict() if snap.exists else None
+
+    def set_ask_feedback(self, uid: str, ask_id: str, feedback: dict) -> None:
+        self._user(uid).collection(ASKS).document(_require_uid(ask_id)).update(
+            {"feedback": {**feedback, "at": self._fs.SERVER_TIMESTAMP}})
+
     def latest_report(self, uid: str) -> tuple[str, dict] | None:
         # Report ids are YYYY-MM-DD, so the highest id is the newest report.
         # Not order_by("__name__", DESCENDING): a descending key query needs a
@@ -183,6 +201,7 @@ class MemoryStore:
     def __init__(self, users: list[User] | None = None):
         self.users: dict[str, User] = {}
         self.reports: dict[tuple[str, str], dict] = {}
+        self.asks: dict[tuple[str, str], dict] = {}
         self.weekly: dict[str, dict] = {}
         for u in users or []:
             self.put_user(u)
@@ -202,6 +221,17 @@ class MemoryStore:
 
     def get_report(self, uid: str, report_id: str) -> dict | None:
         return self.reports.get((_require_uid(uid), report_id))
+
+    def save_ask(self, uid: str, ask_id: str, fields: dict) -> None:
+        self.asks[(_require_uid(uid), _require_uid(ask_id))] = {
+            **fields, "created_at": datetime.now(timezone.utc)}
+
+    def get_ask(self, uid: str, ask_id: str) -> dict | None:
+        return self.asks.get((_require_uid(uid), _require_uid(ask_id)))
+
+    def set_ask_feedback(self, uid: str, ask_id: str, feedback: dict) -> None:
+        self.asks[(_require_uid(uid), _require_uid(ask_id))]["feedback"] = {
+            **feedback, "at": datetime.now(timezone.utc)}
 
     def latest_report(self, uid: str) -> tuple[str, dict] | None:
         ids = sorted(rid for (u, rid) in self.reports if u == _require_uid(uid))

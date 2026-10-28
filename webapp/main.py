@@ -13,7 +13,9 @@ Firestore the 12:30 job writes to (src/user_store.py):
     GET  /api/suggested  the optimizer's top lineups for this week
     POST /api/news/history  four weeks of archived notes on named players
     POST /api/news/search   a question, answered by the retriever alone (ranked passages)
-    POST /api/news/ask      a question, answered by a small agent from the archive
+    POST /api/news/ask      a question, answered from the archive with cited passages
+    POST /api/news/feedback thumbs up/down and "wrong citation" on one of YOUR answers
+    GET  /news              the News desk page (static/news.html)
 
 All news routes go through the news-mcp service: history and search are
 direct MCP calls (webapp/news.py), ask is a Gemini agent whose tools come
@@ -42,9 +44,12 @@ rule as the report job.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import sys
 import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -89,6 +94,24 @@ def verify_firebase_token(token: str) -> str:
         firebase_admin.initialize_app(options={
             "projectId": os.environ.get("GOOGLE_CLOUD_PROJECT", "advisor-agent-2026")})
     return auth.verify_id_token(token)["uid"]
+
+
+MAX_NOTE = 500
+
+
+def ask_record(question: str, player: str, out: dict) -> dict:
+    """What is kept of one answer: enough to audit it and to re-grade it later
+    (the passage ids, not their text -- the archive has the text)."""
+    cited = sorted({r for c in out.get("claims", []) for r in c.get("refs", [])},
+                   key=lambda r: int(r[1:]))
+    return {"question": question, "player": player, "answer": out.get("answer", ""),
+            "answer_type": out.get("answer_type"), "cited_share": out.get("cited_share"),
+            "problems": [p.get("kind") for p in out.get("problems", [])],
+            "cited_refs": cited,
+            "passages": [{"ref": i.get("ref"), "id": i.get("id"), "date": i.get("date")}
+                         for e in out.get("evidence", []) for i in e.get("items", [])],
+            "versions": out.get("versions", {}), "cost_usd": out.get("cost_usd"),
+            "elapsed_s": out.get("elapsed_s")}
 
 
 def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
@@ -151,6 +174,10 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
     @app.get("/")
     def index():
         return send_from_directory(STATIC, "index.html")
+
+    @app.get("/news")
+    def news_page():
+        return send_from_directory(STATIC, "news.html")
 
     @app.get("/static/<path:name>")
     def static_files(name):
@@ -249,9 +276,47 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
         question, player = read_question()
         spend(user.uid, "ask", ASK_LIMIT, "questions")
         try:
-            return jsonify(agent.ask(question, player, user.lineup, uid=user.uid))
+            out = agent.ask(question, player, user.lineup, uid=user.uid)
         except AskError as e:
             abort(503, f"the question could not be answered ({e})")
+        # Kept under the user: the audit trail, and what feedback attaches to.
+        # A failed write costs the record, never the answer.
+        out["ask_id"] = uuid.uuid4().hex[:16]
+        try:
+            get_store().save_ask(user.uid, out["ask_id"], ask_record(question, player, out))
+        except Exception as e:  # noqa: BLE001
+            print(json.dumps({"event": "ask_save_failed", "uid": user.uid,
+                              "error": f"{type(e).__name__}: {str(e)[:150]}"}), flush=True)
+            out["ask_id"] = None
+        return jsonify(out)
+
+    @app.post("/api/news/feedback")
+    def news_feedback():
+        user = current_user()
+        body = request.get_json(silent=True) or {}
+        ask_id, rating = body.get("ask_id"), body.get("rating")
+        wrong = body.get("wrong_refs", [])
+        note = body.get("note", "")
+        if not isinstance(ask_id, str) or not re.fullmatch(r"[0-9a-f]{16}", ask_id):
+            abort(400, "which answer? (ask_id)")
+        if rating not in ("up", "down"):
+            abort(400, "rating is up or down")
+        if (not isinstance(wrong, list) or len(wrong) > 20
+                or not all(isinstance(r, str) and re.fullmatch(r"P\d{1,3}", r) for r in wrong)):
+            abort(400, "wrong_refs is a list like [\"P2\"]")
+        if not isinstance(note, str) or len(note) > MAX_NOTE:
+            abort(400, f"notes up to {MAX_NOTE} characters")
+        # Looked up under the token's uid: another user's answer is a 404,
+        # the same as one that never existed.
+        record = get_store().get_ask(user.uid, ask_id)
+        if record is None:
+            abort(404, "no such answer")
+        known = {c for c in record.get("cited_refs", [])}
+        get_store().set_ask_feedback(user.uid, ask_id, {
+            # A thumbs-up with a "wrong" citation contradicts itself: drop them.
+            "rating": rating, "wrong_refs": [r for r in wrong if r in known] if rating == "down" else [],
+            "note": note.strip()})
+        return jsonify(ok=True)
 
     @app.errorhandler(400)
     @app.errorhandler(401)

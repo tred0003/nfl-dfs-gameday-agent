@@ -57,8 +57,10 @@ in tokens, so it never appears in token_cost.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -89,6 +91,7 @@ RERANK_FETCH = 50        # embedding candidates handed to the re-ranker
 # a silent downgrade, not a crash.
 RERANK_MODEL = "semantic-ranker-default-005"
 RERANK_TIMEOUT = 8       # seconds; past it, the embedding's order is used
+BQ_TIMEOUT = 20          # seconds per BigQuery wait; past it the search fails, clearly
 # Ranker calls per process per UTC day, a cost ceiling (~$1 per 1,000). Per
 # process, like the web app's Ask limit: news-mcp runs at most 2 instances.
 # Normal use is a few dozen a day; past the cap search keeps working, unranked.
@@ -292,7 +295,7 @@ def _history_rows(keys: list[str], cutoff: datetime, days: int, n: int
         bigquery.ScalarQueryParameter("days", "INT64", days),
         bigquery.ScalarQueryParameter("n", "INT64", n),
     ])
-    rows = [dict(r) for r in _bq().query(HISTORY_SQL, job_config=cfg).result()]
+    rows = [dict(r) for r in _bq().query(HISTORY_SQL, job_config=cfg).result(timeout=BQ_TIMEOUT)]
     newest = rows[0]["archive_newest"] if rows else None
     return [r for r in rows if r.get("player_key")], newest
 
@@ -339,10 +342,6 @@ def _search_rows(question: str, player: str | None, cutoff: datetime, days: int,
     from google.genai import types
 
     stats = stats if stats is not None else {}
-    t0 = time.monotonic()
-    vec = _embedder().models.embed_content(
-        model=EMBED_MODEL, contents=[question],
-        config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")).embeddings[0].values
     base = [
         bigquery.ScalarQueryParameter("cutoff", "TIMESTAMP", cutoff),
         bigquery.ScalarQueryParameter("days", "INT64", days),
@@ -353,17 +352,29 @@ def _search_rows(question: str, player: str | None, cutoff: datetime, days: int,
         base += [bigquery.ScalarQueryParameter("key", "STRING", keys[0] if keys else ""),
                  bigquery.ScalarQueryParameter("lname", "STRING", player.strip().lower())]
         flt = PLAYER_FILTER
-    t1 = time.monotonic()
+    # Overlapped, not one after the other: query() returns as soon as the job
+    # is submitted. The newest-items query needs no embedding, so it runs
+    # while the question is embedded; the vector query starts right after.
+    # Measured 2026-10-28: BigQuery waits fell from ~1.75 s (serial) to ~1.3 s,
+    # but a whole search stayed ~2.3-2.5 s -- each query has a ~1 s floor of
+    # its own. Kept because it is free, not because it was a big win.
+    t0 = time.monotonic()
     recent_job = _bq().query(
         RECENT_SQL.format(player=flt), job_config=bigquery.QueryJobConfig(
             query_parameters=base + [bigquery.ScalarQueryParameter("n", "INT64", recent)]))
-    newest = [dict(r) for r in recent_job.result()]
-    t2 = time.monotonic()
+    vec = _embedder().models.embed_content(
+        model=EMBED_MODEL, contents=[question],
+        config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")).embeddings[0].values
+    t1 = time.monotonic()
     vector_job = _bq().query(
         SEARCH_SQL.format(player=flt), job_config=bigquery.QueryJobConfig(
             query_parameters=base + [bigquery.ScalarQueryParameter("k", "INT64", max(k, RERANK_FETCH)),
                                      bigquery.ArrayQueryParameter("q", "FLOAT64", list(vec))]))
-    similar = [dict(r) for r in vector_job.result()]
+    # A bound on each wait, so a stuck query fails this search instead of
+    # outliving the caller's own timeout (news.py waits 45 s).
+    newest = [dict(r) for r in recent_job.result(timeout=BQ_TIMEOUT)]
+    t2 = time.monotonic()
+    similar = [dict(r) for r in vector_job.result(timeout=BQ_TIMEOUT)]
     t3 = time.monotonic()
     ranked = _rerank(question, similar, stats)
     t4 = time.monotonic()
@@ -553,6 +564,14 @@ def search_news_archive(question: str, player: str = "",
     meta = {"retriever": RETRIEVER_VERSION, "ranked": stats.get("ranked", False),
             "fallback": stats.get("fallback"), "ms": stats.get("ms", {}),
             "cost_usd": search_cost(stats)}
+    # One JSON line per search, whoever called it (agent, news-mcp, web).
+    # Cloud Logging parses it; the log-based metric archive_rerank_fallback
+    # counts the lines with a fallback, and an alert fires on its rate.
+    # STDERR, not stdout: under `server.py --stdio` stdout is the MCP
+    # protocol channel, and a stray line there breaks the client.
+    print(json.dumps({"event": "archive_search", "player": bool(player.strip()),
+                      "candidates": stats.get("candidates"), "bq_bytes": stats.get("bq_bytes"),
+                      **meta}), file=sys.stderr, flush=True)
 
     seen, kept = set(), []
     for r in rows:

@@ -164,6 +164,19 @@ class SearchTest(unittest.TestCase):
         self.assertAlmostEqual(out["meta"]["cost_usd"],
                                archive.RERANK_USD + archive.EMBED_USD_PER_KCHAR, places=6)
 
+    def test_the_search_log_line_goes_to_stderr_never_stdout(self):
+        # stdout is the MCP protocol channel under `server.py --stdio`.
+        import contextlib
+        import io
+        import json as _json
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(archive, "_search_rows", lambda *a: []), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            archive.search_news_archive("q", tool_context=SimpleNamespace(state={}))
+        self.assertEqual(out.getvalue(), "")
+        line = _json.loads(err.getvalue().strip().splitlines()[-1])
+        self.assertEqual((line["event"], line["retriever"]), ("archive_search", archive.RETRIEVER_VERSION))
+
 
 class _FakeRanker:
     def __init__(self, order=None, error=None):
