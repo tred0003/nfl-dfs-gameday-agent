@@ -46,8 +46,8 @@ def _resp(calls=(), text=None):
 
 
 class FakeMcp:
-    def __init__(self):
-        self.calls = []
+    def __init__(self, meta=None):
+        self.calls, self.meta = [], meta
 
     async def list_tools(self):
         schema = {"type": "object", "properties": {"question": {"type": "string"}}}
@@ -58,9 +58,11 @@ class FakeMcp:
 
     async def call_tool(self, name, args):
         self.calls.append((name, args))
-        body = {"status": "ok", "passages": [{"date": "Wed Oct 21", "days_ago": 1,
+        body = {"status": "ok", "passages": [{"id": "a#0", "date": "Wed Oct 21", "days_ago": 1,
                                               "source": "ESPN", "headline": "h",
                                               "text": FENCED, "url": None}]}
+        if self.meta:
+            body["meta"] = self.meta
         return SimpleNamespace(content=[SimpleNamespace(text=json.dumps(body))])
 
 
@@ -105,6 +107,31 @@ class AskLoopTest(unittest.TestCase):
         self.assertEqual(out["tool_calls"], ask.MAX_TOOL_CALLS)
         self.assertFalse(model.seen[-1][1])             # the answering turn could not call tools
         self.assertEqual(out["answer"], "done")
+
+    def test_passages_get_refs_and_the_answer_is_checked_against_them(self):
+        model = ScriptedModel([_resp([("search_news_archive", {"question": "ankle"})]),
+                               _resp(text="Limited Wednesday [P1]. Out for the year [P4].")])
+        out = _run(model, FakeMcp())
+        self.assertEqual(out["evidence"][0]["items"][0]["ref"], "P1")
+        self.assertEqual(out["answer"], "Limited Wednesday [P1]. Out for the year.")  # P4 never retrieved
+        self.assertEqual(sorted(p["kind"] for p in out["problems"]), ["uncited", "unknown_ref"])
+        self.assertFalse(out["abstained"])
+
+    def test_cost_includes_retrieval_and_versions_are_stamped(self):
+        model = ScriptedModel([_resp([("search_news_archive", {"question": "ankle"})]),
+                               _resp(text="No archived news found on that.")])
+        mcp = FakeMcp(meta={"retriever": "emb=x;rank=y", "ranked": True, "cost_usd": 0.0011})
+        out = _run(model, mcp)
+        self.assertEqual(out["cost"]["retrieval_usd"], 0.0011)
+        self.assertAlmostEqual(out["cost_usd"], out["cost"]["model_usd"] + 0.0011, places=6)
+        self.assertEqual(out["versions"]["retriever"], "emb=x;rank=y")
+        self.assertEqual(out["versions"]["prompt"], ask.PROMPT_VERSION)
+        self.assertTrue(out["abstained"])
+
+    def test_an_empty_reply_is_empty_not_made_up(self):
+        out = _run(ScriptedModel([_resp(text="")]), FakeMcp())
+        self.assertEqual(out["answer_type"], "empty")
+        self.assertEqual(out["problems"], [])
 
     def test_unknown_tool_is_refused_not_forwarded(self):
         model = ScriptedModel([_resp([("delete_everything", {})]), _resp(text="ok")])

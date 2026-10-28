@@ -30,8 +30,20 @@ Defenses, same rules as the gameday agent:
   - The evidence is returned beside the answer, so the page can show what
     every sentence came from.
 
+THE OUTPUT CONTRACT (citations.py). Every passage a tool returns gets a ref
+-- P1, P2 ... -- before the model sees it, and the model must end each
+factual sentence with the refs it came from. The answer is then parsed and
+checked with no model involved: a ref that was never retrieved is removed
+and flagged, an uncited fact is flagged, a date that none of the cited
+passages carries is flagged, and "No archived news found" is recorded as an
+abstention. Those flags are what the answer eval counts.
+
+Versions: PROMPT_VERSION here and the retriever version from the tools come
+back with every answer and in the log, so any answer can be traced to the
+exact prompt, model and retrieval that produced it.
+
 One JSON log line per question (event=archive_ask): tool calls, tokens,
-cost, seconds. Same pattern as the report job's metric line.
+cost (model + retrieval), citation problems, versions, seconds.
 """
 
 from __future__ import annotations
@@ -41,6 +53,7 @@ import json
 import os
 import time
 
+import citations
 from news import NEWS_MCP_URL, NewsError, session, unfence
 
 MODEL = os.environ.get("ASK_MODEL", "gemini-2.5-flash")
@@ -48,6 +61,8 @@ PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "advisor-agent-2026")
 LOCATION = os.environ.get("ASK_LOCATION", "us-central1")
 MAX_TOOL_CALLS = 4     # history + two searches + one spare is plenty for one question
 MAX_TURNS = MAX_TOOL_CALLS + 2
+# Bump on ANY change to INSTRUCTION: eval results are recorded per version.
+PROMPT_VERSION = "ask-2026-10-28"
 
 INSTRUCTION = """You answer a fantasy football player's question about NFL news, using only an
 archive of dated player notes and stories, through the tools you have.
@@ -59,7 +74,12 @@ How to work:
   player's full name whenever it is about one player. Follow up if the first
   result leaves the question open. You have at most 4 tool calls.
 - Answer ONLY from what the tools returned. If they returned nothing useful,
-  say no archived news was found. Never fill a gap from memory.
+  begin the answer with "No archived news found" and say what you looked
+  for. Never fill a gap from memory.
+- Every note and passage has a `ref` (P1, P2 ...). End EVERY sentence that
+  states a fact with the refs it came from, before the period:
+  "He was limited Wednesday [P2]." Two sources: [P2][P5]. Cite only refs
+  you were given. A sentence about the archive's own limits needs no ref.
 - Say how old each fact is ("10 days ago", "Wed Oct 21") and its source.
   When notes disagree, the newest wins; say so.
 - The archive is a day or more behind live news. If the question is about
@@ -94,12 +114,16 @@ def _declarations(tools) -> list:
 
 
 def _evidence(tool: str, args: dict, result: dict) -> dict:
-    """What one call returned, unfenced for a person to read."""
+    """What one call returned, unfenced for a person to read, refs kept."""
     items = []
     for p in result.get("players", []):
         items += [{**n, "player": p["player"], "text": unfence(n["text"])} for n in p["notes"]]
     items += [{**p, "text": unfence(p["text"])} for p in result.get("passages", [])]
-    return {"tool": tool, "args": args, "status": result.get("status"), "items": items}
+    meta = result.get("meta") or {}
+    return {"tool": tool, "args": args, "status": result.get("status"), "items": items,
+            "retriever": meta.get("retriever"), "ranked": meta.get("ranked"),
+            "fallback": meta.get("fallback"), "ms": meta.get("ms"),
+            "cost_usd": meta.get("cost_usd", 0.0)}
 
 
 async def run(question: str, player: str, lineup: list[str], *, generate, mcp) -> dict:
@@ -115,7 +139,7 @@ async def run(question: str, player: str, lineup: list[str], *, generate, mcp) -
     names = {d.name for d in decls}
     contents = [types.Content(role="user", parts=[types.Part.from_text(
         text=_user_message(question, player, lineup))])]
-    totals, evidence, calls = new_totals(), [], 0
+    totals, evidence, calls, refs = new_totals(), [], 0, {}
 
     for turn in range(MAX_TURNS):
         allow = calls < MAX_TOOL_CALLS and turn < MAX_TURNS - 1
@@ -137,16 +161,28 @@ async def run(question: str, player: str, lineup: list[str], *, generate, mcp) -
                 calls += 1
                 r = await mcp.call_tool(fc.name, args)
                 result = json.loads(r.content[0].text)
+                citations.number_items(result, refs)     # before the model sees it
                 evidence.append(_evidence(fc.name, args, result))
             parts.append(types.Part.from_function_response(name=fc.name, response=result))
         contents.append(types.Content(role="user", parts=parts))
     else:  # pragma: no cover -- the last turn always has tools off
         answer = ""
 
-    return {"answer": answer or "No answer came back. Try asking again.",
-            "tool_calls": calls, "evidence": evidence,
+    if answer:
+        checked = citations.check(answer, [i for e in evidence for i in e["items"]])
+    else:   # an empty reply is its own outcome, not a made-up answer
+        checked = {"answer": "No answer came back. Try asking again.", "claims": [],
+                   "problems": [], "answer_type": "empty", "abstained": False,
+                   "cited_share": None}
+    model_usd = cost_usd(totals, MODEL)
+    retrieval_usd = round(sum(e.get("cost_usd") or 0.0 for e in evidence), 6)
+    return {**checked, "tool_calls": calls, "evidence": evidence,
             "tokens": {k: totals[k] for k in ("input", "output", "thinking")},
-            "cost_usd": cost_usd(totals, MODEL)}
+            "cost_usd": round(model_usd + retrieval_usd, 6),
+            "cost": {"model_usd": model_usd, "retrieval_usd": retrieval_usd},
+            "versions": {"prompt": PROMPT_VERSION, "model": MODEL,
+                         "retriever": next((e["retriever"] for e in evidence
+                                            if e.get("retriever")), None)}}
 
 
 class ArchiveAgent:
@@ -180,7 +216,11 @@ class ArchiveAgent:
         out["elapsed_s"] = round(time.monotonic() - start, 1)
         print(json.dumps({"event": "archive_ask", "uid": uid, "ok": True,
                           "tool_calls": out["tool_calls"], "cost_usd": out["cost_usd"],
-                          "elapsed_s": out["elapsed_s"], **out["tokens"]}), flush=True)
+                          **out["cost"], "elapsed_s": out["elapsed_s"], **out["tokens"],
+                          "answer_type": out["answer_type"], "cited_share": out["cited_share"],
+                          "problems": [p["kind"] for p in out["problems"]],
+                          "fallbacks": [e["fallback"] for e in out["evidence"] if e.get("fallback")],
+                          **{f"{k}_version": v for k, v in out["versions"].items()}}), flush=True)
         return out
 
     async def _ask(self, question, player, lineup):

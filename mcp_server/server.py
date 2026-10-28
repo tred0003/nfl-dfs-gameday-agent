@@ -75,8 +75,8 @@ def player_history(players: list[str]) -> dict:
     "A.J." vs "AJ" are normalised). Team defenses are not covered.
 
     Returns `players`: one entry per name you passed, in your order, each with
-    `notes` newest first (`date`, `days_ago`, `source`, `headline`, `text`;
-    at most 5). An empty `notes` list means the archive has nothing on that
+    `notes` newest first (`id`, `date`, `days_ago`, `source`, `headline`,
+    `text`; at most 5). `id` is stable: cite it to point at the exact note. An empty `notes` list means the archive has nothing on that
     name in four weeks -- possibly a misspelling, never proof he is healthy.
 
     `archive_hours_old` is how old the newest item in the whole archive is.
@@ -97,7 +97,8 @@ def player_history(players: list[str]) -> dict:
                 "message": f"The news archive could not be read ({type(e).__name__}: "
                            f"{str(e)[:150]})."}
     return {"status": "ok", "days": archive.HISTORY_DAYS, **fresh,
-            "players": [{"player": n, "notes": notes_of[n]} for n in names]}
+            "players": [{"player": n, "notes": notes_of[n]} for n in names],
+            "meta": {"retriever": archive.RETRIEVER_VERSION}}
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -110,8 +111,10 @@ def search_news_archive(question: str, player: str = "") -> dict:
     name) whenever the question is about one player; it restricts the search
     to news about him and is far more precise than naming him in `question`.
 
-    Returns up to 6 `passages`, newest first, each with `date`, `days_ago`,
-    `source`, `headline`, `url` and the quoted text. The two newest matching
+    Returns up to 6 `passages`, newest first, each with `id` (stable, for
+    citing), `date`, `days_ago`, `source`, `headline`, `url` and the quoted
+    text. `meta` says which retriever version ran, whether the re-ranker ran
+    (or why it fell back), each stage's milliseconds and the search's cost. The two newest matching
     items are always included, then the closest matches by meaning. Status
     "no_results" means nothing matched -- report that, do not fill the gap.
     """

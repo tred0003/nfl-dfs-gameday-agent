@@ -60,6 +60,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -80,12 +81,34 @@ SEARCH_K = 6
 SEARCH_RECENT = 2        # newest items guaranteed a slot in every search
 SEARCH_LIMIT = 3         # search_news_archive calls per run, like search_news
 RERANK_FETCH = 50        # embedding candidates handed to the re-ranker
-RERANK_MODEL = "semantic-ranker-default@latest"
+# Pinned, not @latest: Google can move @latest under a deployed service, and
+# the offline numbers (embed_tune/) would then describe a ranker nobody runs.
+# -005 is what @latest served on 2026-10-28 (identical scores). CAREFUL: the
+# API accepts ANY model name without an error -- "nonsense-model" and
+# "-999" silently fall back to an older default ranker -- so a typo here is
+# a silent downgrade, not a crash.
+RERANK_MODEL = "semantic-ranker-default-005"
 RERANK_TIMEOUT = 8       # seconds; past it, the embedding's order is used
 # Ranker calls per process per UTC day, a cost ceiling (~$1 per 1,000). Per
 # process, like the web app's Ask limit: news-mcp runs at most 2 instances.
 # Normal use is a few dozen a day; past the cap search keeps working, unranked.
 RERANK_DAILY_CAP = 300
+# One string for "which retriever produced this": embedding model, ranker,
+# window and slot counts. Returned in every tool response and logged, so an
+# answer can be traced to the exact retrieval that built it, and the eval
+# results (embed_tune/) can be matched to the version they measured.
+RETRIEVER_VERSION = (f"emb={EMBED_MODEL};rank={RERANK_MODEL};dated=1;"
+                     f"days={SEARCH_DAYS};k={SEARCH_K};recent={SEARCH_RECENT};fetch={RERANK_FETCH}")
+
+# List prices for one search, so a caller can report the WHOLE cost of an
+# answer, not just its model tokens. Ranking API: $1 per 1,000 queries (a
+# query is up to 100 records; we send 50). Embedding: $0.000025 per 1,000
+# characters. BigQuery on demand: $6.25 per TiB billed (10 MB minimum per
+# query) -- inside the free monthly TiB in practice, reported at list anyway.
+RERANK_USD = 0.001
+EMBED_USD_PER_KCHAR = 0.000025
+BQ_USD_PER_BYTE = 6.25 / 2**40
+
 # The refresh runs daily. Past this, at least one run was missed: the report
 # says so, and the canary fails.
 STALE_HOURS = 36
@@ -179,17 +202,21 @@ def _take_rerank_call() -> bool:
         return True
 
 
-def _rerank(question: str, rows: list[dict]) -> list[dict]:
+def _rerank(question: str, rows: list[dict], stats: dict | None = None) -> list[dict]:
     """`rows` best answer first by the ranker; on any failure, unchanged.
 
     Never raises: the embedding's order is the fallback, so a ranker outage,
     a missing permission or the daily cap makes search a little worse, never
-    broken. Every fallback is logged with its reason."""
+    broken. Every fallback is logged with its reason, and written to `stats`
+    (ranked, fallback) when the caller passes one."""
     global _ranker
+    stats = stats if stats is not None else {}
+    stats.update(ranked=False, fallback=None)
     if len(rows) < 2:
         return rows
     if not _take_rerank_call():
         log.warning("archive_rerank fallback: daily cap of %d reached", RERANK_DAILY_CAP)
+        stats["fallback"] = "daily_cap"
         return rows
     # Dated: the ranker reads text and knows no calendar. Undated, asked when
     # Puka Nacua would be back, it ranked September notes on an old hip injury
@@ -206,7 +233,9 @@ def _rerank(question: str, rows: list[dict]) -> list[dict]:
                               [r["text"] for r in rows], when)
     except Exception as e:  # noqa: BLE001 -- any failure falls back to the embedding's order
         log.warning("archive_rerank fallback: %s: %s", type(e).__name__, str(e)[:200])
+        stats["fallback"] = type(e).__name__
         return rows
+    stats["ranked"] = True
     ranked = [rows[i] for i in order if 0 <= i < len(rows)]
     seen = {id(r) for r in ranked}
     return ranked + [r for r in rows if id(r) not in seen]
@@ -225,7 +254,7 @@ WITH newest AS (
     AND screen = 'clean'
 ),
 tagged AS (
-  SELECT k AS player_key, c.published, c.source, c.headline, c.text
+  SELECT k AS player_key, c.chunk_id, c.published, c.source, c.headline, c.text
   FROM `{TABLE}` c, UNNEST(c.player_keys) AS k
   WHERE k IN UNNEST(@keys)
     AND c.kind = 'player_blurb'
@@ -269,7 +298,8 @@ def _history_rows(keys: list[str], cutoff: datetime, days: int, n: int
 
 
 SEARCH_SQL = f"""
-SELECT base.published, base.kind, base.source, base.headline, base.text, base.url, distance
+SELECT base.chunk_id, base.published, base.kind, base.source, base.headline, base.text,
+       base.url, distance
 FROM VECTOR_SEARCH(
   (SELECT * FROM `{TABLE}`
    WHERE published < @cutoff
@@ -283,7 +313,7 @@ ORDER BY distance
 """
 
 RECENT_SQL = f"""
-SELECT published, kind, source, headline, text, url, CAST(NULL AS FLOAT64) AS distance
+SELECT chunk_id, published, kind, source, headline, text, url, CAST(NULL AS FLOAT64) AS distance
 FROM `{TABLE}`
 WHERE published < @cutoff
   AND published >= TIMESTAMP_SUB(@cutoff, INTERVAL @days DAY)
@@ -299,12 +329,17 @@ PLAYER_FILTER = "AND (@key IN UNNEST(player_keys) OR STRPOS(LOWER(text), @lname)
 
 
 def _search_rows(question: str, player: str | None, cutoff: datetime, days: int,
-                 k: int, recent: int) -> list[dict]:
+                 k: int, recent: int, stats: dict | None = None) -> list[dict]:
     """The `recent` newest matching chunks, then the best answers: the
-    RERANK_FETCH closest by meaning, re-ordered by the ranker (at least k)."""
+    RERANK_FETCH closest by meaning, re-ordered by the ranker (at least k).
+
+    `stats`, when passed, gets each stage's milliseconds, the BigQuery bytes
+    billed, and the ranker's outcome -- the search's own trace."""
     from google.cloud import bigquery
     from google.genai import types
 
+    stats = stats if stats is not None else {}
+    t0 = time.monotonic()
     vec = _embedder().models.embed_content(
         model=EMBED_MODEL, contents=[question],
         config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")).embeddings[0].values
@@ -318,14 +353,34 @@ def _search_rows(question: str, player: str | None, cutoff: datetime, days: int,
         base += [bigquery.ScalarQueryParameter("key", "STRING", keys[0] if keys else ""),
                  bigquery.ScalarQueryParameter("lname", "STRING", player.strip().lower())]
         flt = PLAYER_FILTER
-    newest = [dict(r) for r in _bq().query(
+    t1 = time.monotonic()
+    recent_job = _bq().query(
         RECENT_SQL.format(player=flt), job_config=bigquery.QueryJobConfig(
-            query_parameters=base + [bigquery.ScalarQueryParameter("n", "INT64", recent)])).result()]
-    similar = [dict(r) for r in _bq().query(
+            query_parameters=base + [bigquery.ScalarQueryParameter("n", "INT64", recent)]))
+    newest = [dict(r) for r in recent_job.result()]
+    t2 = time.monotonic()
+    vector_job = _bq().query(
         SEARCH_SQL.format(player=flt), job_config=bigquery.QueryJobConfig(
             query_parameters=base + [bigquery.ScalarQueryParameter("k", "INT64", max(k, RERANK_FETCH)),
-                                     bigquery.ArrayQueryParameter("q", "FLOAT64", list(vec))])).result()]
-    return newest + _rerank(question, similar)
+                                     bigquery.ArrayQueryParameter("q", "FLOAT64", list(vec))]))
+    similar = [dict(r) for r in vector_job.result()]
+    t3 = time.monotonic()
+    ranked = _rerank(question, similar, stats)
+    t4 = time.monotonic()
+    stats.update(
+        ms={"embed": round((t1 - t0) * 1000), "bq_recent": round((t2 - t1) * 1000),
+            "bq_vector": round((t3 - t2) * 1000), "rerank": round((t4 - t3) * 1000)},
+        bq_bytes=sum(int(getattr(j, "total_bytes_billed", 0) or 0) for j in (recent_job, vector_job)),
+        query_chars=len(question), candidates=len(similar))
+    return newest + ranked
+
+
+def search_cost(stats: dict) -> float:
+    """List-price dollars for one search, from its stats: embedding + BigQuery
+    + the ranker when it ran. What a model-token count alone leaves out."""
+    return round(stats.get("query_chars", 0) / 1000 * EMBED_USD_PER_KCHAR
+                 + stats.get("bq_bytes", 0) * BQ_USD_PER_BYTE
+                 + (RERANK_USD if stats.get("ranked") else 0.0), 6)
 
 
 def _clip(text: str, limit: int = NOTE_CHARS) -> str:
@@ -343,8 +398,10 @@ def _when(ts, cutoff: datetime) -> dict:
 
 
 def _note(r: dict, cutoff: datetime, label: str) -> dict:
+    """One dated, fenced item. `id` is the archive's chunk_id: stable across
+    calls, so an answer can cite exactly the passage a sentence came from."""
     from .tools import _fence
-    return {**_when(r["published"], cutoff), "source": r["source"],
+    return {"id": r.get("chunk_id"), **_when(r["published"], cutoff), "source": r["source"],
             "headline": _clip(r.get("headline"), 160),
             "text": _fence(_clip(r["text"]), label=label)}
 
@@ -422,7 +479,8 @@ def get_player_history(tool_context: ToolContext = None) -> dict:
 
     out = [{"player": r["name"], "position": r["position"], "team": r["team"],
             "notes": notes_of[r["name"]]} for _, r in mine.iterrows()]
-    return {"status": "ok", "days": HISTORY_DAYS, **fresh, "players": out}
+    return {"status": "ok", "days": HISTORY_DAYS, **fresh, "players": out,
+            "meta": {"retriever": RETRIEVER_VERSION}}
 
 
 def player_notes(names: list[str], days: int = HISTORY_DAYS, n: int = NOTES_PER_PLAYER
@@ -483,13 +541,18 @@ def search_news_archive(question: str, player: str = "",
     if not question:
         return {"status": "error", "message": "Ask a specific question."}
     cutoff = _now()
+    stats: dict = {}
     try:
         rows = _search_rows(question, player.strip() or None, cutoff,
-                            SEARCH_DAYS, SEARCH_K, SEARCH_RECENT)
+                            SEARCH_DAYS, SEARCH_K, SEARCH_RECENT, stats)
     except Exception as e:  # noqa: BLE001
         return {"status": "error",
                 "message": f"The news archive could not be searched ({type(e).__name__}: "
                            f"{str(e)[:150]})."}
+    # Small on purpose: this reaches the model's context on every call.
+    meta = {"retriever": RETRIEVER_VERSION, "ranked": stats.get("ranked", False),
+            "fallback": stats.get("fallback"), "ms": stats.get("ms", {}),
+            "cost_usd": search_cost(stats)}
 
     seen, kept = set(), []
     for r in rows:
@@ -503,6 +566,7 @@ def search_news_archive(question: str, player: str = "",
     passages = [{**_note(r, cutoff, "Archived passage"), "url": r.get("url")} for r in kept]
     if not passages:
         return {"status": "no_results", "question": question, "player": player or None,
-                "message": "Nothing in the archive matches. Say no archived news was found."}
+                "message": "Nothing in the archive matches. Say no archived news was found.",
+                "meta": meta}
     return {"status": "ok", "question": question, "player": player or None,
-            "days": SEARCH_DAYS, "passages": passages}
+            "days": SEARCH_DAYS, "passages": passages, "meta": meta}

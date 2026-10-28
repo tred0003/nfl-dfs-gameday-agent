@@ -146,6 +146,24 @@ class SearchTest(unittest.TestCase):
         self.assertEqual([p["days_ago"] for p in out["passages"]], [1, 3])
         self.assertEqual(out["passages"][0]["url"], "u2")
 
+    def test_passages_carry_ids_and_the_search_its_version_and_cost(self):
+        rows = [_row(None, 1, "a") | {"chunk_id": "x#0", "url": None}]
+
+        def fake(q, player, cutoff, days, k, recent, stats):
+            stats.update(ranked=True, fallback=None, query_chars=1000, bq_bytes=0,
+                         ms={"embed": 5})
+            return rows
+
+        with mock.patch.object(archive, "_search_rows", fake):
+            out = archive.search_news_archive("q", tool_context=SimpleNamespace(state={}))
+        self.assertEqual(out["passages"][0]["id"], "x#0")
+        self.assertEqual(out["meta"]["retriever"], archive.RETRIEVER_VERSION)
+        self.assertIn("rank=semantic-ranker-default-005", archive.RETRIEVER_VERSION)
+        self.assertNotIn("@latest", archive.RERANK_MODEL)        # pinned, never floating
+        self.assertTrue(out["meta"]["ranked"])
+        self.assertAlmostEqual(out["meta"]["cost_usd"],
+                               archive.RERANK_USD + archive.EMBED_USD_PER_KCHAR, places=6)
+
 
 class _FakeRanker:
     def __init__(self, order=None, error=None):
@@ -194,6 +212,16 @@ class RerankTest(unittest.TestCase):
     def test_rows_the_ranker_leaves_out_are_kept_at_the_end(self):
         self._with(_FakeRanker(order=[1]))
         self.assertEqual([r["text"] for r in archive._rerank("q", self.rows)], ["b", "a", "c"])
+
+    def test_the_outcome_is_recorded_for_the_trace(self):
+        self._with(_FakeRanker(order=[0, 1, 2]))
+        stats = {}
+        archive._rerank("q", self.rows, stats)
+        self.assertEqual(stats, {"ranked": True, "fallback": None})
+        self._with(_FakeRanker(error=TimeoutError("slow")))
+        with self.assertLogs(archive.log, "WARNING"):
+            archive._rerank("q", self.rows, stats)
+        self.assertEqual(stats, {"ranked": False, "fallback": "TimeoutError"})
 
     def test_a_failure_keeps_the_embedding_order(self):
         self._with(_FakeRanker(error=TimeoutError("slow")))

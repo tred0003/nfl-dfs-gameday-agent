@@ -301,8 +301,9 @@ function fillPlayerSelect() {
 
 function noteEl(n) {
   const safeUrl = /^https?:\/\//.test(n.url || "") ? n.url : null;
-  return el("div", { class: "note" },
-    el("div", { class: "when" }, `${n.date} · ${n.days_ago === 0 ? "today" : `${n.days_ago}d ago`} · ${n.source}`,
+  const ref = /^P\d+$/.test(n.ref || "") ? n.ref : null;
+  return el("div", { class: "note", ...(ref ? { id: `ref-${ref}` } : {}) },
+    el("div", { class: "when" }, ref ? el("strong", {}, `[${ref.slice(1)}] `) : null, `${n.date} · ${n.days_ago === 0 ? "today" : `${n.days_ago}d ago`} · ${n.source}`,
        safeUrl ? " · " : null, safeUrl ? el("a", { href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, "article") : null),
     n.headline && !n.text.startsWith(n.headline.replace(/ \.\.\.$/, "")) ? el("div", {}, el("strong", {}, n.headline)) : null,
     el("div", { class: "text" }, n.text));
@@ -344,6 +345,25 @@ function toolLine(e) {
   return `${what} · ${e.items.length} item${e.items.length === 1 ? "" : "s"}`;
 }
 
+// Citations: the answer's [P3] refs (checked server-side by citations.py)
+// become numbered links to the passage in "What it read". Runs on the
+// already-escaped HTML; the pattern only ever emits our own markup.
+function linkRefs(html) {
+  return html.replace(/\[(P\d+(?:\s*,\s*P\d+)*)\]/g, (_, refs) => refs.split(/\s*,\s*/).map(
+    (r) => `<sup><a href="#ref-${r}" class="cite" data-ref="${r}">${r.slice(1)}</a></sup>`).join(""));
+}
+
+function citeLine(data) {
+  const bits = [];
+  if (data.answer_type === "abstained") bits.push("nothing in the archive on this");
+  else if (data.answer_type === "partial") bits.push("partial: the exact answer is not in the archive");
+  if (data.answer_type === "unsupported") bits.push("unsupported: no fact here cites a source");
+  else if (data.cited_share != null && data.answer_type !== "abstained") bits.push(`${Math.round(data.cited_share * 100)}% of facts cited`);
+  const kinds = (data.problems || []).map((p) => p.kind);
+  if (kinds.length) bits.push(`flagged: ${[...new Set(kinds)].join(", ").replace(/_/g, " ")}`);
+  return bits.join(" · ");
+}
+
 // Search: the retriever alone (the same search_news_archive tool the agent
 // calls), so you can see what Ask had to work with before a model touched it.
 function showSearch(data) {
@@ -367,16 +387,27 @@ $("news-ask").addEventListener("submit", (ev) => {
   if (btn && btn.value === "search") return newsCall("/api/news/search", body, showSearch).finally(done);
   newsCall("/api/news/ask", body, (data) => {
     const answer = el("div", { class: "report" });
-    answer.innerHTML = renderReport(data.answer);
+    answer.innerHTML = linkRefs(renderReport(data.answer));
     const evidence = data.evidence.length
-      ? el("details", { style: "margin-top:10px" },
+      ? el("details", { style: "margin-top:10px", id: "evidence" },
           el("summary", { class: "muted" }, `What it read (${data.evidence.length} lookup${data.evidence.length === 1 ? "" : "s"})`),
           ...data.evidence.map((e) => el("div", { class: "news-player" },
             el("div", { class: "muted" }, toolLine(e)), ...e.items.map(noteEl))))
       : el("p", { class: "muted" }, "It answered without looking anything up.");
-    $("news").replaceChildren(answer, evidence,
+    answer.addEventListener("click", (e) => {
+      const a = e.target.closest("a.cite");
+      if (!a) return;
+      e.preventDefault();
+      if (evidence.tagName === "DETAILS") evidence.open = true;
+      const target = document.getElementById(`ref-${a.dataset.ref}`);
+      if (target) { target.scrollIntoView({ behavior: "smooth", block: "center" }); target.classList.add("hit"); setTimeout(() => target.classList.remove("hit"), 1600); }
+    });
+    const cost = data.cost_usd != null ? ` · $${data.cost_usd.toFixed(4)}` : "";
+    $("news").replaceChildren(answer,
+      citeLine(data) ? el("p", { class: "muted", style: "margin-top:6px" }, citeLine(data)) : "",
+      evidence,
       el("p", { class: "muted", style: "margin-top:8px" },
-         `${data.tool_calls} tool call${data.tool_calls === 1 ? "" : "s"} · ${data.elapsed_s ?? "?"} s`));
+         `${data.tool_calls} tool call${data.tool_calls === 1 ? "" : "s"} · ${data.elapsed_s ?? "?"} s${cost}`));
   }).finally(done);
 });
 
