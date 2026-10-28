@@ -62,7 +62,7 @@ class McpServerTest(unittest.TestCase):
             async with Client(server.mcp) as c:
                 return (await c.list_tools()).tools
         tools = asyncio.run(go())
-        self.assertEqual(sorted(t.name for t in tools), ["player_history", "search_news_archive"])
+        self.assertEqual(sorted(t.name for t in tools), ["player_history", "search_news_archive", "search_podcasts"])
         self.assertTrue(all(t.annotations.read_only_hint for t in tools))
 
     def test_history_keeps_every_name_in_order(self):

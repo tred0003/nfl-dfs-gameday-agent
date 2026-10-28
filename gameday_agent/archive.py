@@ -19,6 +19,13 @@ news_rag/refresh.py. Two tools read it:
                         embedding to rank against, and newest-first is the
                         ranking that matters for news.
 
+  search_podcasts       search_news_archive's pipeline over a second table,
+                        dfs.podcast_chunks (podcast_rag/): what four NFL
+                        podcasts' hosts SAID. Kept out of news search on
+                        purpose -- mixed in, podcast takes pushed the newest
+                        news report out of the top 6 (newest@6 0.612 -> 0.563
+                        on the gate, 2026-10-28). Not an agent tool yet.
+
   search_news_archive   OPTIONAL -- the model calls it with a question, e.g.
                         about a replacement candidate it is weighing. This is
                         the retrieval part: metadata does precision (player,
@@ -72,6 +79,7 @@ from google.adk.tools import ToolContext
 from predict_slate import normalize_name, resolve_lineup
 
 TABLE = os.environ.get("NEWS_TABLE", "fantasy-football-ml-503718.dfs.news_chunks")
+PODCAST_TABLE = os.environ.get("PODCAST_TABLE", "fantasy-football-ml-503718.dfs.podcast_chunks")
 EMBED_MODEL = "text-embedding-005"
 EMBED_LOCATION = os.environ.get("EMBED_LOCATION", "us-central1")
 
@@ -341,7 +349,7 @@ SEARCH_SQL = f"""
 SELECT base.chunk_id, base.published, base.kind, base.source, base.headline, base.text,
        base.url, distance
 FROM VECTOR_SEARCH(
-  (SELECT * FROM `{TABLE}`
+  (SELECT * FROM `{{table}}`
    WHERE published < @cutoff
      AND published >= TIMESTAMP_SUB(@cutoff, INTERVAL @days DAY)
      AND screen = 'clean'
@@ -354,7 +362,7 @@ ORDER BY distance
 
 RECENT_SQL = f"""
 SELECT chunk_id, published, kind, source, headline, text, url, CAST(NULL AS FLOAT64) AS distance
-FROM `{TABLE}`
+FROM `{{table}}`
 WHERE published < @cutoff
   AND published >= TIMESTAMP_SUB(@cutoff, INTERVAL @days DAY)
   AND screen = 'clean'
@@ -369,7 +377,7 @@ PLAYER_FILTER = "AND (@key IN UNNEST(player_keys) OR STRPOS(LOWER(text), @lname)
 
 
 def _search_rows(question: str, player: str | None, cutoff: datetime, days: int,
-                 k: int, recent: int, stats: dict | None = None) -> list[dict]:
+                 k: int, recent: int, stats: dict | None = None, table: str = TABLE) -> list[dict]:
     """The `recent` newest matching chunks, then the best answers: the
     RERANK_FETCH closest by meaning, re-ordered by the ranker (at least k).
 
@@ -397,14 +405,14 @@ def _search_rows(question: str, player: str | None, cutoff: datetime, days: int,
     # its own. Kept because it is free, not because it was a big win.
     t0 = time.monotonic()
     recent_job = _bq().query(
-        RECENT_SQL.format(player=flt), job_config=bigquery.QueryJobConfig(
+        RECENT_SQL.format(player=flt, table=table), job_config=bigquery.QueryJobConfig(
             query_parameters=base + [bigquery.ScalarQueryParameter("n", "INT64", recent)]))
     vec = _embedder().models.embed_content(
         model=EMBED_MODEL, contents=[question],
         config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")).embeddings[0].values
     t1 = time.monotonic()
     vector_job = _bq().query(
-        SEARCH_SQL.format(player=flt), job_config=bigquery.QueryJobConfig(
+        SEARCH_SQL.format(player=flt, table=table), job_config=bigquery.QueryJobConfig(
             query_parameters=base + [bigquery.ScalarQueryParameter("k", "INT64", max(k, RERANK_FETCH)),
                                      bigquery.ArrayQueryParameter("q", "FLOAT64", list(vec))]))
     # A bound on each wait, so a stuck query fails this search instead of
@@ -452,6 +460,15 @@ def _note(r: dict, cutoff: datetime, label: str) -> dict:
     return {"id": r.get("chunk_id"), **_when(r["published"], cutoff), "source": r["source"],
             "headline": _clip(r.get("headline"), 160),
             "text": _fence(_clip(r["text"]), label=label)}
+
+
+def _body(r: dict) -> dict:
+    """A podcast chunk without its "Show: Episode title. " prefix. The prefix is
+    there for the embedding (news stories carry their headline the same way);
+    returned, it is already in `headline`, and it would eat a quarter of the
+    NOTE_CHARS a passage gets."""
+    head = f"{r.get('headline') or ''}. "
+    return r | {"text": r["text"][len(head):]} if r["text"].startswith(head) else r
 
 
 def _freshness(newest, cutoff: datetime) -> dict:
@@ -577,13 +594,43 @@ def search_news_archive(question: str, player: str = "",
     `injury_status` or get_team_news, the newer source wins; say how old a
     passage is when you use it.
     """
+    return _search(question, player, tool_context, table=TABLE, calls_key="archive_search_calls",
+                   label="Archived passage", what="news archive",
+                   empty="Nothing in the archive matches. Say no archived news was found.")
+
+
+def search_podcasts(question: str, player: str = "",
+                    tool_context: ToolContext = None) -> dict:
+    """Search what NFL podcast hosts said in the last six weeks, with a specific question.
+
+    The Ringer Fantasy Football Show, The Ringer NFL Show, and the NFL parts
+    of The Bill Simmons Podcast and The Ryen Russillo Show, transcribed. Use
+    it for analysis and opinion -- how analysts read a player's role, a
+    team's direction, a trade -- not for injury status or transactions, where
+    news is the source. Pass `player` (full name) when the question is about
+    one player.
+
+    Returns `passages` like search_news_archive, `source` being the show and
+    `headline` the episode. These are machine transcripts: player names were
+    written in full ("JSN" becomes "Jaxon Smith-Njigba"), so the text is close
+    to, not exactly, what was said. Say a podcast passage is a host's view,
+    and how old it is.
+    """
+    return _search(question, player, tool_context, table=PODCAST_TABLE,
+                   calls_key="podcast_search_calls", label="Podcast passage",
+                   what="podcast archive",
+                   empty="Nothing in the podcast archive matches. Say no podcast discussion was found.")
+
+
+def _search(question: str, player: str, tool_context, *, table: str, calls_key: str,
+            label: str, what: str, empty: str) -> dict:
     state = getattr(tool_context, "state", None)
-    used = int(state.get("archive_search_calls", 0)) if state is not None else 0
+    used = int(state.get(calls_key, 0)) if state is not None else 0
     if used >= SEARCH_LIMIT:
-        return {"status": "error", "message": f"Archive search limit ({SEARCH_LIMIT}) "
+        return {"status": "error", "message": f"{'Archive' if table == TABLE else 'Podcast'} search limit ({SEARCH_LIMIT}) "
                 "reached for this run. Work with what you have."}
     if state is not None:
-        state["archive_search_calls"] = used + 1
+        state[calls_key] = used + 1
 
     question = (question or "").strip()
     if not question:
@@ -591,11 +638,15 @@ def search_news_archive(question: str, player: str = "",
     cutoff = _now()
     stats: dict = {}
     try:
+        # No guaranteed newest slots for podcasts: in news the newest item is
+        # usually the status that matters; in a podcast it is whatever the
+        # hosts said last -- a JSN question got two chunks of college-QB talk.
+        recent = SEARCH_RECENT if table == TABLE else 0
         rows = _search_rows(question, player.strip() or None, cutoff,
-                            SEARCH_DAYS, SEARCH_K, SEARCH_RECENT, stats)
+                            SEARCH_DAYS, SEARCH_K, recent, stats, table)
     except Exception as e:  # noqa: BLE001
         return {"status": "error",
-                "message": f"The news archive could not be searched ({type(e).__name__}: "
+                "message": f"The {what} could not be searched ({type(e).__name__}: "
                            f"{str(e)[:150]})."}
     # Small on purpose: this reaches the model's context on every call.
     meta = {"retriever": RETRIEVER_VERSION, "ranked": stats.get("ranked", False),
@@ -606,7 +657,8 @@ def search_news_archive(question: str, player: str = "",
     # counts the lines with a fallback, and an alert fires on its rate.
     # STDERR, not stdout: under `server.py --stdio` stdout is the MCP
     # protocol channel, and a stray line there breaks the client.
-    print(json.dumps({"event": "archive_search", "player": bool(player.strip()),
+    print(json.dumps({"event": "archive_search", "table": table.rsplit(".", 1)[-1],
+                      "player": bool(player.strip()),
                       "candidates": stats.get("candidates"), "bq_bytes": stats.get("bq_bytes"),
                       **meta}), file=sys.stderr, flush=True)
 
@@ -619,10 +671,11 @@ def search_news_archive(question: str, player: str = "",
         if len(kept) >= SEARCH_K:
             break
     kept.sort(key=lambda r: pd.Timestamp(r["published"]), reverse=True)
-    passages = [{**_note(r, cutoff, "Archived passage"), "url": r.get("url")} for r in kept]
+    passages = [{**_note(_body(r) if table == PODCAST_TABLE else r, cutoff, label),
+                 "url": r.get("url")} for r in kept]
     if not passages:
         return {"status": "no_results", "question": question, "player": player or None,
-                "message": "Nothing in the archive matches. Say no archived news was found.",
+                "message": empty,
                 "meta": meta}
     return {"status": "ok", "question": question, "player": player or None,
             "days": SEARCH_DAYS, "passages": passages, "meta": meta}

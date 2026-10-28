@@ -100,6 +100,12 @@ function body() {
   return { question: $("q").value.trim(), player: $("player").value };
 }
 
+// Search reads news or the podcast transcripts; Ask always answers from news
+// (mixed in, podcast takes pushed the newest news out of its sources).
+function searchBody() {
+  return { ...body(), source: $("src").value };
+}
+
 async function ask() {
   const b = body();
   if (!b.question || inflight) return;
@@ -112,9 +118,9 @@ async function ask() {
 }
 
 async function search() {
-  const b = body();
+  const b = searchBody();
   if (!b.question || inflight) return;
-  busy(true, "Searching the archive…");
+  busy(true, b.source === "podcasts" ? "Searching the podcasts…" : "Searching the archive…");
   try {
     showSearch(await api("POST", "/api/news/search", b));
   } catch (e) {
@@ -136,7 +142,9 @@ function sourceEl(item, cited) {
   return el("div", { class: `src${cited ? " cited" : ""}`, id: `src-${item.ref}` },
     el("div", { class: "when" }, el("span", { class: "n" }, item.ref.slice(1)),
        `${item.date} · ${ago(item.days_ago)} · ${item.source}`, item.player ? ` · ${item.player}` : null,
-       url ? " · " : null, url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, "article") : null),
+       url ? " · " : null,
+       url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer" },
+                /#t=\d+$/.test(url) ? `listen from ${clock(url.match(/#t=(\d+)$/)[1])}` : "article") : null),
     item.headline && !String(item.text).startsWith(String(item.headline).replace(/ \.\.\.$/, ""))
       ? el("div", {}, el("strong", {}, item.headline)) : null,
     el("div", { class: "text" }, item.text));
@@ -240,14 +248,21 @@ function showAnswer(data, asked) {
   $("out").replaceChildren(el("div", { class: "grid" }, left, right));
 }
 
+function clock(sec) {
+  const s = Number(sec), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return `${h ? `${h}:${String(m).padStart(2, "0")}` : m}:${String(s % 60).padStart(2, "0")}`;
+}
+
 function showSearch(data) {
   const hits = (data.passages || []).map((p, k) => ({ ...p, ref: `P${k + 1}` }));
+  const pods = (hits[0] && /^pod:/.test(hits[0].id || "")) || $("src").value === "podcasts";
   const m = data.meta || {};
   const how = [m.ranked ? "ranked by the Vertex AI Ranking API" : `embedding order (ranker: ${m.fallback || "not run"})`,
                "shown newest first", "no AI wrote anything here"];
   if (m.ms) how.push(`${m.ms.embed + m.ms.bq_recent + m.ms.bq_vector + m.ms.rerank} ms`);
   $("out").replaceChildren(el("div", { class: "card" },
-    el("h2", {}, `Search: ${hits.length} passage${hits.length === 1 ? "" : "s"}${data.player ? ` about ${data.player}` : ""}`),
+    el("h2", {}, `${pods ? "Podcasts" : "Search"}: ${hits.length} passage${hits.length === 1 ? "" : "s"}${data.player ? ` about ${data.player}` : ""}`),
     el("p", { class: "muted", style: "margin-top:0" }, how.join(" · ")),
-    ...(hits.length ? hits.map((h) => sourceEl(h, false)) : [el("p", {}, "Nothing in the archive matches.")])));
+    pods ? el("div", { class: "banner" }, "Hosts' opinions, machine-transcribed. Player names are written out in full, so a quote is close to, not exactly, what was said. For injury status, search News.") : null,
+    ...(hits.length ? hits.map((h) => sourceEl(h, false)) : [el("p", {}, pods ? "Nothing in the podcasts matches." : "Nothing in the archive matches.")])));
 }

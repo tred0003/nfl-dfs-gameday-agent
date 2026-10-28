@@ -66,8 +66,8 @@ class FakeNews:
             raise NewsError("ConnectError: unreachable")
         return {"status": "ok", "players": [{"player": n, "notes": []} for n in players]}
 
-    def search(self, question, player=""):
-        self.calls.append(("search", question, player))
+    def search(self, question, player="", source="news"):
+        self.calls.append(("search", question, player) + ((source,) if source != "news" else ()))
         if self.fail:
             raise NewsError("ConnectError: unreachable")
         return {"status": "ok", "question": question, "player": player or None,
@@ -206,6 +206,16 @@ class WebAppTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json()["passages"][0]["text"], "Limited Wednesday.")
         self.assertEqual(self.news.calls, [("search", "ankle?", "Justin Jefferson")])
+
+    def test_search_can_read_the_podcasts_and_nothing_else(self):
+        r = self.client.post("/api/news/search", headers=bearer("u2"),
+                             json={"question": "role?", "source": "podcasts"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.news.calls, [("search", "role?", "", "podcasts")])
+        r = self.client.post("/api/news/search", headers=bearer("u2"),
+                             json={"question": "role?", "source": "reddit"})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(len(self.news.calls), 1)
         self.assertEqual(self.agent.calls, [])        # no model in the loop
 
     def test_search_and_ask_limits_are_separate(self):

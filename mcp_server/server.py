@@ -1,4 +1,4 @@
-"""The news archive as an MCP server: the agent's two archive tools, for any client.
+"""The news archive as an MCP server: the agent's archive tools, for any client.
 
 MCP (Model Context Protocol) is a standard way to publish tools. A tool
 written once is listed and called the same way by Claude Code, Gemini CLI,
@@ -21,6 +21,11 @@ has none of that context, so the descriptions below are written for them:
                         limit: that limit lives in the agent's session state,
                         and an MCP call has no run to count against. The
                         service is IAM-only, so the callers are known.
+
+  search_podcasts       archive.search_podcasts: the same search over the
+                        podcast transcripts (podcast_rag/), kept apart from
+                        news because mixing them cost news search its
+                        newest-report hits.
 
 Transport: streamable HTTP on Cloud Run, stateless (no session pinned to one
 instance, so Cloud Run can scale it to zero and back), JSON responses. Auth
@@ -119,6 +124,26 @@ def search_news_archive(question: str, player: str = "") -> dict:
     "no_results" means nothing matched -- report that, do not fill the gap.
     """
     return archive.search_news_archive(question, player)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def search_podcasts(question: str, player: str = "") -> dict:
+    """Search what NFL podcast hosts said in the last six weeks.
+
+    Four shows, transcribed: The Ringer Fantasy Football Show, The Ringer NFL
+    Show, and the NFL segments of The Bill Simmons Podcast and The Ryen
+    Russillo Show. Good for analysis and opinion -- "how are people reading
+    his role", "is this team selling at the deadline" -- not for injury
+    status or transactions; search_news_archive is the source for those.
+    Pass `player` (full name) when the question is about one player.
+
+    Returns up to 6 `passages`, newest first, shaped like
+    search_news_archive's: `source` is the show, `headline` the episode, and
+    `url` the episode audio with `#t=<seconds>` at the passage. Transcripts
+    are machine-made and spell players' names in full, so quote them as a
+    host's view, close to but not exactly what was said.
+    """
+    return archive.search_podcasts(question, player)
 
 
 def main() -> None:

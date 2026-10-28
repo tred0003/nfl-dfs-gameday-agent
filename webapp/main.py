@@ -12,7 +12,8 @@ Firestore the 12:30 job writes to (src/user_store.py):
     GET  /api/slate      this week's player pool, to click players from
     GET  /api/suggested  the optimizer's top lineups for this week
     POST /api/news/history  four weeks of archived notes on named players
-    POST /api/news/search   a question, answered by the retriever alone (ranked passages)
+    POST /api/news/search   a question, answered by the retriever alone (ranked passages);
+                            "source": "podcasts" searches the podcast transcripts instead
     POST /api/news/ask      a question, answered from the archive with cited passages
     POST /api/news/feedback thumbs up/down and "wrong citation" on one of YOUR answers
     GET  /news              the News desk page (static/news.html)
@@ -258,9 +259,12 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
     def news_search():
         user = current_user()
         question, player = read_question()
+        source = (request.get_json(silent=True) or {}).get("source", "news")
+        if source not in ("news", "podcasts"):
+            abort(400, 'source is "news" or "podcasts"')
         spend(user.uid, "search", SEARCH_LIMIT, "searches")
         try:
-            return jsonify(news.search(question, player))
+            return jsonify(news.search(question, player, source))
         except NewsError as e:
             abort(503, f"the news archive could not be searched ({e})")
 

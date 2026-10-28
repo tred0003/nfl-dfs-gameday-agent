@@ -31,7 +31,7 @@
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
   .fresh { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 6px 0 14px; }
   .fresh .stale { color: var(--bad); font-weight: 600; }
-  form.ask { display: grid; grid-template-columns: 1fr 210px auto auto; gap: 8px; }
+  form.ask { display: grid; grid-template-columns: 1fr 210px 120px auto auto; gap: 8px; }
   @media (max-width: 680px) { form.ask { grid-template-columns: 1fr 1fr; } form.ask input { grid-column: 1 / -1; } }
   input, select, textarea { padding: 10px 11px; border: 1px solid var(--line); border-radius: 7px;
                             background: var(--bg); color: var(--text); font: inherit; width: 100%; }
@@ -84,13 +84,17 @@
   </section>
 
   <section id="app" hidden>
-    <div class="fresh" id="fresh"><span>Archive: ESPN player notes (RotoWire) and stories since training camp, refreshed daily</span></div>
+    <div class="fresh" id="fresh"><span>Archive: ESPN player notes (RotoWire) and stories since training camp, refreshed daily. Podcasts (Search only): four NFL shows, last 20 episodes each, not yet refreshed daily</span></div>
 
     <div class="card">
       <form id="ask" class="ask">
         <input id="q" type="search" maxlength="300" aria-label="Question" autocomplete="off"
                placeholder="Ask about NFL news, e.g. is his hamstring a recurring problem?">
         <select id="player" aria-label="Player"></select>
+        <select id="src" aria-label="Search in" title="What Search reads. Ask always answers from news.">
+          <option value="news">News</option>
+          <option value="podcasts">Podcasts</option>
+        </select>
         <button type="submit" value="search" title="The retriever alone: ranked passages, no AI">Search</button>
         <button class="primary" type="submit" value="ask" title="Cited answer from the archive">Ask</button>
       </form>

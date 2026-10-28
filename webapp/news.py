@@ -59,9 +59,11 @@ class McpNews:
                 n["text"] = unfence(n["text"])
         return out
 
-    def search(self, question: str, player: str = "") -> dict:
-        """The retriever alone: ranked passages, no model reading them."""
-        out = self._call("search_news_archive", {"question": question, "player": player})
+    def search(self, question: str, player: str = "", source: str = "news") -> dict:
+        """The retriever alone: ranked passages, no model reading them.
+        `source` is "news" or "podcasts" -- two tools, two tables, one search."""
+        tool = "search_podcasts" if source == "podcasts" else "search_news_archive"
+        out = self._call(tool, {"question": question, "player": player})
         for p in out.get("passages", []):
             p["text"] = unfence(p["text"])
         return out

@@ -20,9 +20,9 @@ COPY gameday_agent/ ./gameday_agent/
 COPY mcp_server/ ./mcp_server/
 
 # Fail the BUILD, not the first call, if an import is missing -- and if the
-# tool list is not the two tools the docs promise.
+# tool list is not the three tools the docs promise.
 RUN python -c "import asyncio, sys; sys.path.insert(0, '.'); from mcp_server.server import mcp; \
 names = sorted(t.name for t in asyncio.run(mcp.list_tools())); print(names); \
-assert names == ['player_history', 'search_news_archive'], names"
+assert names == ['player_history', 'search_news_archive', 'search_podcasts'], names"
 
 CMD ["python", "mcp_server/server.py"]

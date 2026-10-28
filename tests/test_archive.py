@@ -149,7 +149,7 @@ class SearchTest(unittest.TestCase):
     def test_passages_carry_ids_and_the_search_its_version_and_cost(self):
         rows = [_row(None, 1, "a") | {"chunk_id": "x#0", "url": None}]
 
-        def fake(q, player, cutoff, days, k, recent, stats):
+        def fake(q, player, cutoff, days, k, recent, stats, *_):
             stats.update(ranked=True, fallback=None, query_chars=1000, bq_bytes=0,
                          ms={"embed": 5})
             return rows
@@ -163,6 +163,26 @@ class SearchTest(unittest.TestCase):
         self.assertTrue(out["meta"]["ranked"])
         self.assertAlmostEqual(out["meta"]["cost_usd"],
                                archive.RERANK_USD + archive.EMBED_USD_PER_KCHAR, places=6)
+
+    def test_podcast_search_reads_its_own_table_with_its_own_limit(self):
+        tables = []
+
+        def fake(q, player, cutoff, days, k, recent, stats, table):
+            tables.append(table)
+            return [_row(None, 2, "x") | {"headline": "The Ringer NFL Show: Week 7",
+                                          "text": "The Ringer NFL Show: Week 7. He looks done.",
+                                          "chunk_id": "pod:ringer-nfl:abc@600#1", "url": "a.mp3#t=640"}]
+
+        ctx = SimpleNamespace(state={"archive_search_calls": archive.SEARCH_LIMIT})
+        with mock.patch.object(archive, "_search_rows", fake):
+            out = archive.search_podcasts("is he done?", tool_context=ctx)
+            self.assertEqual(archive.search_news_archive("q", tool_context=ctx)["status"], "error")
+        self.assertEqual(out["status"], "ok")             # news calls used up, podcasts not
+        self.assertEqual(tables, [archive.PODCAST_TABLE])
+        self.assertNotEqual(archive.PODCAST_TABLE, archive.TABLE)
+        self.assertNotIn("Week 7.", out["passages"][0]["text"])    # prefix is in `headline`
+        self.assertIn("He looks done.", out["passages"][0]["text"])
+        self.assertEqual(ctx.state["podcast_search_calls"], 1)
 
     def test_the_search_log_line_goes_to_stderr_never_stdout(self):
         # stdout is the MCP protocol channel under `server.py --stdio`.
