@@ -1,0 +1,162 @@
+{
+ "400/0%": {
+  "open": {
+   "hit_strict": 0.64,
+   "hit_loose": 1.0,
+   "recall_strict": 0.306,
+   "recall_loose": 0.66,
+   "first_strict": 3185.307,
+   "first_loose": 238.347,
+   "n": 150
+  },
+  "player": {
+   "hit_strict": 0.764,
+   "hit_loose": 1.0,
+   "recall_strict": 0.402,
+   "recall_loose": 0.688,
+   "first_strict": 2353.618,
+   "first_loose": 241.7,
+   "n": 110
+  }
+ },
+ "800/0%": {
+  "open": {
+   "hit_strict": 0.66,
+   "hit_loose": 0.987,
+   "recall_strict": 0.316,
+   "recall_loose": 0.599,
+   "first_strict": 3147.927,
+   "first_loose": 378.74,
+   "n": 150
+  },
+  "player": {
+   "hit_strict": 0.791,
+   "hit_loose": 1.0,
+   "recall_strict": 0.407,
+   "recall_loose": 0.643,
+   "first_strict": 2297.727,
+   "first_loose": 255.745,
+   "n": 110
+  }
+ },
+ "1200/0%": {
+  "open": {
+   "hit_strict": 0.987,
+   "hit_loose": 0.987,
+   "recall_strict": 0.547,
+   "recall_loose": 0.547,
+   "first_strict": 410.867,
+   "first_loose": 410.867,
+   "n": 150
+  },
+  "player": {
+   "hit_strict": 1.0,
+   "hit_loose": 1.0,
+   "recall_strict": 0.606,
+   "recall_loose": 0.606,
+   "first_strict": 303.436,
+   "first_loose": 303.436,
+   "n": 110
+  }
+ },
+ "2000/0%": {
+  "open": {
+   "hit_strict": 0.953,
+   "hit_loose": 0.973,
+   "recall_strict": 0.437,
+   "recall_loose": 0.512,
+   "first_strict": 704.32,
+   "first_loose": 491.44,
+   "n": 150
+  },
+  "player": {
+   "hit_strict": 0.964,
+   "hit_loose": 0.991,
+   "recall_strict": 0.504,
+   "recall_loose": 0.561,
+   "first_strict": 606.727,
+   "first_loose": 331.864,
+   "n": 110
+  }
+ },
+ "400/15%": {
+  "open": {
+   "hit_strict": 0.64,
+   "hit_loose": 1.0,
+   "recall_strict": 0.305,
+   "recall_loose": 0.649,
+   "first_strict": 3248.833,
+   "first_loose": 248.213,
+   "n": 150
+  },
+  "player": {
+   "hit_strict": 0.764,
+   "hit_loose": 1.0,
+   "recall_strict": 0.398,
+   "recall_loose": 0.681,
+   "first_strict": 2431.827,
+   "first_loose": 232.264,
+   "n": 110
+  }
+ },
+ "800/15%": {
+  "open": {
+   "hit_strict": 0.653,
+   "hit_loose": 0.993,
+   "recall_strict": 0.308,
+   "recall_loose": 0.594,
+   "first_strict": 3224.06,
+   "first_loose": 360.127,
+   "n": 150
+  },
+  "player": {
+   "hit_strict": 0.773,
+   "hit_loose": 0.991,
+   "recall_strict": 0.403,
+   "recall_loose": 0.632,
+   "first_strict": 2418.691,
+   "first_loose": 309.491,
+   "n": 110
+  }
+ },
+ "1200/15%": {
+  "open": {
+   "hit_strict": 0.913,
+   "hit_loose": 0.98,
+   "recall_strict": 0.413,
+   "recall_loose": 0.536,
+   "first_strict": 1170.467,
+   "first_loose": 426.78,
+   "n": 150
+  },
+  "player": {
+   "hit_strict": 0.973,
+   "hit_loose": 1.0,
+   "recall_strict": 0.512,
+   "recall_loose": 0.594,
+   "first_strict": 647.6,
+   "first_loose": 290.955,
+   "n": 110
+  }
+ },
+ "2000/15%": {
+  "open": {
+   "hit_strict": 0.967,
+   "hit_loose": 0.98,
+   "recall_strict": 0.441,
+   "recall_loose": 0.522,
+   "first_strict": 674.213,
+   "first_loose": 467.64,
+   "n": 150
+  },
+  "player": {
+   "hit_strict": 0.973,
+   "hit_loose": 0.991,
+   "recall_strict": 0.509,
+   "recall_loose": 0.57,
+   "first_strict": 502.618,
+   "first_loose": 307.891,
+   "n": 110
+  }
+ }
+}

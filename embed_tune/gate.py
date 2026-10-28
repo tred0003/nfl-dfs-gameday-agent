@@ -104,6 +104,7 @@ def run() -> dict:
             n = newest_current(q["qid"])
             newest = None if n is None else _day(n) in got
         return {"qid": q["qid"], "hit": hit, "newest": newest,
+                "ids": [p["id"] for p in out.get("passages", [])],   # podcast ids start "pod:"
                 "ranked": out.get("meta", {}).get("ranked"),
                 "fallback": out.get("meta", {}).get("fallback")}
 

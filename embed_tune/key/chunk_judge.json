@@ -1,0 +1,56 @@
+{
+ "400/0%": {
+  "open": {
+   "hit": 1.0,
+   "sources": 4.68,
+   "answer_share": 0.431,
+   "first": 302.647,
+   "passages": 15.66,
+   "n": 150
+  },
+  "player": {
+   "hit": 0.991,
+   "sources": 5.064,
+   "answer_share": 0.452,
+   "first": 329.955,
+   "passages": 14.573,
+   "n": 110
+  }
+ },
+ "800/0%": {
+  "open": {
+   "hit": 0.993,
+   "sources": 4.107,
+   "answer_share": 0.495,
+   "first": 375.88,
+   "passages": 10.387,
+   "n": 150
+  },
+  "player": {
+   "hit": 1.0,
+   "sources": 4.6,
+   "answer_share": 0.509,
+   "first": 241.882,
+   "passages": 10.282,
+   "n": 110
+  }
+ },
+ "1200/0%": {
+  "open": {
+   "hit": 0.987,
+   "sources": 3.893,
+   "answer_share": 0.557,
+   "first": 381.5,
+   "passages": 8.68,
+   "n": 150
+  },
+  "player": {
+   "hit": 1.0,
+   "sources": 4.409,
+   "answer_share": 0.575,
+   "first": 267.182,
+   "passages": 8.791,
+   "n": 110
+  }
+ }
+}
