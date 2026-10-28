@@ -1,0 +1,82 @@
+{
+ "embedding only (005)": {
+  "open": {
+   "questions": 105,
+   "ndcg10_undated_key": 0.687,
+   "ndcg10_dated_key": 0.41,
+   "newest_at_6": 0.272,
+   "newest_n": 103
+  },
+  "player": {
+   "questions": 90,
+   "ndcg10_undated_key": 0.737,
+   "ndcg10_dated_key": 0.439,
+   "newest_at_6": 0.307,
+   "newest_n": 88
+  }
+ },
+ "ranker, undated": {
+  "open": {
+   "questions": 105,
+   "ndcg10_undated_key": 0.841,
+   "ndcg10_dated_key": 0.584,
+   "newest_at_6": 0.447,
+   "newest_n": 103
+  },
+  "player": {
+   "questions": 90,
+   "ndcg10_undated_key": 0.861,
+   "ndcg10_dated_key": 0.612,
+   "newest_at_6": 0.443,
+   "newest_n": 88
+  }
+ },
+ "ranker, dated (shipped)": {
+  "open": {
+   "questions": 105,
+   "ndcg10_undated_key": 0.806,
+   "ndcg10_dated_key": 0.56,
+   "newest_at_6": 0.495,
+   "newest_n": 103
+  },
+  "player": {
+   "questions": 90,
+   "ndcg10_undated_key": 0.841,
+   "ndcg10_dated_key": 0.615,
+   "newest_at_6": 0.545,
+   "newest_n": 88
+  }
+ },
+ "gemini-embedding-001 + ranker": {
+  "open": {
+   "questions": 105,
+   "ndcg10_undated_key": 0.86,
+   "ndcg10_dated_key": 0.602,
+   "newest_at_6": 0.408,
+   "newest_n": 103
+  },
+  "player": {
+   "questions": 90,
+   "ndcg10_undated_key": 0.865,
+   "ndcg10_dated_key": 0.613,
+   "newest_at_6": 0.42,
+   "newest_n": 88
+  }
+ },
+ "shipped search (end to end)": {
+  "player": {
+   "questions": 110,
+   "hit_at_6": 0.991,
+   "time_sensitive_hit_at_6_dated_key": 0.844,
+   "newest_at_6": 0.511,
+   "newest_n": 88
+  },
+  "open": {
+   "questions": 40,
+   "hit_at_6": 0.95,
+   "time_sensitive_hit_at_6_dated_key": 1.0,
+   "newest_at_6": 0.267,
+   "newest_n": 15
+  }
+ }
+}

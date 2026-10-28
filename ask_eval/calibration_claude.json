@@ -1,0 +1,242 @@
+{
+ "c00": {
+  "score": 2,
+  "why": "Correctly says no archived news for a prediction."
+ },
+ "c01": {
+  "score": 1,
+  "why": "Uses Thursday limited reports; misses Friday: no designations for all."
+ },
+ "c02": {
+  "score": 2,
+  "why": "Cleared concussion protocol, playing through minor injuries; matches newest."
+ },
+ "c03": {
+  "score": 2,
+  "why": "Correctly says nothing found."
+ },
+ "c04": {
+  "score": 2,
+  "why": "Rib injury from Cardinals hit; matches references."
+ },
+ "c05": {
+  "score": 1,
+  "why": "Workhorse role disputed; overstates Washington cut, ignores hefty-workload framing."
+ },
+ "c06": {
+  "score": 2,
+  "why": "2027 fifth and 2028 second for Jurgens plus seventh; correct."
+ },
+ "c07": {
+  "score": 0,
+  "why": "Calls Mayer depth option; newest says consistent room for both, outpaced Bowers."
+ },
+ "c08": {
+  "score": 0,
+  "why": "Eagles game already played Sep 28; he played. Treats as future."
+ },
+ "c09": {
+  "score": 2,
+  "why": "24/34, 247 yds, 2 TD plus rushing TD; correct."
+ },
+ "c10": {
+  "score": 2,
+  "why": "6-77-1 on nine targets with Mariota; correct."
+ },
+ "c11": {
+  "score": 0,
+  "why": "Says nothing found; references explain late-game defensive collapses, no Collins."
+ },
+ "c12": {
+  "score": 2,
+  "why": "Matches newest: inconsistency, worst start since 1989."
+ },
+ "c13": {
+  "score": 2,
+  "why": "Wilson leads, Holani backup; correct."
+ },
+ "c14": {
+  "score": 2,
+  "why": "Jalon Daniels started with Mayfield out; correct."
+ },
+ "c15": {
+  "score": 2,
+  "why": "Active and played vs Steelers Week 5; correct."
+ },
+ "c16": {
+  "score": 2,
+  "why": "Did not return after hamstring injury; correct."
+ },
+ "c17": {
+  "score": 0,
+  "why": "Says nothing found; he returned and played in London vs Colts."
+ },
+ "c18": {
+  "score": 2,
+  "why": "Reports newest: no timeline, not returning to practice this week."
+ },
+ "c19": {
+  "score": 2,
+  "why": "Reference has nothing for this week; reports latest Week 5 status."
+ },
+ "c20": {
+  "score": 0,
+  "why": "Says nothing found; many references discuss possible Barkley trade."
+ },
+ "c21": {
+  "score": 1,
+  "why": "Says active, misses that he played zero snaps vs Denver."
+ },
+ "c22": {
+  "score": 2,
+  "why": "Not primary backup; Ty Johnson ahead. Correct."
+ },
+ "c23": {
+  "score": 2,
+  "why": "Hit by Van Ness and Bullard ending scramble, Week 1; correct."
+ },
+ "c24": {
+  "score": 2,
+  "why": "IR, earliest return Week 11 Nov 22; correct."
+ },
+ "c25": {
+  "score": 2,
+  "why": "Groin injury, early exit, week-to-week; correct."
+ },
+ "c26": {
+  "score": 2,
+  "why": "Correctly says nothing found for fictional player."
+ },
+ "c27": {
+  "score": 2,
+  "why": "Correctly says nothing found for fictional player."
+ },
+ "c28": {
+  "score": 2,
+  "why": "Returner duty and WR injuries explain usage; core reason correct."
+ },
+ "c29": {
+  "score": 2,
+  "why": "Re-injured surgically repaired heel in Week 2; correct."
+ },
+ "c30": {
+  "score": 2,
+  "why": "Two lost fumbles, matches 2025 total, says not him; correct."
+ },
+ "c31": {
+  "score": 2,
+  "why": "15-75-1 plus 4-41; matches reference."
+ },
+ "c32": {
+  "score": 2,
+  "why": "Shoulder injury, returned in third quarter; correct."
+ },
+ "c33": {
+  "score": 0,
+  "why": "Says nothing found; reference has Jets 24, Dolphins 14 projection."
+ },
+ "c34": {
+  "score": 2,
+  "why": "Yes, 10 targets last game, season high; correct."
+ },
+ "c35": {
+  "score": 2,
+  "why": "Trade possible, speculation and proposals; matches references."
+ },
+ "c36": {
+  "score": 2,
+  "why": "5-62 in OT win, led team in yards; correct."
+ },
+ "c37": {
+  "score": 0,
+  "why": "Says nothing found; reference shows he was ruled out vs Falcons."
+ },
+ "c38": {
+  "score": 2,
+  "why": "Jalon Daniels started; correct."
+ },
+ "c39": {
+  "score": 2,
+  "why": "Questionable for Monday vs Dallas, needs activation; matches newest."
+ },
+ "c40": {
+  "score": 1,
+  "why": "Uses Oct 5 outlook only; misses newer results and Hufanga loss."
+ },
+ "c41": {
+  "score": 2,
+  "why": "Recent 10-target game after low volume; correct."
+ },
+ "c42": {
+  "score": 2,
+  "why": "Darnold already back and starting; consistent with references."
+ },
+ "c43": {
+  "score": 2,
+  "why": "Rejects false premise, nothing found."
+ },
+ "c44": {
+  "score": 2,
+  "why": "Warren leads 21-15 touches over Dowdle; matches newest."
+ },
+ "c45": {
+  "score": 1,
+  "why": "Cites old Week 6 advice, defers; misses newest dream-matchup note."
+ },
+ "c46": {
+  "score": 1,
+  "why": "Misattributes Ravens 1-5-15 line to Titans; omits rookie yardage lead."
+ },
+ "c47": {
+  "score": 2,
+  "why": "Correct stat line and win; minor date slip."
+ },
+ "c48": {
+  "score": 2,
+  "why": "Kittle played through illness; Warner healthy; correct."
+ },
+ "c49": {
+  "score": 2,
+  "why": "Coen avoids injury risk, cornerback depth; correct."
+ },
+ "c50": {
+  "score": 2,
+  "why": "Regular season over, possible postseason return; correct."
+ },
+ "c51": {
+  "score": 2,
+  "why": "Consistent room for both, Mayer outpaced Bowers; matches newest."
+ },
+ "c52": {
+  "score": 2,
+  "why": "On IR, unavailable; Oct 25 note is a different Wilson."
+ },
+ "c53": {
+  "score": 2,
+  "why": "Cleared concussion, played through minor injuries; correct."
+ },
+ "c54": {
+  "score": 2,
+  "why": "Won 28-20 over Cowboys; correct."
+ },
+ "c55": {
+  "score": 2,
+  "why": "Behind Ty Johnson; correct."
+ },
+ "c56": {
+  "score": 0,
+  "why": "Says nothing found; reference shows he was out vs Falcons."
+ },
+ "c57": {
+  "score": 2,
+  "why": "Stroud benefited, spread ball, chemistry reunion; matches references."
+ },
+ "c58": {
+  "score": 0,
+  "why": "Refuses; reference gives dream matchup streaming answer."
+ },
+ "c59": {
+  "score": 1,
+  "why": "Turnovers right, misses run game struggles and falling behind."
+ }
+}

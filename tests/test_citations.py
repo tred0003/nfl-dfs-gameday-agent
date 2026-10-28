@@ -67,7 +67,8 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(out["cited_share"], 0.0)
 
     def test_date_must_belong_to_a_cited_passage(self):
-        ok = citations.check("Limited on Wed Oct 21 [P1]. Hurt Oct 12 at Detroit [P2].", ITEMS)
+        ok = citations.check("Limited on Wed Oct 21 [P1]. Hurt Oct 12 at Detroit [P2]. "
+                             "On Wednesday, October 21, he sat [P1].", ITEMS)   # full month name
         self.assertEqual(ok["problems"], [])
         for wrong in ("Limited on Oct 19 [P1].", "Limited on Oct 2 [P1]."):   # Oct 2 is not Oct 21
             bad = citations.check(wrong, ITEMS)

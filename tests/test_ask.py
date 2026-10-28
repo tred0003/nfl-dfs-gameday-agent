@@ -73,8 +73,10 @@ class ScriptedModel:
         self.script = list(script)
         self.seen = []
 
-    async def __call__(self, contents, decls, allow_tools):
+    async def __call__(self, contents, decls, allow_tools, instruction=None):
         self.seen.append(([d.name for d in decls], allow_tools))
+        self.instructions = getattr(self, "instructions", []) + [instruction]
+        self.contents = contents
         return self.script.pop(0)
 
 
@@ -132,6 +134,29 @@ class AskLoopTest(unittest.TestCase):
         out = _run(ScriptedModel([_resp(text="")]), FakeMcp())
         self.assertEqual(out["answer_type"], "empty")
         self.assertEqual(out["problems"], [])
+
+    def test_pipeline_fetches_history_and_search_then_answers_once(self):
+        model, mcp = ScriptedModel([_resp(text="Limited Wednesday [P1].")]), FakeMcp()
+        out = asyncio.run(ask.run_pipeline("ankle trend?", "Justin Jefferson", [],
+                                           generate=model, mcp=mcp))
+        self.assertEqual([c[0] for c in mcp.calls], ["player_history", "search_news_archive"])
+        self.assertEqual(model.seen, [([], False)])                 # one call, no tools
+        self.assertEqual(model.instructions, [ask.PIPELINE_INSTRUCTION])
+        packed = model.contents[0].parts[0].text
+        self.assertIn('"ref": "P1"', packed)                        # refs reach the model
+        self.assertEqual(out["design"], "pipeline")
+        self.assertEqual(out["answer_type"], "answered")
+        self.assertEqual(out["tool_calls"], 2)
+
+    def test_pipeline_without_a_player_only_searches(self):
+        mcp = FakeMcp()
+        asyncio.run(ask.run_pipeline("who starts at RB in Dallas?", "", [],
+                                     generate=ScriptedModel([_resp(text="x [P1].")]), mcp=mcp))
+        self.assertEqual([c[0] for c in mcp.calls], ["search_news_archive"])
+
+    def test_both_designs_share_the_answer_rules(self):
+        rules = ask._RULES
+        self.assertTrue(ask.INSTRUCTION.endswith(rules) and ask.PIPELINE_INSTRUCTION.endswith(rules))
 
     def test_unknown_tool_is_refused_not_forwarded(self):
         model = ScriptedModel([_resp([("delete_everything", {})]), _resp(text="ok")])

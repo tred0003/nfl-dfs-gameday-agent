@@ -91,7 +91,9 @@ def _date_ok(sentence: str, cited: list[dict]) -> bool:
     """Every date the sentence states belongs to a cited passage: its publish
     date, a date written inside it, or its age in days (within one)."""
     for mon, day in _DATE.findall(sentence):
-        said = re.compile(rf"\b{mon}[a-z]*\.?\s+0?{int(day)}\b")   # "Oct 2" is not "Oct 21"
+        # "October 21" said, "Wed Oct 21" stamped: match on the month's first
+        # three letters. And "Oct 2" is not "Oct 21".
+        said = re.compile(rf"\b{mon[:3]}[a-z]*\.?\s+0?{int(day)}\b")
         if not any(said.search(c.get("date", "")) or said.search(c.get("text", ""))
                    for c in cited):
             return False
