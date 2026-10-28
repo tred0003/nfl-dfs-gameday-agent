@@ -46,6 +46,10 @@ REPORTS = "reports"
 # a live eval set. A subcollection, like reports: one user cannot name
 # another's.
 ASKS = "asks"
+# users/{uid}/limits/{YYYY-MM-DD}: {route: count}. Per-user daily limits that
+# survive a restart and hold across instances (an in-memory counter did
+# neither: each instance had its own, and a deploy reset it).
+LIMITS = "limits"
 # One document per NFL week, written by gameday_agent/weekly_review.py: the
 # week's judge scores, check pass rate, fallback rate, cost and the warning
 # outcomes. Top level, not under a user -- it spans every user -- and only the
@@ -148,6 +152,22 @@ class FirestoreStore:
         self._user(uid).collection(ASKS).document(_require_uid(ask_id)).update(
             {"feedback": {**feedback, "at": self._fs.SERVER_TIMESTAMP}})
 
+    def spend(self, uid: str, route: str, day: str, limit: int) -> bool:
+        """Count one call against today's limit; False (and no count) once spent.
+        A transaction, so two instances cannot both take the last call."""
+        ref = self._user(uid).collection(LIMITS).document(day)
+
+        @self._fs.transactional
+        def take(tx) -> bool:
+            snap = ref.get(transaction=tx)
+            n = int((snap.to_dict() or {}).get(route, 0)) if snap.exists else 0
+            if n >= limit:
+                return False
+            tx.set(ref, {route: n + 1}, merge=True)
+            return True
+
+        return take(self._db.transaction())
+
     def latest_report(self, uid: str) -> tuple[str, dict] | None:
         # Report ids are YYYY-MM-DD, so the highest id is the newest report.
         # Not order_by("__name__", DESCENDING): a descending key query needs a
@@ -202,6 +222,7 @@ class MemoryStore:
         self.users: dict[str, User] = {}
         self.reports: dict[tuple[str, str], dict] = {}
         self.asks: dict[tuple[str, str], dict] = {}
+        self.limits: dict[tuple[str, str, str], int] = {}
         self.weekly: dict[str, dict] = {}
         for u in users or []:
             self.put_user(u)
@@ -221,6 +242,13 @@ class MemoryStore:
 
     def get_report(self, uid: str, report_id: str) -> dict | None:
         return self.reports.get((_require_uid(uid), report_id))
+
+    def spend(self, uid: str, route: str, day: str, limit: int) -> bool:
+        key = (_require_uid(uid), day, route)
+        if self.limits.get(key, 0) >= limit:
+            return False
+        self.limits[key] = self.limits.get(key, 0) + 1
+        return True
 
     def save_ask(self, uid: str, ask_id: str, fields: dict) -> None:
         self.asks[(_require_uid(uid), _require_uid(ask_id))] = {

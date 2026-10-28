@@ -229,6 +229,16 @@ class WebAppTest(unittest.TestCase):
         r = self.client.post("/api/news/ask", headers=bearer("u2"), json={"question": "q"})
         self.assertEqual(r.status_code, 200)          # u1's limit is not u2's
 
+    def test_the_limit_holds_across_instances_and_restarts(self):
+        import main
+        for _ in range(main.ASK_LIMIT):
+            self.client.post("/api/news/ask", headers=bearer("u1"), json={"question": "q"})
+        # A second instance (or the same one after a deploy) on the same store.
+        other = create_app(store=self.store, verify=fake_verify, slate=FakeSlate(),
+                           news=self.news, agent=self.agent).test_client()
+        r = other.post("/api/news/ask", headers=bearer("u1"), json={"question": "q"})
+        self.assertEqual(r.status_code, 429)
+
     def test_unreachable_archive_is_503(self):
         client = create_app(store=self.store, verify=fake_verify, slate=FakeSlate(),
                             news=FakeNews(fail=True), agent=FakeAgent(fail=True)).test_client()

@@ -83,6 +83,21 @@ SEARCH_K = 6
 SEARCH_RECENT = 2        # newest items guaranteed a slot in every search
 SEARCH_LIMIT = 3         # search_news_archive calls per run, like search_news
 RERANK_FETCH = 50        # embedding candidates handed to the re-ranker
+# Newest among the relevant (since 2026-10-28). The ranker decides WHAT is
+# relevant; it does not prefer the newest of several relevant passages, and
+# for news the newest is usually the answer ("is he playing": this week's
+# note, not September's). Of the ranker's top RECENCY_POOL, every passage
+# scoring at least RECENCY_FRAC of the best score is moved to the front,
+# newest first; the rest keep the ranker's order. The search gate
+# (embed_tune/gate.py), 150 questions, live table frozen at the test cutoff:
+#   off   hit@6 0.98  newest@6 0.476
+#   0.6   hit@6 0.90  newest@6 0.650   gate FAILS: weak passages crowd out answers
+#   0.8   hit@6 0.98  newest@6 0.612   shipped: +13.6 pts (CI +7.8..+20.4),
+#                                       14 questions better, 0 worse
+#   0.9   hit@6 0.98  newest@6 0.524
+# Chosen among four values on the same questions: confirm on fresh ones.
+RECENCY_POOL = 15
+RECENCY_FRAC = float(os.environ.get("ARCHIVE_RECENCY_FRAC", "0.8"))   # 0 turns it off
 # Pinned, not @latest: Google can move @latest under a deployed service, and
 # the offline numbers (embed_tune/) would then describe a ranker nobody runs.
 # -005 is what @latest served on 2026-10-28 (identical scores). CAREFUL: the
@@ -189,7 +204,7 @@ class _Ranker:
                         for i, (h, t) in enumerate(zip(titles, texts))]},
             headers={"Authorization": f"Bearer {token}", "x-goog-user-project": self.project})
         r.raise_for_status()
-        return [int(rec["id"]) for rec in r.json()["records"]]
+        return [(int(rec["id"]), rec.get("score")) for rec in r.json()["records"]]
 
 
 def _take_rerank_call() -> bool:
@@ -239,9 +254,31 @@ def _rerank(question: str, rows: list[dict], stats: dict | None = None) -> list[
         stats["fallback"] = type(e).__name__
         return rows
     stats["ranked"] = True
-    ranked = [rows[i] for i in order if 0 <= i < len(rows)]
+    # (index, score) pairs from the API; plain indexes are accepted too.
+    pairs = [o if isinstance(o, tuple) else (o, None) for o in order]
+    ranked = []
+    for i, score in pairs:
+        if 0 <= i < len(rows):
+            rows[i]["_score"] = score
+            ranked.append(rows[i])
     seen = {id(r) for r in ranked}
     return ranked + [r for r in rows if id(r) not in seen]
+
+
+def _recency_first(ranked: list[dict]) -> list[dict]:
+    """Of the ranker's top RECENCY_POOL, the ones scoring >= RECENCY_FRAC of
+    the best move to the front, newest first; everything else keeps the
+    ranker's order. A no-op without scores (the ranker fell back) or with
+    RECENCY_FRAC = 0."""
+    top = ranked[:RECENCY_POOL]
+    scores = [r.get("_score") for r in top if r.get("_score") is not None]
+    if RECENCY_FRAC <= 0 or not scores:
+        return ranked
+    floor = RECENCY_FRAC * max(scores)
+    keep = [r for r in top if (r.get("_score") or 0) >= floor]
+    keep.sort(key=lambda r: pd.Timestamp(r["published"]), reverse=True)
+    ids = {id(r) for r in keep}
+    return keep + [r for r in ranked if id(r) not in ids]
 
 
 def _now() -> datetime:
@@ -376,7 +413,7 @@ def _search_rows(question: str, player: str | None, cutoff: datetime, days: int,
     t2 = time.monotonic()
     similar = [dict(r) for r in vector_job.result(timeout=BQ_TIMEOUT)]
     t3 = time.monotonic()
-    ranked = _rerank(question, similar, stats)
+    ranked = _recency_first(_rerank(question, similar, stats))
     t4 = time.monotonic()
     stats.update(
         ms={"embed": round((t1 - t0) * 1000), "bq_recent": round((t2 - t1) * 1000),

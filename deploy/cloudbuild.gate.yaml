@@ -1,0 +1,31 @@
+# The search-quality gate (embed_tune/gate.py), on demand -- run it before
+# deploying any change to gameday_agent/archive.py (news-mcp + the agent).
+#
+# Calls the SHIPPED search for the 150 test questions against the live
+# BigQuery table, clock frozen at the test cutoff, and fails the build when
+# hit@6 or newest@6 drop below embed_tune/key/gate_baseline.json, when any
+# search falls back from the re-ranker, or when the pinned ranker name
+# scores like a nonsense model name (the Ranking API silently falls back).
+# ~$0.25 a run (ranker + embeddings), so it is manual, not on every push.
+#
+# Runs in the ML project, as the read-only news-mcp identity: it already
+# has exactly what the search needs (bigquery.jobUser, READER on dfs,
+# aiplatform.user, discoveryengine.viewer) and nothing more.
+#
+#   gcloud builds submit . --project fantasy-football-ml-503718 --region us-central1 \
+#     --config deploy/cloudbuild.gate.yaml \
+#     --service-account=projects/fantasy-football-ml-503718/serviceAccounts/news-mcp@fantasy-football-ml-503718.iam.gserviceaccount.com
+steps:
+  - id: search-gate
+    name: python:3.11-slim
+    entrypoint: bash
+    env:
+      - GOOGLE_CLOUD_PROJECT=$PROJECT_ID
+    args:
+      - -c
+      - |
+        pip install --quiet --no-cache-dir --root-user-action=ignore -r gameday_agent/requirements.txt -r deploy/requirements-mcp.txt
+        python embed_tune/gate.py
+timeout: 1200s
+options:
+  logging: CLOUD_LOGGING_ONLY

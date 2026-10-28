@@ -1,0 +1,24 @@
+{
+ "retriever": "emb=text-embedding-005;rank=semantic-ranker-default-005;dated=1;days=42;k=6;recent=2;fetch=50",
+ "recency_frac": 0.8,
+ "questions": 150,
+ "hit_at_6": 0.98,
+ "newest_at_6": 0.612,
+ "newest_n": 103,
+ "fallbacks": 0,
+ "fallback_reasons": [],
+ "pin_check": {
+  "pinned": "semantic-ranker-default-005",
+  "scores": {
+   "semantic-ranker-default-005": [
+    0.7971,
+    0.0105
+   ],
+   "nonsense-model": [
+    0.6024,
+    0.0389
+   ]
+  },
+  "ok": true
+ }
+}

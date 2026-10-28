@@ -48,7 +48,6 @@ import json
 import os
 import re
 import sys
-import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -122,18 +121,13 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
     slate = slate if slate is not None else BigQuerySlate()
     news = news if news is not None else McpNews()
     agent = agent if agent is not None else ArchiveAgent()
-    used: dict[tuple[str, str], tuple[str, int]] = {}   # (uid, route) -> (UTC date, count)
-    used_lock = threading.Lock()
-
     def spend(uid: str, route: str, limit: int, what: str) -> None:
-        """Count one call against a user's daily limit for this route, or 429."""
+        """Count one call against a user's daily limit for this route, or 429.
+        In Firestore (users/{uid}/limits/{day}), in a transaction: the count
+        holds across instances and restarts, which an in-memory one did not."""
         today = datetime.now(timezone.utc).date().isoformat()
-        with used_lock:
-            day, n = used.get((uid, route), (today, 0))
-            n = n if day == today else 0
-            if n >= limit:
-                abort(429, f"{limit} {what} a day -- the limit resets at midnight UTC")
-            used[(uid, route)] = (today, n + 1)
+        if not get_store().spend(uid, route, today, limit):
+            abort(429, f"{limit} {what} a day -- the limit resets at midnight UTC")
 
     def read_question() -> tuple[str, str]:
         body = request.get_json(silent=True) or {}

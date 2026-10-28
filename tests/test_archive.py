@@ -250,6 +250,25 @@ class RerankTest(unittest.TestCase):
         self.assertEqual(ranker.calls, 2)
         self.assertEqual(out, self.rows)
 
+    def test_newest_of_the_relevant_goes_first(self):
+        # c (score .9, 30 days old) and a (.85, 1 day) are both relevant: a goes
+        # first. b (.2) is not relevant and keeps its ranker place after them.
+        rows = [{"text": t, "published": NOW - timedelta(days=d), "_score": s}
+                for t, d, s in (("c", 30, .9), ("a", 1, .85), ("b", 2, .2))]
+        with mock.patch.object(archive, "RECENCY_FRAC", 0.8):
+            self.assertEqual([r["text"] for r in archive._recency_first(rows)], ["a", "c", "b"])
+        with mock.patch.object(archive, "RECENCY_FRAC", 0.0):          # off
+            self.assertEqual([r["text"] for r in archive._recency_first(rows)], ["c", "a", "b"])
+
+    def test_no_scores_means_no_reordering(self):
+        rows = [{"text": t, "published": NOW - timedelta(days=d)} for t, d in (("c", 30), ("a", 1))]
+        self.assertEqual(archive._recency_first(rows), rows)          # ranker fell back
+
+    def test_ranker_scores_are_kept_on_the_rows(self):
+        self._with(_FakeRanker(order=[(2, .9), (0, .5), (1, .1)]))
+        out = archive._rerank("q", self.rows)
+        self.assertEqual([(r["text"], r["_score"]) for r in out], [("c", .9), ("a", .5), ("b", .1)])
+
     def test_the_cap_resets_each_day(self):
         ranker = _FakeRanker(order=[0, 1, 2])
         self._with(ranker)
