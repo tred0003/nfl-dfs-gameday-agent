@@ -66,7 +66,7 @@ class BigQuerySlate:
         # job only projects the main slate, and the DK endpoint that would
         # name it is not reachable from Cloud Run (see dk_client.py).
         q = f"""
-            SELECT run_id, run_ts, week, draft_group_id, {", ".join(COLUMNS)}
+            SELECT run_id, run_ts, season, week, draft_group_id, {", ".join(COLUMNS)}
             FROM `{self.table}`
             WHERE run_id = (SELECT run_id FROM `{self.table}`
                             ORDER BY run_ts DESC LIMIT 1)
@@ -89,6 +89,7 @@ class BigQuerySlate:
         players.sort(key=lambda p: -(p["projection"] or 0))
         return {
             "run_id": str(first["run_id"]),
+            "season": int(first["season"]),
             "week": int(first["week"]),
             "draft_group_id": int(first["draft_group_id"]),
             "projected_at": first["run_ts"].isoformat(),

@@ -170,6 +170,7 @@
     <a href="#overview" data-v="overview">Overview</a>
     <a href="#reports" data-v="reports">Reports</a>
     <a href="#tower" data-v="tower">Tower</a>
+    <a href="#ask" data-v="ask">Ask exam</a>
     <a href="#grade" data-v="grade">Grade</a>
   </nav>
   <div class="meta" id="meta"></div>
@@ -181,6 +182,7 @@
   <section id="v-report" hidden></section>
   <section id="v-grade" hidden></section>
   <section id="v-tower" hidden></section>
+  <section id="v-ask" hidden></section>
 </main>
 <div id="tip" hidden></div>
 
@@ -221,6 +223,7 @@ async function route() {
     else if (view === "report") await showReport(sec, rest[0], rest.slice(1).map(decodeURIComponent));
     else if (view === "grade") await showGrade(sec);
     else if (view === "tower") await showTower(sec);
+    else if (view === "ask") await showAsk(sec);
     else await showOverview(sec);
   } catch (e) { sec.innerHTML = `<div class="card"><div class="empty">Couldn't load: ${esc(e.message)}</div></div>`; }
   window.scrollTo({ top: 0 });
@@ -529,6 +532,35 @@ function jtree(v, key, depth) {
   const label = isArr ? `[${entries.length}]` : `{${entries.length}}`;
   if (!entries.length) return `<div class="row">${k}<span class="jz">${isArr ? "[]" : "{}"}</span></div>`;
   return `<details ${depth < 1 ? "open" : ""}><summary>${k}<span class="faint">${label}</span></summary>${entries.map(([kk, vv]) => jtree(vv, kk, depth + 1)).join("")}</details>`;
+}
+
+/* ============================= ask exam ============================== */
+async function showAsk(sec) {
+  const A = await get("/api/ask_weekly");
+  const S = A.season;
+  const vs = (a, m) => a == null ? "–" : `${pct(a)} <span class="faint">vs ${pct(m)}</span>`;
+  sec.innerHTML = `
+    <div class="head"><div><h1>Ask exam</h1>
+      <div class="muted small">50 start/sit questions every Sunday before kickoff, graded Tuesday by DraftKings points (<code>webapp/ask_weekly.py</code>). Coin flip = 50%.</div></div></div>
+    <div class="tiles">
+      ${tile(S ? pct(S.ask) : "–", "Ask right, season")}
+      ${tile(S ? pct(S.model) : "–", "model alone (higher projection)")}
+      ${tile(S ? vs(S.ask_questionable, S.model_questionable) : "–", "Ask vs model, Questionable pairs")}
+      ${tile(S && S.disagree ? `${pct(S.ask_when_disagree)} <span class="faint">of ${S.disagree}</span>` : "–", "Ask right when it overrode the model")}
+      ${tile(S ? S.graded : 0, "questions graded")}
+    </div>
+    ${card("Week by week", A.weeks.length ? `<div class="scroll"><table>
+      <thead><tr><th>Week</th><th class="num">Asked</th><th class="num">Errors</th><th class="num">Graded</th>
+      <th class="num">Ask</th><th class="num">Model</th><th class="num">Q pairs (Ask vs model)</th><th class="num">No pick</th><th class="num">Cost</th></tr></thead>
+      <tbody>${A.weeks.map(w => `<tr><td>${w.season} w${w.week}</td><td class="num">${w.n}</td><td class="num">${w.errors}</td>
+        <td class="num">${w.graded ? w.graded : `<span class="pill neutral">Tuesday</span>`}</td>
+        <td class="num">${pct(w.ask)}</td><td class="num">${pct(w.model)}</td><td class="num">${vs(w.ask_questionable, w.model_questionable)}</td>
+        <td class="num">${w.no_pick ?? "–"}</td><td class="num">${usd(w.cost_usd)}</td></tr>`).join("")}</tbody></table></div>`
+      : `<div class="empty">No exam asked yet. The first runs Sunday 11:15 ET.</div>`,
+      { say: `the grade needs no judge: whoever scored more DraftKings points was the right start. The bar is not the coin flip but the XGBoost model alone; Ask is worth its cost only if news moves it past that. One week is noise; read the season line.` })}
+    ${A.misses.length ? card("Recent misses", `<div class="scroll"><table><thead><tr><th>Week</th><th>Pair</th><th>Ask said</th><th>Model said</th><th class="num">Points</th></tr></thead><tbody>
+      ${A.misses.map(m => `<tr><td>w${m.week}</td><td>${esc(m.player_a)} / ${esc(m.player_b)}${m.kind === "questionable" ? ` <span class="pill warn">Q</span>` : ""}</td>
+        <td>${esc(m.pick)}</td><td>${esc(m.model_pick)}</td><td class="num">${num(m.pts_a, 1)} / ${num(m.pts_b, 1)}</td></tr>`).join("")}</tbody></table></div>`) : ""}`;
 }
 
 /* =========================== control tower =========================== */

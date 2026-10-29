@@ -14,7 +14,10 @@ WORKDIR /app
 COPY deploy/requirements-web.txt .
 RUN pip install --no-cache-dir -r requirements-web.txt
 
-COPY src/user_store.py src/optimize.py src/token_cost.py ./src/
+# scoring.py: DK points from box scores, for Ask's weekly exam (webapp/ask_weekly.py),
+# which runs as two Cloud Run jobs on this same image -- the exam asks the
+# exact Ask code the site serves.
+COPY src/user_store.py src/optimize.py src/token_cost.py src/scoring.py ./src/
 COPY webapp/ ./webapp/
 
 # One worker, a few threads: four users do not need more, and one process

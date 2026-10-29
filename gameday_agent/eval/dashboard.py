@@ -581,6 +581,25 @@ def overview():
         tolerance=QUALITY_TOLERANCE, prod=prod[:10], prod_error=prod_err)
 
 
+@app.get("/api/ask_weekly")
+def ask_weekly():
+    """Ask's weekly exam (webapp/ask_weekly.py): the season, week by week."""
+    sys.path.insert(0, str(ROOT / "webapp"))
+    import ask_weekly as aw
+    bq = aw._bq()
+    grades = aw._query(bq, f"SELECT * FROM `{aw.GRADES}` ORDER BY season, week, qid")
+    asked = aw._query(bq, f"""SELECT season, week, COUNT(*) AS n, COUNTIF(error IS NOT NULL) AS errors,
+        SUM(cost_usd) AS cost_usd, ANY_VALUE(versions) AS versions
+        FROM `{aw.ANSWERS}` GROUP BY season, week ORDER BY season, week""")
+    weeks = []
+    for a in asked:
+        g = [r for r in grades if (r["season"], r["week"]) == (a["season"], a["week"])]
+        # "graded" is the count of gradable questions, 0 until Tuesday's run.
+        weeks.append(a | (aw.summarise(g) if g else {"graded": 0}))
+    return jsonify(weeks=weeks, season=aw.summarise(grades) if grades else None,
+                   misses=[r for r in grades if r["ask_correct"] is False][-25:])
+
+
 @app.get("/api/tower")
 def tower():
     return jsonify(_tower())
