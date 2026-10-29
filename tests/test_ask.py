@@ -66,6 +66,30 @@ class FakeMcp:
         return SimpleNamespace(content=[SimpleNamespace(text=json.dumps(body))])
 
 
+class PodMcp(FakeMcp):
+    """FakeMcp whose podcast search returns a podcast passage, fails, or finds nothing."""
+
+    def __init__(self, fail=False, empty=False, fail_news=False):
+        super().__init__()
+        self.fail, self.empty, self.fail_news = fail, empty, fail_news
+
+    async def call_tool(self, name, args):
+        if name == "search_news_archive" and self.fail_news:
+            raise RuntimeError("news down")
+        if name != "search_podcasts":
+            return await super().call_tool(name, args)
+        self.calls.append((name, args))
+        if self.fail:
+            raise RuntimeError("podcast table gone")
+        body = ({"status": "no_results", "message": "Nothing in the podcast archive matches."}
+                if self.empty else
+                {"status": "ok", "passages": [{"id": "pod:ringer-nfl:abc@600#1", "date": "Fri Oct 23",
+                                               "days_ago": 3, "source": "The Ringer NFL Show",
+                                               "headline": "Week 7", "text": FENCED,
+                                               "url": "a.mp3#t=640"}]})
+        return SimpleNamespace(content=[SimpleNamespace(text=json.dumps(body))])
+
+
 class ScriptedModel:
     """Plays back responses; records the tool names and the allow flag it was offered."""
 
@@ -138,7 +162,7 @@ class AskLoopTest(unittest.TestCase):
     def test_pipeline_fetches_history_and_search_then_answers_once(self):
         model, mcp = ScriptedModel([_resp(text="Limited Wednesday [P1].")]), FakeMcp()
         out = asyncio.run(ask.run_pipeline("ankle trend?", "Justin Jefferson", [],
-                                           generate=model, mcp=mcp))
+                                           generate=model, mcp=mcp, podcasts=False))
         self.assertEqual([c[0] for c in mcp.calls], ["player_history", "search_news_archive"])
         self.assertEqual(model.seen, [([], False)])                 # one call, no tools
         self.assertEqual(model.instructions, [ask.PIPELINE_INSTRUCTION])
@@ -151,12 +175,42 @@ class AskLoopTest(unittest.TestCase):
     def test_pipeline_without_a_player_only_searches(self):
         mcp = FakeMcp()
         asyncio.run(ask.run_pipeline("who starts at RB in Dallas?", "", [],
-                                     generate=ScriptedModel([_resp(text="x [P1].")]), mcp=mcp))
+                                     generate=ScriptedModel([_resp(text="x [P1].")]), mcp=mcp,
+                                     podcasts=False))
         self.assertEqual([c[0] for c in mcp.calls], ["search_news_archive"])
+
+    def test_pipeline_adds_podcasts_in_their_own_slots(self):
+        model, mcp = ScriptedModel([_resp(text="Limited [P1]. Hosts like him [P2].")]), PodMcp()
+        out = asyncio.run(ask.run_pipeline("ankle trend?", "Justin Jefferson", [],
+                                           generate=model, mcp=mcp, podcasts=True))
+        self.assertEqual([c[0] for c in mcp.calls],
+                         ["player_history", "search_news_archive", "search_podcasts"])
+        self.assertEqual(mcp.calls[1][1], {"question": "ankle trend?", "player": "Justin Jefferson"})
+        self.assertEqual(mcp.calls[2][1]["limit"], ask.PODCAST_K)
+        self.assertEqual(model.instructions, [ask.PODCAST_PIPELINE_INSTRUCTION])
+        self.assertIn("search_podcasts", model.contents[0].parts[0].text)
+        self.assertEqual(out["evidence"][2]["items"][0]["ref"], "P2")   # numbered after the news
+        self.assertEqual(out["versions"]["prompt"], ask.PODCAST_PROMPT_VERSION)
+        self.assertEqual(out["problems"], [])
+
+    def test_a_failed_or_empty_podcast_search_leaves_a_news_answer(self):
+        for mcp in (PodMcp(fail=True), PodMcp(empty=True)):
+            model = ScriptedModel([_resp(text="Limited [P1].")])
+            out = asyncio.run(ask.run_pipeline("ankle trend?", "", [],
+                                               generate=model, mcp=mcp, podcasts=True))
+            self.assertNotIn("Result of search_podcasts", model.contents[0].parts[0].text)
+            self.assertEqual(out["answer_type"], "answered")
+            self.assertEqual(out["evidence"][-1]["tool"], "search_podcasts")
+        with self.assertRaises(RuntimeError):     # news failing is still a failure
+            asyncio.run(ask.run_pipeline("q", "", [], generate=ScriptedModel([]),
+                                         mcp=PodMcp(fail_news=True), podcasts=True))
 
     def test_both_designs_share_the_answer_rules(self):
         rules = ask._RULES
         self.assertTrue(ask.INSTRUCTION.endswith(rules) and ask.PIPELINE_INSTRUCTION.endswith(rules))
+        self.assertTrue(ask.PODCAST_PIPELINE_INSTRUCTION.endswith(rules))
+        self.assertIn(ask._PODCAST_RULES, ask.PODCAST_PIPELINE_INSTRUCTION)
+        self.assertNotIn("podcast", ask.PIPELINE_INSTRUCTION)
 
     def test_unknown_tool_is_refused_not_forwarded(self):
         model = ScriptedModel([_resp([("delete_everything", {})]), _resp(text="ok")])

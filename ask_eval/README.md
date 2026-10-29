@@ -109,6 +109,69 @@ a range: about 1.4-1.8 out of 2 for the pipeline, depending on the grader.
   knows the newest status. Its reference is a sample of the relevant news,
   not all of it.
 
+## Phase 2b: the pipeline plus podcasts (2026-10-29)
+
+**The change:** the pipeline gets a third call in the same parallel fetch:
+`search_podcasts`, limited to the ranker's best 3 passages, in slots of its own. News keeps all six
+of its passages. One mixed search was tried first, on the search gate, and
+cost news its newest-report hits (newest@6 -4.9). The prompt adds two rules:
+a podcast is a host's view, to be named and dated, and never the only source
+for injury status, a transaction or who is starting. If no podcast passage
+fits the question, the answer leaves podcasts out.
+
+**The test:** design `pipeline_pod`, the same 170 questions × 2 runs and the
+same frozen archive, compared with the 2026-10-28 `pipeline` answers (news
+only). `python ask_eval/run.py --designs pipeline_pod`, then the three
+graders.
+
+| | news only | + podcasts v1 | **+ podcasts v2** |
+|---|---|---|---|
+| Correct, 0-2 | 1.405 | 1.463 | **1.447** |
+| Fully correct | 53.2% | 54.7% | **56.3%** |
+| Refuses the 20 unanswerable, 0-2 | 1.85 | 1.75 | 1.70 |
+| Grounding support, mean | 0.764 | 0.725 | 0.737 |
+| Answers with support < 0.5 | 8.7% | 14.0% | **9.0%** |
+| Contract: date mismatches / uncited | 24 / 14 | 40 / 17 | 26 / 18 |
+| "N days ago" per answer | 0.78 | 0.17 | 0.71 |
+| Same answer type on both runs | 96.5% | 98.8% | 98.2% |
+| Latency p50 / p95 | 4.5 / 10.4 s | 5.3 / 12.1 s | 5.2 / 9.8 s |
+| Cost per answer | $0.0036 | $0.0050 | $0.0047 |
+| Answers citing a podcast (of 310 offered one) | — | 116 | 124 |
+| Status facts with ONLY a podcast cited | — | 3 | 2 |
+
+**Paired, v2 minus news only:** +0.04 on correctness (95% CI −0.03 to
++0.13, 299 pairs; better on 61, worse on 55). This is no measurable change.
+That was expected: the key grades only news, so a useful host opinion can
+earn nothing here, and it can be marked down as "not in the reference".
+So the test checks that podcasts do no harm to news correctness. It does not
+measure what the podcasts add.
+
+**v1 to v2, one example sentence.** v1's podcast rule showed a host's take
+dated "(Fri Oct 23)". The model copied that format for every fact, news included: "N days ago" fell from
+0.78 to 0.17 per answer. Explicit weekdays then got attached to the wrong
+event (game day vs. the article's publish day), and grounding fell: answers below 0.5
+support went from 8.7% to 14%. Answers that cited a podcast grounded as well as news-only
+answers did. The drop came from news sentences. v2's example says "3 days
+ago", and grounding came back.
+
+**The rule checks.** Of the 2 claims backed only by a podcast that state a
+status (and 3 in v1), every one repeats a fact that the same answer had already cited
+from news ("hosts also noted he is out for the season"). That is redundant,
+not wrong. No answer took a status from a podcast that the news did not have.
+
+**Refusals, 1.85 to 1.70:** this comes down to three questions out of 20. Both podcast
+runs answered "Jets' first 2027 pick" from a *news* mock draft without
+the "No archived news found" opener, and cited no podcast. This is wording
+drift from the longer prompt. "Jefferson's fantasy points on Sunday" wobbles
+in every design. On "Super Bowl winner", one answer mentioned a host
+talking about last season's win after correctly saying that nothing was found:
+the only podcast-caused miss.
+
+**Decision:** ship v2 (`ASK_PODCASTS=1`, prompt `ask-2026-10-29-pod2`).
+News correctness and grounding are unchanged, and the one rule that matters,
+no status taken from a podcast alone, held. The cost is about $1.10 per
+1,000 questions and 0.7 s at the median.
+
 ## Known limits
 
 - The questions were written by Claude, not real users, so the feedback

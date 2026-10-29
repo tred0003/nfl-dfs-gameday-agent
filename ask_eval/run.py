@@ -2,6 +2,7 @@
 
     python ask_eval/run.py                 # all questions, both designs, 2 repeats
     python ask_eval/run.py --limit 5       # a quick look first
+    python ask_eval/run.py --designs pipeline_pod   # the pipeline + podcasts (2026-10-29)
 
 The experiment (program reference, Ask section): is the Ask agent -- a model
 that picks its own tools at runtime ("lazy" context) -- better than a fixed
@@ -72,7 +73,8 @@ class LocalMcp:
 
     async def call_tool(self, name, args):
         fn = {"player_history": self.server.player_history,
-              "search_news_archive": self.server.search_news_archive}[name]
+              "search_news_archive": self.server.search_news_archive,
+              "search_podcasts": self.server.search_podcasts}[name]
         out = await asyncio.to_thread(fn, **args)
         return SimpleNamespace(content=[SimpleNamespace(text=json.dumps(out, default=str))])
 
@@ -113,7 +115,11 @@ async def main(limit: int | None, repeats: int, designs: list[str]) -> None:
           f"({len(done)} already done)", flush=True)
 
     mcp, sem, lock = LocalMcp(), asyncio.Semaphore(CONCURRENCY), asyncio.Lock()
-    fns = {"agent": ask.run, "pipeline": ask.run_pipeline}
+    # "pipeline" is the news-only baseline the 2026-10-28 answers were made
+    # with; "pipeline_pod" adds the podcast search in its own slots.
+    fns = {"agent": ask.run,
+           "pipeline": lambda *a, **k: ask.run_pipeline(*a, **k, podcasts=False),
+           "pipeline_pod": lambda *a, **k: ask.run_pipeline(*a, **k, podcasts=True)}
     n_ok = 0
 
     async def one(q, design, rep):
@@ -138,7 +144,7 @@ async def main(limit: int | None, repeats: int, designs: list[str]) -> None:
                "evidence": [{"tool": e["tool"], "args": e["args"], "ranked": e.get("ranked"),
                              "fallback": e.get("fallback"),
                              "items": [{k: i.get(k) for k in ("ref", "id", "date", "days_ago",
-                                                              "source", "player", "text")}
+                                                              "source", "player", "headline", "text")}
                                        for i in e["items"]]} for e in out["evidence"]]}
         async with lock:
             with OUT.open("a", encoding="utf-8") as f:

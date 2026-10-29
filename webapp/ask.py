@@ -4,8 +4,9 @@ news.py hands a person the raw passages. This puts a model in the loop and
 has two designs, both here, measured against each other in ask_eval/:
 
   pipeline (PRODUCTION, DESIGN="pipeline")  code fetches a fixed context --
-      the player's history and one search, in parallel -- and the model is
-      called ONCE, with no tools, to write the cited answer. Eager context.
+      the player's history, one news search and one podcast search, in
+      parallel -- and the model is called ONCE, with no tools, to write the
+      cited answer. Eager context.
 
   agent (DESIGN="agent")  the model reads the question, decides which
       archive tools to call, can follow up, then answers. Lazy context.
@@ -77,12 +78,23 @@ MODEL = os.environ.get("ASK_MODEL", "gemini-2.5-flash")
 # archive on 18% of questions and, when it did search, picked one tool and
 # never both. "agent" stays selectable for the comparison.
 DESIGN = os.environ.get("ASK_DESIGN", "pipeline")
+# The pipeline's podcast search (since 2026-10-29). Its OWN slots, beside the
+# news search, never inside it: one mixed search cost news its newest-report
+# hits on the gate (embed_tune/gate.py, newest@6 -4.9). Here news keeps all
+# six of its passages and the podcasts add up to PODCAST_K more; the model
+# sees both and writes one answer. ASK_PODCASTS=0 turns it off.
+PODCASTS = os.environ.get("ASK_PODCASTS", "1") == "1"
+PODCAST_K = 3
 PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "advisor-agent-2026")
 LOCATION = os.environ.get("ASK_LOCATION", "us-central1")
 MAX_TOOL_CALLS = 4     # history + two searches + one spare is plenty for one question
 MAX_TURNS = MAX_TOOL_CALLS + 2
 # Bump on ANY change to INSTRUCTION: eval results are recorded per version.
 PROMPT_VERSION = "ask-2026-10-28"
+# The pipeline with podcasts on. v1's example dated the host's take "(Fri
+# Oct 23)" and answers copied it for every fact: "N days ago" fell from 0.78
+# to 0.17 per answer, and grounding fell with it (ask_eval/README.md).
+PODCAST_PROMPT_VERSION = "ask-2026-10-29-pod2"
 
 # The two designs share every answer rule below; only how the evidence
 # arrives differs. Kept byte-identical to the agent prompt PROMPT_VERSION names.
@@ -119,8 +131,21 @@ _RULES = """- Answer ONLY from what the tools returned. If they returned nothing
 
 Write 3-6 plain sentences. No headings, no bullet lists. You may **bold** the
 one line that answers the question."""
+# Podcasts are opinion beside the news, not more news: the rules keep a
+# host's take from becoming a fact in the answer.
+_PODCAST_RULES = """- Some results come from search_podcasts: what NFL podcast hosts said,
+  machine-transcribed (`source` is the show, `headline` the episode). Use
+  them for analysis and opinion, and say whose view it is and how old it is:
+  "On The Ringer Fantasy Football Show 3 days ago, the hosts called him a
+  low-end RB2 [P9]." A podcast passage is never the only source for an
+  injury status, a transaction or who is starting: those come from the news
+  results, and when a podcast and the news disagree on a fact, the news wins.
+- Use a podcast passage only when it speaks to what was asked. Often none
+  does; then leave the podcasts out and do not mention them.
+"""
 INSTRUCTION = _AGENT_HEAD + _RULES
 PIPELINE_INSTRUCTION = _PIPELINE_HEAD + _RULES
+PODCAST_PIPELINE_INSTRUCTION = _PIPELINE_HEAD + _PODCAST_RULES + _RULES
 
 
 class AskError(Exception):
@@ -202,7 +227,8 @@ async def run(question: str, player: str, lineup: list[str], *, generate, mcp) -
     return _finish(answer, calls, evidence, totals, "agent")
 
 
-def _finish(answer: str, calls: int, evidence: list, totals: dict, design: str) -> dict:
+def _finish(answer: str, calls: int, evidence: list, totals: dict, design: str,
+            prompt: str = PROMPT_VERSION) -> dict:
     """The output contract, whole cost and versions -- the same for both designs."""
     from token_cost import cost_usd
     if answer:
@@ -218,12 +244,13 @@ def _finish(answer: str, calls: int, evidence: list, totals: dict, design: str) 
             "cost_usd": round(model_usd + retrieval_usd, 6),
             "cost": {"model_usd": model_usd, "retrieval_usd": retrieval_usd},
             "design": design,
-            "versions": {"prompt": PROMPT_VERSION, "model": MODEL, "design": design,
+            "versions": {"prompt": prompt, "model": MODEL, "design": design,
                          "retriever": next((e["retriever"] for e in evidence
                                             if e.get("retriever")), None)}}
 
 
-async def run_pipeline(question: str, player: str, lineup: list[str], *, generate, mcp) -> dict:
+async def run_pipeline(question: str, player: str, lineup: list[str], *, generate, mcp,
+                       podcasts: bool | None = None) -> dict:
     """The eager design: fixed retrieval, then ONE model call with no tools.
 
     Code decides what to fetch, not the model: the player's history when a
@@ -234,26 +261,43 @@ async def run_pipeline(question: str, player: str, lineup: list[str], *, generat
     for. What it gains: one model call instead of two to five, the same
     trace every time, and a latency that does not depend on the model's
     choices. ask_eval/ measures which matters more.
+
+    The podcast search is a third call in the same gather. It is optional
+    in a way news is not: if it fails or finds nothing, the answer is built
+    from the news alone and the prompt never mentions podcasts.
     """
     from google.genai import types
     from token_cost import add_usage, new_totals
 
+    podcasts = PODCASTS if podcasts is None else podcasts
     plan = [("search_news_archive", {"question": question, "player": player})]
     if player:
         plan.insert(0, ("player_history", {"players": [player]}))
-    raw = await asyncio.gather(*(mcp.call_tool(name, args) for name, args in plan))
+    if podcasts:
+        plan.append(("search_podcasts", {"question": question, "player": player,
+                                         "limit": PODCAST_K}))
+    raw = await asyncio.gather(*(mcp.call_tool(name, args) for name, args in plan),
+                               return_exceptions=True)
     refs, evidence, packed = {}, [], []
     for (name, args), r in zip(plan, raw):
+        if isinstance(r, BaseException):
+            if name != "search_podcasts":
+                raise r
+            evidence.append(_evidence(name, args, {"status": "error"}))
+            continue
         result = json.loads(r.content[0].text)
         citations.number_items(result, refs)
         evidence.append(_evidence(name, args, result))
+        if name == "search_podcasts" and result.get("status") != "ok":
+            continue     # "no podcast discussion found" is not worth a sentence
         packed.append(f"Result of {name}({json.dumps(args)}):\n{json.dumps(result, default=str)}")
     message = _user_message(question, player, lineup) + "\n\n" + "\n\n".join(packed)
     totals = new_totals()
     resp = await generate([types.Content(role="user", parts=[types.Part.from_text(text=message)])],
-                          [], False, PIPELINE_INSTRUCTION)
+                          [], False, PODCAST_PIPELINE_INSTRUCTION if podcasts else PIPELINE_INSTRUCTION)
     add_usage(totals, resp.usage_metadata)
-    return _finish((resp.text or "").strip(), len(plan), evidence, totals, "pipeline")
+    return _finish((resp.text or "").strip(), len(plan), evidence, totals, "pipeline",
+                   PODCAST_PROMPT_VERSION if podcasts else PROMPT_VERSION)
 
 
 def gen_config(decls, allow_tools: bool, instruction: str):

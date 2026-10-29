@@ -127,7 +127,7 @@ def search_news_archive(question: str, player: str = "") -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
-def search_podcasts(question: str, player: str = "") -> dict:
+def search_podcasts(question: str, player: str = "", limit: int = 6) -> dict:
     """Search what NFL podcast hosts said in the last six weeks.
 
     Four shows, transcribed: The Ringer Fantasy Football Show, The Ringer NFL
@@ -135,15 +135,16 @@ def search_podcasts(question: str, player: str = "") -> dict:
     Russillo Show. Good for analysis and opinion -- "how are people reading
     his role", "is this team selling at the deadline" -- not for injury
     status or transactions; search_news_archive is the source for those.
-    Pass `player` (full name) when the question is about one player.
+    Pass `player` (full name) when the question is about one player, and
+    `limit` (1-6) to keep only the best few.
 
-    Returns up to 6 `passages`, newest first, shaped like
+    Returns up to `limit` `passages`, newest first, shaped like
     search_news_archive's: `source` is the show, `headline` the episode, and
     `url` the episode audio with `#t=<seconds>` at the passage. Transcripts
     are machine-made and spell players' names in full, so quote them as a
     host's view, close to but not exactly what was said.
     """
-    return archive.search_podcasts(question, player)
+    return archive.search_podcasts(question, player, limit)
 
 
 def main() -> None:

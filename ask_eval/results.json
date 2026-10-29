@@ -71,6 +71,58 @@
   "model_calls_tool_calls_mean": 1.72,
   "tokens_in_mean": 2797
  },
+ "pipeline_pod": {
+  "answers": 340,
+  "correct_mean_0_2": 1.447,
+  "correct_share_2": 0.563,
+  "refusal_mean_0_2": 1.7,
+  "grounding_support_mean": 0.737,
+  "grounding_support_below_0.5": 0.09,
+  "citation_agreement": 0.974,
+  "answer_types_answerable": {
+   "answered": 296,
+   "partial": 4,
+   "abstained": 0,
+   "unsupported": 0,
+   "empty": 0
+  },
+  "answer_types_unanswerable": {
+   "answered": 8,
+   "partial": 21,
+   "abstained": 11,
+   "unsupported": 0,
+   "empty": 0
+  },
+  "problems": {
+   "date_mismatch": 26,
+   "uncited": 18
+  },
+  "type_stable_across_runs": 0.982,
+  "latency_s": {
+   "p50": 5.24,
+   "p95": 9.82,
+   "max": 39.76
+  },
+  "cost_usd_per_answer": 0.00473,
+  "model_calls_tool_calls_mean": 2.72,
+  "tokens_in_mean": 4054,
+  "podcasts": {
+   "answers_offered_podcasts": 310,
+   "answers_citing_podcasts": 124,
+   "cite_rate_when_offered": 0.4,
+   "podcast_only_status_claims": 2,
+   "podcast_only_status_examples": [
+    {
+     "key": "q142|pipeline_pod|0",
+     "claim": "On The Ringer Fantasy Football Show 16 days ago, hosts also confirmed Achane was out for the season with a torn ACL."
+    },
+    {
+     "key": "q142|pipeline_pod|1",
+     "claim": "On The Ringer Fantasy Football Show 16 days ago, hosts also noted that Achane was out for the season with a torn ACL."
+    }
+   ]
+  }
+ },
  "pipeline_minus_agent_correct": {
   "mean": 0.328,
   "ci95": [
@@ -80,5 +132,15 @@
   "pairs": 299,
   "pipeline_better": 110,
   "agent_better": 40
+ },
+ "podcasts_minus_news_only_correct": {
+  "mean": 0.043,
+  "ci95": [
+   -0.033,
+   0.127
+  ],
+  "pairs": 299,
+  "pipeline_pod_better": 61,
+  "pipeline_better": 55
  }
 }

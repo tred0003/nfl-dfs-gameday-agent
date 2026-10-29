@@ -599,7 +599,7 @@ def search_news_archive(question: str, player: str = "",
                    empty="Nothing in the archive matches. Say no archived news was found.")
 
 
-def search_podcasts(question: str, player: str = "",
+def search_podcasts(question: str, player: str = "", limit: int = SEARCH_K,
                     tool_context: ToolContext = None) -> dict:
     """Search what NFL podcast hosts said in the last six weeks, with a specific question.
 
@@ -608,7 +608,7 @@ def search_podcasts(question: str, player: str = "",
     it for analysis and opinion -- how analysts read a player's role, a
     team's direction, a trade -- not for injury status or transactions, where
     news is the source. Pass `player` (full name) when the question is about
-    one player.
+    one player. `limit` (1-6) keeps only the best few passages.
 
     Returns `passages` like search_news_archive, `source` being the show and
     `headline` the episode. These are machine transcripts: player names were
@@ -616,14 +616,14 @@ def search_podcasts(question: str, player: str = "",
     to, not exactly, what was said. Say a podcast passage is a host's view,
     and how old it is.
     """
-    return _search(question, player, tool_context, table=PODCAST_TABLE,
+    return _search(question, player, tool_context, table=PODCAST_TABLE, k=limit,
                    calls_key="podcast_search_calls", label="Podcast passage",
                    what="podcast archive",
                    empty="Nothing in the podcast archive matches. Say no podcast discussion was found.")
 
 
 def _search(question: str, player: str, tool_context, *, table: str, calls_key: str,
-            label: str, what: str, empty: str) -> dict:
+            label: str, what: str, empty: str, k: int = SEARCH_K) -> dict:
     state = getattr(tool_context, "state", None)
     used = int(state.get(calls_key, 0)) if state is not None else 0
     if used >= SEARCH_LIMIT:
@@ -635,6 +635,9 @@ def _search(question: str, player: str, tool_context, *, table: str, calls_key: 
     question = (question or "").strip()
     if not question:
         return {"status": "error", "message": "Ask a specific question."}
+    # The best k by the ranker, cut BEFORE the newest-first sort below, so a
+    # small limit keeps the most relevant passages, not the most recent.
+    k = max(1, min(int(k or SEARCH_K), SEARCH_K))
     cutoff = _now()
     stats: dict = {}
     try:
@@ -643,7 +646,7 @@ def _search(question: str, player: str, tool_context, *, table: str, calls_key: 
         # hosts said last -- a JSN question got two chunks of college-QB talk.
         recent = SEARCH_RECENT if table == TABLE else 0
         rows = _search_rows(question, player.strip() or None, cutoff,
-                            SEARCH_DAYS, SEARCH_K, recent, stats, table)
+                            SEARCH_DAYS, k, recent, stats, table)
     except Exception as e:  # noqa: BLE001
         return {"status": "error",
                 "message": f"The {what} could not be searched ({type(e).__name__}: "
@@ -668,7 +671,7 @@ def _search(question: str, player: str, tool_context, *, table: str, calls_key: 
             continue
         seen.add(r["text"])
         kept.append(r)
-        if len(kept) >= SEARCH_K:
+        if len(kept) >= k:
             break
     kept.sort(key=lambda r: pd.Timestamp(r["published"]), reverse=True)
     passages = [{**_note(_body(r) if table == PODCAST_TABLE else r, cutoff, label),

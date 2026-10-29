@@ -278,6 +278,36 @@ def grade_judge() -> None:
     print(f"judge -> {JUDGE.name}")
 
 
+# ---- podcasts ---------------------------------------------------------------
+# A fact the podcast rules forbid a podcast to be the ONLY source for: injury
+# status, a transaction, who is starting. Word match on the claim, so it
+# over-counts ("he was out of position") -- every hit is printed to be read.
+STATUS_WORDS = re.compile(
+    r"\b(questionable|doubtful|ruled out|out for|inactive|injured reserve|\bIR\b|"
+    r"limited (?:in )?practice|did not practice|DNP|full practice|concussion protocol|"
+    r"signed|released|waived|traded|placed on|activated|will start|named the starter|"
+    r"expected to (?:play|start|miss))", re.I)
+
+
+def podcast_use(rs: list[dict]) -> dict:
+    """How the answers used the podcast passages, and where they broke the rules."""
+    leaks, cited, offered = [], 0, 0
+    for r in rs:
+        pod = {i["ref"] for i in items_of(r) if str(i.get("id") or "").startswith("pod:")}
+        offered += bool(pod)
+        claims = r["claims"]
+        if any(set(c["refs"]) & pod for c in claims):
+            cited += 1
+        for c in claims:
+            if c["refs"] and set(c["refs"]) <= pod and STATUS_WORDS.search(c["text"]):
+                leaks.append({"key": key_of(r), "claim": c["text"][:300]})
+    for x in leaks:
+        print(f"  podcast-only status claim? {x['key']}: {x['claim']}")
+    return {"answers_offered_podcasts": offered, "answers_citing_podcasts": cited,
+            "cite_rate_when_offered": round(cited / offered, 3) if offered else None,
+            "podcast_only_status_claims": len(leaks), "podcast_only_status_examples": leaks[:10]}
+
+
 # ---- report -----------------------------------------------------------------
 def report() -> None:
     import numpy as np
@@ -290,8 +320,10 @@ def report() -> None:
         return round(float(np.percentile(xs, q)), 2) if xs else None
 
     out = {}
-    for design in ("agent", "pipeline"):
+    for design in ("agent", "pipeline", "pipeline_pod"):
         rs = [r for k, r in answers.items() if r["design"] == design]
+        if not rs:
+            continue
         ans = [r for r in rs if r["kind"] != "unanswerable"]
         una = [r for r in rs if r["kind"] == "unanswerable"]
         types_ = lambda group: {t: sum(con[key_of(r)]["answer_type"] == t for r in group)  # noqa: E731
@@ -326,23 +358,28 @@ def report() -> None:
             "model_calls_tool_calls_mean": round(float(np.mean([r["tool_calls"] for r in rs])), 2),
             "tokens_in_mean": round(float(np.mean([r["tokens"]["input"] for r in rs]))),
         }
-    # Paired comparison on correctness: same question, same rep.
-    diffs = []
-    for k, r in answers.items():
-        if r["design"] != "agent" or r["kind"] == "unanswerable":
-            continue
-        k2 = f"{r['qid']}|pipeline|{r['rep']}"
-        a, b = jud.get(k, {}).get("score"), jud.get(k2, {}).get("score")
-        if a is not None and b is not None:
-            diffs.append(b - a)
-    if diffs:
-        rng = np.random.default_rng(0)
-        boots = [float(np.mean(rng.choice(diffs, len(diffs)))) for _ in range(5000)]
-        out["pipeline_minus_agent_correct"] = {
-            "mean": round(float(np.mean(diffs)), 3), "ci95": [round(float(np.percentile(boots, 2.5)), 3),
-                                                              round(float(np.percentile(boots, 97.5)), 3)],
-            "pairs": len(diffs), "pipeline_better": sum(d > 0 for d in diffs),
-            "agent_better": sum(d < 0 for d in diffs)}
+        if design == "pipeline_pod":
+            out[design]["podcasts"] = podcast_use(rs)
+    # Paired comparisons on correctness: same question, same rep.
+    for a_design, b_design, name in (("agent", "pipeline", "pipeline_minus_agent_correct"),
+                                     ("pipeline", "pipeline_pod", "podcasts_minus_news_only_correct")):
+        diffs = []
+        for k, r in answers.items():
+            if r["design"] != a_design or r["kind"] == "unanswerable":
+                continue
+            k2 = f"{r['qid']}|{b_design}|{r['rep']}"
+            a, b = jud.get(k, {}).get("score"), jud.get(k2, {}).get("score")
+            if a is not None and b is not None:
+                diffs.append(b - a)
+        if diffs:
+            rng = np.random.default_rng(0)
+            boots = [float(np.mean(rng.choice(diffs, len(diffs)))) for _ in range(5000)]
+            out[name] = {
+                "mean": round(float(np.mean(diffs)), 3),
+                "ci95": [round(float(np.percentile(boots, 2.5)), 3),
+                         round(float(np.percentile(boots, 97.5)), 3)],
+                "pairs": len(diffs), f"{b_design}_better": sum(d > 0 for d in diffs),
+                f"{a_design}_better": sum(d < 0 for d in diffs)}
     RESULTS.write_text(json.dumps(out, indent=1), encoding="utf-8")
     print(json.dumps(out, indent=1))
 

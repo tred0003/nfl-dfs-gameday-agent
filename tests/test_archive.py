@@ -184,6 +184,22 @@ class SearchTest(unittest.TestCase):
         self.assertIn("He looks done.", out["passages"][0]["text"])
         self.assertEqual(ctx.state["podcast_search_calls"], 1)
 
+    def test_podcast_limit_cuts_the_ranked_list_before_the_date_sort(self):
+        ks = []
+
+        def fake(q, player, cutoff, days, k, recent, stats, table):
+            ks.append(k)
+            # ranker order: best first, oldest first -- so the cut must not be by date
+            return [_row(None, d, f"t{d}") | {"chunk_id": f"pod:x:{d}", "url": None,
+                                              "headline": "Ep", "text": f"Ep. t{d}"}
+                    for d in (9, 8, 2, 1)]
+
+        with mock.patch.object(archive, "_search_rows", fake):
+            out = archive.search_podcasts("q", limit=2, tool_context=SimpleNamespace(state={}))
+            archive.search_podcasts("q", limit=99, tool_context=SimpleNamespace(state={}))
+        self.assertEqual(ks, [2, archive.SEARCH_K])                # clamped to 1..SEARCH_K
+        self.assertEqual([p["id"] for p in out["passages"]], ["pod:x:8", "pod:x:9"])
+
     def test_the_search_log_line_goes_to_stderr_never_stdout(self):
         # stdout is the MCP protocol channel under `server.py --stdio`.
         import contextlib
