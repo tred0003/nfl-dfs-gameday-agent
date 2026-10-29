@@ -186,6 +186,21 @@ function trace(data) {
       `prompt ${v.prompt || "?"} · ${v.retriever || ""}`));
 }
 
+// What this answer cost, in plain sight: Gemini's tokens, the dollars (model
+// plus retrieval: embedding the question, the re-ranker, BigQuery), and the
+// same scaled to 100 questions -- the number that decides whether Ask is cheap.
+function usage(data) {
+  const t = data.tokens || {};
+  const total = (t.input || 0) + (t.output || 0) + (t.thinking || 0);
+  const n = (x) => (x || 0).toLocaleString();
+  const usd = (x) => `$${x < 1 ? x.toFixed(4) : x.toFixed(2)}`;
+  const cost = data.cost_usd ?? 0;
+  return el("p", { class: "muted usage" },
+    `${n(total)} tokens (${n(t.input)} in · ${n(t.output)} out` +
+    `${t.thinking ? ` · ${n(t.thinking)} thinking` : ""}) · ` +
+    `${usd(cost)} this answer · ${usd(cost * 100)} per 100 answers`);
+}
+
 function feedback(data) {
   if (!data.ask_id) return null;
   const cited = [...new Set((data.claims || []).flatMap((c) => c.refs))];
@@ -245,7 +260,7 @@ function showAnswer(data, asked) {
     el("h2", {}, "Answer ", label ? el("span", { class: `badge ${tone}` }, label) : null),
     main,
     el("div", { class: "banner" }, "Archived news runs a day or more behind. For today's injury status, your report and live news are the source."),
-    trace(data), feedback(data));
+    usage(data), trace(data), feedback(data));
   const right = el("div", { class: "card" },
     el("h2", {}, `Sources (${cited.length} cited${rest.length ? `, ${rest.length} more read` : ""})`),
     ...cited.map((i) => sourceEl(i, true)),
