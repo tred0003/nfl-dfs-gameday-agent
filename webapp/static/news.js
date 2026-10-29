@@ -111,7 +111,10 @@ async function ask() {
   if (!b.question || inflight) return;
   busy(true, "Searching the archive, then writing a cited answer…");
   try {
-    showAnswer(await api("POST", "/api/news/ask", b), b);
+    const t0 = performance.now();
+    const data = await api("POST", "/api/news/ask", b);
+    data.wait_s = (performance.now() - t0) / 1000;   // what you waited, network included
+    showAnswer(data, b);
   } catch (e) {
     $("out").replaceChildren(el("div", { class: "card msg bad" }, e.message));
   } finally { busy(false); }
@@ -189,14 +192,20 @@ function trace(data) {
 // What this answer cost, in plain sight: Gemini's tokens, the dollars (model
 // plus retrieval: embedding the question, the re-ranker, BigQuery), and the
 // same scaled to 100 questions -- the number that decides whether Ask is cheap.
+// Time twice: the whole wait as the browser saw it, and the server's share
+// (retrieval + Gemini); the gap is the network and Cloud Run.
 function usage(data) {
   const t = data.tokens || {};
   const total = (t.input || 0) + (t.output || 0) + (t.thinking || 0);
   const n = (x) => (x || 0).toLocaleString();
   const usd = (x) => `$${x < 1 ? x.toFixed(4) : x.toFixed(2)}`;
   const cost = data.cost_usd ?? 0;
+  const secs = (x) => `${x.toFixed(1)} s`;
+  const time = data.wait_s != null
+    ? `Answered in ${secs(data.wait_s)}${data.elapsed_s != null ? ` (${secs(data.elapsed_s)} on the server)` : ""} · `
+    : data.elapsed_s != null ? `Answered in ${secs(data.elapsed_s)} · ` : "";
   return el("p", { class: "muted usage" },
-    `${n(total)} tokens (${n(t.input)} in · ${n(t.output)} out` +
+    `${time}${n(total)} tokens (${n(t.input)} in · ${n(t.output)} out` +
     `${t.thinking ? ` · ${n(t.thinking)} thinking` : ""}) · ` +
     `${usd(cost)} this answer · ${usd(cost * 100)} per 100 answers`);
 }
