@@ -2,6 +2,8 @@
 
     python news_rag/refresh.py             # collect, screen, embed, append, backfill
     python news_rag/refresh.py --dry-run   # collect and count; write nothing
+    python news_rag/refresh.py --feeds-since 2026-09-01   # one-time catch-up of
+                                           # what the non-ESPN feeds still hold
 
 index.py built dfs.news_chunks once, from the laptop, on 2026-10-14. Nothing
 appended to it after that, so by the time an agent tool read it the archive
@@ -152,6 +154,7 @@ def fill(bq, dry_run: bool) -> dict:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--dry-run", action="store_true", help="collect and count; write nothing")
+    p.add_argument("--feeds-since", help="widen the window for the non-ESPN outlets (UTC date)")
     a = p.parse_args()
 
     bq = _bq()
@@ -161,16 +164,22 @@ def main() -> int:
     since = (newest - timedelta(hours=OVERLAP_HOURS)) if newest else FIRST_DAY
     log(f"archive newest item: {newest}; collecting since {since:%Y-%m-%d %H:%M} UTC")
 
+    feeds_since = (datetime.fromisoformat(a.feeds_since).replace(tzinfo=timezone.utc)
+                   if a.feeds_since else None)
+    feed_errors: list[str] = []
     try:
-        articles = collect(since, log=log)
+        articles = collect(since, log=log, feeds_since=feeds_since, feed_errors=feed_errors)
     except (CollectError, OSError) as e:
         log(f"ARCHIVE REFRESH FAILED: collection failed ({type(e).__name__}: {e})")
         return 1
 
-    rows = new_chunks(articles, existing_ids(bq, [art["id"] for art in articles], since))
+    rows = new_chunks(articles, existing_ids(bq, [art["id"] for art in articles],
+                                             min(since, feeds_since or since)))
     log(f"{len(articles)} articles since the window start -> {len(rows)} new chunks")
 
-    stats = {"new_chunks": len(rows)}
+    stats = {"new_chunks": len(rows), "feed_errors": len(feed_errors)}
+    if len(rows):
+        stats["outlet_chunks"] = int((~rows["source"].str.startswith("ESPN")).sum())
     if len(rows) and not a.dry_run:
         rows["player_keys"] = rows["players"].map(player_keys)
         rows["screen"] = screen_texts(rows["text"].tolist(), workers=SCREEN_WORKERS)

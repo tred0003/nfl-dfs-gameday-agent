@@ -339,5 +339,64 @@ class RefreshTest(unittest.TestCase):
                              ["clean", "clean", "instruction", "unchecked"])
 
 
+@unittest.skipIf(archive is None, "gameday_agent needs ADK")
+class FeedStoriesTest(unittest.TestCase):
+    """The non-ESPN outlets (news_rag/collect.feed_stories), with no network."""
+
+    PLAYERS = [{"espn_id": "1", "name": "Zay Flowers", "position": "WR", "team": "BAL"},
+               {"espn_id": "2", "name": "Lamar Jackson", "position": "QB", "team": "BAL"},
+               {"espn_id": "3", "name": "Puka Nacua", "position": "WR", "team": "LAR"}]
+    LONG = " It was a normal practice day with plenty more to say about it." * 5
+
+    def _run(self, feeds, page="", since=NOW - timedelta(days=2)):
+        from news_rag import collect
+
+        def rss(source, url):
+            if source not in feeds:
+                raise ConnectionError(url)
+            return [{"source": source, "title": t, "url": f"https://x/{source}/{i}",
+                     "published": when, "text": text}
+                    for i, (t, when, text) in enumerate(feeds[source])]
+
+        with mock.patch.object(collect, "_rss", rss), \
+             mock.patch.object(collect, "team_site_body", lambda url: page):
+            return collect.feed_stories(self.PLAYERS, since)
+
+    def test_kept_only_when_a_skill_player_is_named(self):
+        rows, _ = self._run({"ProFootballTalk": [
+            ("Zay Flowers: you know Lamar Jackson", NOW, "Flowers said it." + self.LONG),
+            ("ManningCast ratings slump", NOW, "Viewers left." + self.LONG)]})
+        self.assertEqual(len(rows), 1)
+        self.assertEqual([p["name"] for p in rows[0]["players"]], ["Lamar Jackson", "Zay Flowers"])
+        self.assertEqual(rows[0]["teams"], ["BAL"])
+        self.assertEqual(rows[0]["kind"], "story")
+        self.assertTrue(rows[0]["id"].startswith("feed-"))
+
+    def test_a_team_site_teaser_is_replaced_by_the_page_and_tagged_with_its_team(self):
+        rows, _ = self._run({"Rams official site": [("Injury report", NOW, "Take a look.")]},
+                            page="Puka Nacua was a full participant." + self.LONG)
+        self.assertEqual(len(rows), 1)
+        self.assertIn("full participant", rows[0]["text"])
+        self.assertEqual(rows[0]["teams"], ["LAR"])
+
+    def test_a_teaser_with_no_page_is_dropped(self):
+        rows, _ = self._run({"Rams official site": [("Puka Nacua video", NOW, "Watch.")]})
+        self.assertEqual(rows, [])
+
+    def test_old_items_are_dropped_and_dead_feeds_are_errors_not_failures(self):
+        rows, errors = self._run({"Yahoo Sports": [
+            ("Puka Nacua", NOW - timedelta(days=5), "Old." + self.LONG)]})
+        self.assertEqual(rows, [])
+        self.assertIn("ProFootballTalk: ConnectionError", errors)
+
+    def test_rotowire_rss_is_not_collected_twice(self):
+        from news_rag import collect
+        self.assertNotIn("RotoWire", collect.FEEDS)
+
+    def test_the_same_url_gets_the_same_id(self):
+        feed = {"ProFootballTalk": [("Puka Nacua", NOW, "Nacua." + self.LONG)]}
+        self.assertEqual(self._run(feed)[0][0]["id"], self._run(feed)[0][0]["id"])
+
+
 if __name__ == "__main__":
     unittest.main()

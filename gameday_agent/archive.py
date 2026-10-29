@@ -9,6 +9,7 @@ a 48-hour window, and all of it changes how this week's news should be read.
 
 The archive is fantasy-football-ml-503718.dfs.news_chunks: ESPN's per-player
 fantasy notes (RotoWire-written) and full ESPN stories since training camp,
+plus ProFootballTalk, Yahoo Sports and the 32 team sites since 2026-10-29,
 chunked and embedded by news_rag/index.py and appended daily by
 news_rag/refresh.py. Two tools read it:
 

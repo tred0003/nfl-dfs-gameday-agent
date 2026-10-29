@@ -61,7 +61,8 @@ mcp = MCPServer(
     name="nfl-news-archive",
     instructions=(
         "Read-only access to an archive of NFL player news: ESPN's per-player fantasy "
-        "notes (written by RotoWire) and ESPN stories since 2026 training camp, refreshed "
+        "notes (written by RotoWire) and ESPN stories since 2026 training camp, plus "
+        "ProFootballTalk, Yahoo Sports and team-site stories since late October, refreshed "
         "daily. Use it for anything that takes weeks to show -- an injury that keeps "
         "coming back, a role that is growing or shrinking, a timeshare. It is a day or "
         "more behind live news, so for today's injury status check a live source. Every "
