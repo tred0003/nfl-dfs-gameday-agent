@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "webapp"))
 
+import slate  # noqa: E402 -- no SDK imports at module level
+
 try:
     from google.genai import types
     from mcp_types import Tool
@@ -218,6 +220,63 @@ class AskLoopTest(unittest.TestCase):
         out = _run(model, mcp)
         self.assertEqual(mcp.calls, [])
         self.assertEqual(out["tool_calls"], 0)
+
+    def test_the_model_card_is_p1_and_changes_the_prompt(self):
+        card = slate.model_card(POOL, "Should I start Puka Nacua today?")
+        model = ScriptedModel([_resp(text="The model has him at 20.3 [P1]. Limited [P2].")])
+        out = asyncio.run(ask.run_pipeline("Should I start Puka Nacua today?", "", [],
+                                           generate=model, mcp=FakeMcp(), podcasts=False,
+                                           model_card=card))
+        self.assertEqual(out["evidence"][0]["tool"], ask.MODEL_TOOL)
+        item = out["evidence"][0]["items"][0]
+        self.assertEqual(item["ref"], "P1")
+        self.assertIn("projection 20.3 DK pts, #1 of 2 WRs", item["text"])
+        self.assertIn(ask._MODEL_RULES, model.instructions[0])
+        self.assertTrue(model.instructions[0].endswith(ask._RULES))
+        self.assertEqual(out["versions"]["prompt"], ask.PROMPT_VERSION + ask.MODEL_PROMPT_SUFFIX)
+        self.assertEqual(out["problems"], [])
+
+    def test_no_card_leaves_the_prompt_as_it_was(self):
+        model = ScriptedModel([_resp(text="Limited [P1].")])
+        out = asyncio.run(ask.run_pipeline("q", "", [], generate=model, mcp=FakeMcp(),
+                                           podcasts=False, model_card=None))
+        self.assertEqual(model.instructions, [ask.PIPELINE_INSTRUCTION])
+        self.assertEqual(out["versions"]["prompt"], ask.PROMPT_VERSION)
+
+
+POOL = {"run_id": "r1", "week": 8, "projected_at": "2026-10-29T13:10:16+00:00", "players": [
+    {"name": "Puka Nacua", "position": "WR", "team": "LA", "opp_team": "LAC", "salary": 8600,
+     "status": None, "projection": 20.3, "ceiling": 31.4, "value": -0.1,
+     "salary_implied_pts": 20.3, "method": "xgb_v3@champion_v5"},
+    {"name": "CeeDee Lamb", "position": "WR", "team": "DAL", "opp_team": "ARI", "salary": 8100,
+     "status": "Q", "projection": 20.2, "ceiling": 29.6, "value": 1.4,
+     "salary_implied_pts": 18.9, "method": "xgb_v3@champion_v5"},
+    {"name": "Kenneth Walker III", "position": "RB", "team": "SEA", "opp_team": "WAS",
+     "salary": 6000, "status": None, "projection": 14.0, "ceiling": 22.0, "value": 0.5,
+     "salary_implied_pts": 13.5, "method": "xgb_v3@champion_v5"},
+    {"name": "Kenneth Walker", "position": "RB", "team": "X", "opp_team": "Y", "salary": 4000,
+     "status": None, "projection": 5.0, "ceiling": 9.0, "value": 0.0,
+     "salary_implied_pts": 5.0, "method": "xgb_v3@champion_v5"}]}
+
+
+class ModelCardTest(unittest.TestCase):
+    """slate.model_card: which players a question is about. No SDKs needed."""
+
+    def test_the_dropdown_player_comes_first_then_names_in_the_question(self):
+        card = slate.model_card(POOL, "Start him or CeeDee Lamb?", "Puka Nacua")
+        self.assertEqual([p["name"] for p in card["players"]], ["Puka Nacua", "CeeDee Lamb"])
+        self.assertEqual(card["players"][1]["position_rank"], 2)
+
+    def test_names_match_whatever_the_case(self):
+        card = slate.model_card(POOL, "should i start ceedee lamb?")
+        self.assertEqual([p["name"] for p in card["players"]], ["CeeDee Lamb"])
+
+    def test_a_longer_name_is_not_also_matched_as_the_shorter_one(self):
+        card = slate.model_card(POOL, "Is Kenneth Walker III a start?")
+        self.assertEqual([p["name"] for p in card["players"]], ["Kenneth Walker III"])
+
+    def test_nobody_on_the_slate_means_no_card(self):
+        self.assertIsNone(slate.model_card(POOL, "Who starts at QB in Tampa?", "Not Playing"))
 
 
 if __name__ == "__main__":

@@ -121,7 +121,7 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
     app.config["store"] = store
     slate = slate if slate is not None else BigQuerySlate()
     news = news if news is not None else McpNews()
-    agent = agent if agent is not None else ArchiveAgent()
+    agent = agent if agent is not None else ArchiveAgent(slate=slate)
     def spend(uid: str, route: str, limit: int, what: str) -> None:
         """Count one call against a user's daily limit for this route, or 429.
         In Firestore (users/{uid}/limits/{day}), in a transaction: the count

@@ -29,7 +29,7 @@ N_SUGGESTED = 3
 
 # Columns the page needs. Everything else in the table stays server-side.
 COLUMNS = ["name", "position", "team", "opp_team", "game", "salary", "status",
-           "projection", "ceiling", "value"]
+           "projection", "ceiling", "value", "salary_implied_pts", "method"]
 
 
 class SlateError(Exception):
@@ -79,7 +79,7 @@ class BigQuerySlate:
         for p in players:
             if p["projection"] is not None:
                 p["projection"] = round(float(p["projection"]), 1)
-            for k in ("ceiling", "value"):
+            for k in ("ceiling", "value", "salary_implied_pts"):
                 if p[k] is not None:
                     p[k] = round(float(p[k]), 1)
             p["salary"] = int(p["salary"] or 0)
@@ -121,6 +121,40 @@ class BigQuerySlate:
                 "projected_at": pool["projected_at"], "lineups": lineups}
 
 
+MAX_CARD_PLAYERS = 3    # "start A or B?" is two; three is the most a question names
+
+
+def model_card(pool: dict, question: str, player: str = "") -> dict | None:
+    """The model's numbers for the players a question is about, for Ask.
+
+    Who: the player picked in the dropdown, then any slate player whose full
+    name appears in the question ("Start Puka Nacua or CeeDee Lamb?"). Each
+    gets this week's projection and where it ranks at his position, so the
+    answer can say "4th of 80 WRs" and not just a number with no scale.
+    None when the question names nobody on the slate -- then Ask is news only.
+    """
+    players = pool.get("players") or []
+    by_name = {p["name"].lower(): p for p in players if p.get("name")}
+    q = question.lower()
+    names = [player.lower()] if player.lower() in by_name else []
+    # Longest first, so "Kenneth Walker III" wins over a shorter name inside it.
+    for n in sorted(by_name, key=len, reverse=True):
+        if n in q and n not in names and not any(n in m for m in names):
+            names.append(n)
+    if not names:
+        return None
+    rows = []
+    for n in names[:MAX_CARD_PLAYERS]:
+        p = by_name[n]
+        same = sorted((x for x in players if x.get("position") == p.get("position")
+                       and x.get("projection") is not None),
+                      key=lambda x: -x["projection"])
+        rank = next((i + 1 for i, x in enumerate(same) if x is p), None)
+        rows.append({**p, "position_rank": rank, "position_count": len(same)})
+    return {"run_id": pool.get("run_id"), "week": pool.get("week"),
+            "projected_at": pool.get("projected_at"), "players": rows}
+
+
 def solve(players: list[dict], n: int) -> list[dict]:
     """Top-n DK lineups by projection, via the same ILP as src/optimize.py."""
     import pandas as pd
@@ -131,7 +165,7 @@ def solve(players: list[dict], n: int) -> list[dict]:
     df = df[~df["status"].fillna("").str.upper().isin(["O", "OUT", "IR", "D", "DOUBTFUL"])]
     out = []
     for lu in optimize(df, n_lineups=n):
-        rows = [{c: _clean(r[c]) for c in COLUMNS} for _, r in lu.iterrows()]
+        rows = [{c: _clean(r.get(c)) for c in COLUMNS} for _, r in lu.iterrows()]
         out.append({
             "players": rows,
             "salary": int(sum(r["salary"] for r in rows)),

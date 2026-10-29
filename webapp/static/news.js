@@ -143,6 +143,8 @@ function sourceEl(item, cited) {
     el("div", { class: "when" }, el("span", { class: "n" }, item.ref.slice(1)),
        /^pod:/.test(item.id || "") ? el("span", { class: "badge warn" }, "podcast · host's view") : null,
        /^pod:/.test(item.id || "") ? " " : null,
+       /^model:/.test(item.id || "") ? el("span", { class: "badge" }, "our XGBoost model") : null,
+       /^model:/.test(item.id || "") ? " " : null,
        `${item.date} · ${ago(item.days_ago)} · ${item.source}`, item.player ? ` · ${item.player}` : null,
        url ? " · " : null,
        url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer" },
@@ -155,6 +157,7 @@ function sourceEl(item, cited) {
 function stepLine(e) {
   const a = e.args || {};
   const what = e.tool === "player_history" ? `History of ${(a.players || []).join(", ")}`
+    : e.tool === "xgboost_projection" ? `Model projection for ${(a.players || []).join(", ")}`
     : `Searched ${e.tool === "search_podcasts" ? "the podcasts" : "the news"} for "${a.question || ""}"${a.player ? ` about ${a.player}` : ""}`;
   const bits = [`${what} → ${e.items.length} item${e.items.length === 1 ? "" : "s"}`];
   if (e.tool === "search_podcasts" && e.status === "error") bits.push("podcast search failed, answered from news");

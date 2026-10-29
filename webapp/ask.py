@@ -66,6 +66,7 @@ import asyncio
 import json
 import os
 import time
+from datetime import datetime, timezone
 
 import citations
 from news import NEWS_MCP_URL, NewsError, session, unfence
@@ -95,6 +96,9 @@ PROMPT_VERSION = "ask-2026-10-28"
 # Oct 23)" and answers copied it for every fact: "N days ago" fell from 0.78
 # to 0.17 per answer, and grounding fell with it (ask_eval/README.md).
 PODCAST_PROMPT_VERSION = "ask-2026-10-29-pod2"
+# Added to either version when the model's numbers were in the message.
+MODEL_PROMPT_SUFFIX = "+xgb1"
+MODEL_TOOL = "xgboost_projection"
 
 # The two designs share every answer rule below; only how the evidence
 # arrives differs. Kept byte-identical to the agent prompt PROMPT_VERSION names.
@@ -142,6 +146,20 @@ _PODCAST_RULES = """- Some results come from search_podcasts: what NFL podcast h
   results, and when a podcast and the news disagree on a fact, the news wins.
 - Use a podcast passage only when it speaks to what was asked. Often none
   does; then leave the podcasts out and do not mention them.
+"""
+# The model is our own forecast, not news: numbers it can quote and lean on
+# for "should I start him", never a reason to override what the news says.
+_MODEL_RULES = """- One result may come from xgboost_projection: this week's DraftKings
+  projection from our own XGBoost model, made before the news you see.
+  `projection` is expected DK points, `ceiling` a good-game outcome,
+  `salary_implied_pts` what his salary says he should score, and `value`
+  projection minus that (above 0 = a bargain). Quote its numbers exactly,
+  cite its ref, and call it "the model". Never make up a number it lacks.
+- For start/sit or "who should I play", give a clear lean: the model's
+  projection and position rank first, then whatever in the news changes it.
+  News beats the model on availability and role: an injury, a benching or
+  a new role reported after the projection is a reason to go against it,
+  and say so. A higher projection decides between two healthy players.
 """
 INSTRUCTION = _AGENT_HEAD + _RULES
 PIPELINE_INSTRUCTION = _PIPELINE_HEAD + _RULES
@@ -249,8 +267,31 @@ def _finish(answer: str, calls: int, evidence: list, totals: dict, design: str,
                                             if e.get("retriever")), None)}}
 
 
+def _model_result(card: dict) -> dict:
+    """The model card as one tool result: one passage per player, so the same
+    refs, dates and citation check apply to the model's numbers as to news.
+    First-party numbers, so not fenced."""
+    at = datetime.fromisoformat(card["projected_at"]) if card.get("projected_at") else None
+    when = {"date": at.strftime("%a %b %d"),
+            "days_ago": max((datetime.now(timezone.utc) - at).days, 0)} if at else {}
+    passages = []
+    for p in card["players"]:
+        status = f", injury status {p['status']}" if p.get("status") else ""
+        rank = (f", #{p['position_rank']} of {p['position_count']} {p['position']}s"
+                if p.get("position_rank") else "")
+        value = f"{p['value']:+}" if p.get("value") is not None else "n/a"
+        text = (f"Week {card['week']} model projection for {p['name']} ({p['position']}, "
+                f"{p['team']} vs {p['opp_team']}): projection {p['projection']} DK pts{rank}, "
+                f"ceiling {p['ceiling']}, salary ${p['salary']:,}, salary_implied_pts "
+                f"{p.get('salary_implied_pts')}, value {value}{status}.")
+        passages.append({"id": f"model:{card['run_id']}:{p['name']}", "player": p["name"],
+                         "source": f"nfl-dfs model ({p.get('method') or 'XGBoost'})",
+                         "headline": "", "url": None, "text": text, **when})
+    return {"status": "ok", "passages": passages}
+
+
 async def run_pipeline(question: str, player: str, lineup: list[str], *, generate, mcp,
-                       podcasts: bool | None = None) -> dict:
+                       podcasts: bool | None = None, model_card: dict | None = None) -> dict:
     """The eager design: fixed retrieval, then ONE model call with no tools.
 
     Code decides what to fetch, not the model: the player's history when a
@@ -265,6 +306,11 @@ async def run_pipeline(question: str, player: str, lineup: list[str], *, generat
     The podcast search is a third call in the same gather. It is optional
     in a way news is not: if it fails or finds nothing, the answer is built
     from the news alone and the prompt never mentions podcasts.
+
+    model_card (slate.model_card) is the XGBoost projection for the players
+    the question names. It goes FIRST, so it is P1: on "should I start him"
+    the model's number is the anchor and the news is what moves it. No card
+    (nobody on this week's slate named) and the prompt never mentions it.
     """
     from google.genai import types
     from token_cost import add_usage, new_totals
@@ -279,6 +325,12 @@ async def run_pipeline(question: str, player: str, lineup: list[str], *, generat
     raw = await asyncio.gather(*(mcp.call_tool(name, args) for name, args in plan),
                                return_exceptions=True)
     refs, evidence, packed = {}, [], []
+    if model_card and model_card.get("players"):
+        result = _model_result(model_card)
+        citations.number_items(result, refs)
+        evidence.append(_evidence(MODEL_TOOL, {"players": [p["name"] for p in model_card["players"]],
+                                               "run_id": model_card.get("run_id")}, result))
+        packed.append(f"Result of {MODEL_TOOL}:\n{json.dumps(result, default=str)}")
     for (name, args), r in zip(plan, raw):
         if isinstance(r, BaseException):
             if name != "search_podcasts":
@@ -292,12 +344,16 @@ async def run_pipeline(question: str, player: str, lineup: list[str], *, generat
             continue     # "no podcast discussion found" is not worth a sentence
         packed.append(f"Result of {name}({json.dumps(args)}):\n{json.dumps(result, default=str)}")
     message = _user_message(question, player, lineup) + "\n\n" + "\n\n".join(packed)
+    instruction = PODCAST_PIPELINE_INSTRUCTION if podcasts else PIPELINE_INSTRUCTION
+    version = PODCAST_PROMPT_VERSION if podcasts else PROMPT_VERSION
+    if any(e["tool"] == MODEL_TOOL for e in evidence):
+        instruction = _PIPELINE_HEAD + _MODEL_RULES + instruction[len(_PIPELINE_HEAD):]
+        version += MODEL_PROMPT_SUFFIX
     totals = new_totals()
     resp = await generate([types.Content(role="user", parts=[types.Part.from_text(text=message)])],
-                          [], False, PODCAST_PIPELINE_INSTRUCTION if podcasts else PIPELINE_INSTRUCTION)
+                          [], False, instruction)
     add_usage(totals, resp.usage_metadata)
-    return _finish((resp.text or "").strip(), len(plan), evidence, totals, "pipeline",
-                   PODCAST_PROMPT_VERSION if podcasts else PROMPT_VERSION)
+    return _finish((resp.text or "").strip(), len(plan), evidence, totals, "pipeline", version)
 
 
 def gen_config(decls, allow_tools: bool, instruction: str):
@@ -316,8 +372,9 @@ def gen_config(decls, allow_tools: bool, instruction: str):
 class ArchiveAgent:
     """The production agent: Vertex Gemini + a live news-mcp session."""
 
-    def __init__(self, url: str = NEWS_MCP_URL):
+    def __init__(self, url: str = NEWS_MCP_URL, slate=None):
         self.url = url
+        self.slate = slate      # the web app's BigQuerySlate: the model's numbers, cached
 
     @staticmethod
     def _gemini():
@@ -334,8 +391,9 @@ class ArchiveAgent:
     def ask(self, question: str, player: str = "", lineup: list[str] | None = None,
             uid: str = "") -> dict:
         start = time.monotonic()
+        card = self._card(question, player)
         try:
-            out = asyncio.run(self._ask(question, player, lineup or []))
+            out = asyncio.run(self._ask(question, player, lineup or [], card))
         except Exception as e:  # noqa: BLE001 -- model, auth, network: all "could not answer"
             print(json.dumps({"event": "archive_ask", "uid": uid, "ok": False,
                               "error": f"{type(e).__name__}: {str(e)[:200]}",
@@ -344,6 +402,7 @@ class ArchiveAgent:
         out["elapsed_s"] = round(time.monotonic() - start, 1)
         print(json.dumps({"event": "archive_ask", "uid": uid, "ok": True,
                           "tool_calls": out["tool_calls"], "cost_usd": out["cost_usd"],
+                          "model_card": [p["name"] for p in card["players"]] if card else [],
                           **out["cost"], "elapsed_s": out["elapsed_s"], **out["tokens"],
                           "answer_type": out["answer_type"], "cited_share": out["cited_share"],
                           "problems": [p["kind"] for p in out["problems"]],
@@ -351,7 +410,20 @@ class ArchiveAgent:
                           **{f"{k}_version": v for k, v in out["versions"].items()}}), flush=True)
         return out
 
-    async def _ask(self, question, player, lineup):
+    def _card(self, question: str, player: str) -> dict | None:
+        """The model's numbers, or None. Optional like the podcasts: if the
+        projections cannot be read, the question is still answered from news."""
+        if self.slate is None:
+            return None
+        from slate import model_card
+        try:
+            return model_card(self.slate.pool(), question, player)
+        except Exception as e:  # noqa: BLE001
+            print(json.dumps({"event": "ask_model_card_failed",
+                              "error": f"{type(e).__name__}: {str(e)[:200]}"}), flush=True)
+            return None
+
+    async def _ask(self, question, player, lineup, card=None):
         from google.genai import types
         client = self._gemini()
 
@@ -359,9 +431,11 @@ class ArchiveAgent:
             return await client.aio.models.generate_content(
                 model=MODEL, contents=contents, config=gen_config(decls, allow_tools, instruction))
 
-        design = run_pipeline if DESIGN == "pipeline" else run
         async with session(self.url) as mcp:
-            return await design(question, player, lineup, generate=generate, mcp=mcp)
+            if DESIGN == "pipeline":
+                return await run_pipeline(question, player, lineup, generate=generate, mcp=mcp,
+                                          model_card=card)
+            return await run(question, player, lineup, generate=generate, mcp=mcp)
 
 
 __all__ = ["ArchiveAgent", "AskError", "NewsError", "run", "run_pipeline"]
