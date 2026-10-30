@@ -3,6 +3,14 @@
 "qid": "q001",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64433128#0",
+"blurb-64424728#0",
+"story-50086264#0",
+"story-49997133#6",
+"blurb-63884428#0",
+"blurb-63805528#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -10,6 +18,14 @@
 "qid": "q002",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64352828#0",
+"blurb-64237928#0",
+"feed-60139d3047951b86#4",
+"feed-19fcf48a206d231f#1",
+"blurb-64101028#0",
+"blurb-63858728#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -17,6 +33,14 @@
 "qid": "q003",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50282250#0",
+"blurb-64436328#0",
+"blurb-64430328#0",
+"blurb-64428128#0",
+"blurb-64374328#0",
+"blurb-64360128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -24,6 +48,14 @@
 "qid": "q004",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64431728#0",
+"blurb-64430528#0",
+"story-50242272#1",
+"story-50242272#2",
+"blurb-63827128#0",
+"blurb-63822528#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -31,13 +63,29 @@
 "qid": "q005",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50277960#0",
+"blurb-64426328#0",
+"blurb-64208228#0",
+"story-50012787#5",
+"story-49991137#10",
+"blurb-63720028#0"
+],
 "ranked": true,
 "fallback": null
 },
 {
 "qid": "q006",
-"hit": true,
-"newest": true,
+"hit": false,
+"newest": false,
+"ids": [
+"blurb-64382528#0",
+"feed-b08e138f0a08b9f7#0",
+"blurb-64348728#0",
+"feed-f3b37fc4e4ccbbdc#1",
+"feed-a61b116c4ff2c43e#1",
+"feed-1738ceeb3f6c7772#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -45,6 +93,14 @@
 "qid": "q007",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50282547#0",
+"feed-5a3395cb5eb710e4#0",
+"story-50036843#0",
+"blurb-63878228#0",
+"blurb-63817828#0",
+"blurb-63808028#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -52,6 +108,14 @@
 "qid": "q008",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50253313#2",
+"story-50248869#0",
+"story-50188997#18",
+"blurb-64108128#0",
+"blurb-64089628#0",
+"story-50102250#12"
+],
 "ranked": true,
 "fallback": null
 },
@@ -59,6 +123,14 @@
 "qid": "q009",
 "hit": true,
 "newest": null,
+"ids": [
+"feed-50e757637abaca68#0",
+"feed-50e757637abaca68#1",
+"feed-f7b51100e3745e62#7",
+"story-50127290#21",
+"feed-f6d817f49e1554a8#5",
+"blurb-63780228#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -66,13 +138,26 @@
 "qid": "q010",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-63777128#0",
+"blurb-63750428#0",
+"blurb-63750228#0"
+],
 "ranked": true,
 "fallback": null
 },
 {
 "qid": "q012",
-"hit": false,
+"hit": true,
 "newest": null,
+"ids": [
+"story-50229729#10",
+"feed-e783ec77059d63d7#1",
+"story-50229729#11",
+"story-50188997#22",
+"feed-0f2e860de2c77141#3",
+"story-50012787#3"
+],
 "ranked": true,
 "fallback": null
 },
@@ -80,6 +165,14 @@
 "qid": "q013",
 "hit": true,
 "newest": null,
+"ids": [
+"feed-2df56b22f46e4bd7#1",
+"feed-2df56b22f46e4bd7#0",
+"story-49970295#0",
+"story-49951448#0",
+"story-49969896#4",
+"story-49969896#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -87,6 +180,14 @@
 "qid": "q014",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-6a36ef9b35c140ad#0",
+"blurb-64329228#0",
+"blurb-50188691#6",
+"blurb-64305528#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -94,6 +195,14 @@
 "qid": "q015",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50229729#2",
+"story-50229729#10",
+"blurb-64332228#0",
+"blurb-64256128#0",
+"story-50158965#1",
+"story-49999840#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -101,6 +210,14 @@
 "qid": "q016",
 "hit": true,
 "newest": null,
+"ids": [
+"story-50228155#2",
+"story-50239053#3",
+"story-50054960#0",
+"story-50046497#0",
+"blurb-63951628#0",
+"story-50045051#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -108,6 +225,14 @@
 "qid": "q017",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50282250#0",
+"story-50282250#1",
+"feed-e783ec77059d63d7#5",
+"blurb-64421328#0",
+"feed-93aec209bf371309#0",
+"story-50229521#14"
+],
 "ranked": true,
 "fallback": null
 },
@@ -115,6 +240,14 @@
 "qid": "q018",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50259856#1",
+"feed-27b2dcf31e7971b7#0",
+"story-50059971#1",
+"story-50071302#2",
+"blurb-64001228#0",
+"story-50013861#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -122,6 +255,14 @@
 "qid": "q019",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-64409428#0",
+"blurb-64389428#0",
+"story-50021286#6",
+"feed-6ef6684ada44fb45#4",
+"feed-1b60b28fa7a526c2#3",
+"blurb-63914128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -129,6 +270,14 @@
 "qid": "q020",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50282250#0",
+"feed-cc35c793f04efed8#1",
+"blurb-64430328#0",
+"story-50259196#1",
+"feed-78f2455a12ca7442#1",
+"feed-a50cdf81266d6f79#23"
+],
 "ranked": true,
 "fallback": null
 },
@@ -136,6 +285,14 @@
 "qid": "q021",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"blurb-64405728#0",
+"blurb-64397328#0",
+"story-50233140#6",
+"story-50185443#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -143,6 +300,14 @@
 "qid": "q022",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50229729#10",
+"blurb-64437028#0",
+"story-50223535#2",
+"blurb-64330228#0",
+"blurb-64258328#0",
+"blurb-64156228#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -150,6 +315,14 @@
 "qid": "q023",
 "hit": true,
 "newest": false,
+"ids": [
+"feed-baa500038ea40ef1#0",
+"feed-baa500038ea40ef1#1",
+"feed-93aec209bf371309#1",
+"blurb-64302928#0",
+"feed-7412c410fe7d3db4#0",
+"feed-7412c410fe7d3db4#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -157,6 +330,14 @@
 "qid": "q024",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-64426628#0",
+"story-49803708#2",
+"story-50012581#2",
+"story-49951393#3",
+"story-49994493#1",
+"story-49994493#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -164,6 +345,14 @@
 "qid": "q025",
 "hit": true,
 "newest": true,
+"ids": [
+"story-49309401#5",
+"feed-f38937d29112cc7f#0",
+"blurb-64322828#0",
+"blurb-64307828#0",
+"blurb-64213228#0",
+"blurb-64085928#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -171,6 +360,14 @@
 "qid": "q026",
 "hit": true,
 "newest": false,
+"ids": [
+"feed-25d753ec6fd23081#0",
+"feed-25d753ec6fd23081#1",
+"blurb-64008528#0",
+"story-50042923#1",
+"story-50034943#1",
+"blurb-63867128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -178,6 +375,14 @@
 "qid": "q027",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-40699880#18",
+"blurb-40699880#16",
+"story-50112842#1",
+"blurb-63995828#0",
+"blurb-63946528#0",
+"blurb-63945028#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -185,6 +390,14 @@
 "qid": "q028",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-0c66fd58e006a42a#4",
+"story-50242627#3",
+"story-50221818#1",
+"feed-f00a3e6636873ddf#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -192,6 +405,14 @@
 "qid": "q029",
 "hit": true,
 "newest": null,
+"ids": [
+"story-40699880#15",
+"story-50099334#0",
+"story-50069246#3",
+"story-50044626#3",
+"story-50043408#16",
+"blurb-63957128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -199,6 +420,14 @@
 "qid": "q030",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"blurb-64421828#0",
+"blurb-64418728#0",
+"blurb-64390528#0",
+"blurb-64377328#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -206,6 +435,14 @@
 "qid": "q031",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-40699880#22",
+"story-50192344#3",
+"story-50126170#5",
+"story-50106946#4",
+"blurb-64080728#0",
+"blurb-64078728#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -213,6 +450,14 @@
 "qid": "q032",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64338528#0",
+"blurb-64338128#0",
+"blurb-64093828#0",
+"blurb-64055428#0",
+"blurb-64030728#0",
+"blurb-63778528#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -220,6 +465,14 @@
 "qid": "q033",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64422928#0",
+"story-50228155#8",
+"blurb-64177328#0",
+"blurb-64161528#0",
+"blurb-64150628#0",
+"blurb-64117028#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -227,6 +480,14 @@
 "qid": "q034",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64433528#0",
+"story-50229578#5",
+"blurb-64324028#0",
+"story-50188691#4",
+"blurb-64300928#0",
+"blurb-64272628#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -234,6 +495,14 @@
 "qid": "q035",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64437028#0",
+"feed-65a8552b452960c9#1",
+"blurb-40699880#15",
+"story-40699880#8",
+"blurb-64077328#0",
+"blurb-63960628#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -241,6 +510,14 @@
 "qid": "q036",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50160570#3",
+"blurb-64077628#0",
+"blurb-64045128#0",
+"blurb-64018228#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -248,6 +525,14 @@
 "qid": "q037",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50218886#4",
+"story-50166233#19",
+"story-50158965#0",
+"story-50067784#28",
+"blurb-63987328#0",
+"blurb-63987228#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -255,6 +540,14 @@
 "qid": "q038",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50228155#6",
+"blurb-40699880#16",
+"story-50077553#0",
+"blurb-64045028#0",
+"blurb-64015028#0",
+"blurb-64000828#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -262,13 +555,29 @@
 "qid": "q039",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50282250#0",
+"story-50229729#4",
+"story-50229729#5",
+"blurb-64392528#0",
+"blurb-64391028#0",
+"feed-a50cdf81266d6f79#22"
+],
 "ranked": true,
 "fallback": null
 },
 {
 "qid": "q040",
 "hit": true,
-"newest": true,
+"newest": false,
+"ids": [
+"story-50282610#2",
+"blurb-64428828#0",
+"blurb-64326928#0",
+"story-50181469#5",
+"story-50189868#4",
+"story-50142192#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -276,6 +585,14 @@
 "qid": "q041",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50229729#8",
+"story-50272352#3",
+"blurb-64188928#0",
+"feed-455f0b358f9993da#0",
+"story-50090624#0",
+"blurb-64045328#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -283,6 +600,14 @@
 "qid": "q042",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-64423628#0",
+"feed-c40dcd9310e76ede#0",
+"feed-a5daef9b6b7a241c#0",
+"blurb-64224728#0",
+"blurb-63996828#0",
+"blurb-63986128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -290,6 +615,14 @@
 "qid": "q043",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50229729#0",
+"blurb-64426228#0",
+"blurb-64015928#0",
+"story-50070581#0",
+"blurb-63999428#0",
+"blurb-63984828#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -297,6 +630,14 @@
 "qid": "q044",
 "hit": true,
 "newest": true,
+"ids": [
+"feed-8dc375fc23d0911a#0",
+"feed-a29467074c6f0cb5#0",
+"blurb-64277528#0",
+"story-50163007#11",
+"blurb-64088528#0",
+"story-50105539#3"
+],
 "ranked": true,
 "fallback": null
 },
@@ -304,6 +645,14 @@
 "qid": "q045",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-40699880#16",
+"blurb-64276028#0",
+"blurb-64275028#0",
+"feed-d20db89aafe26b4b#1",
+"blurb-64164328#0",
+"blurb-64159628#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -311,6 +660,14 @@
 "qid": "q046",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-e783ec77059d63d7#5",
+"feed-2a6d184bd39d54a5#0",
+"blurb-64278128#0",
+"feed-716a0e269dae4dbd#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -318,6 +675,14 @@
 "qid": "q047",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-40699880#18",
+"blurb-64194628#0",
+"feed-95682fa8451b23c5#1",
+"feed-95682fa8451b23c5#0",
+"blurb-64182528#0",
+"blurb-64160128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -325,6 +690,14 @@
 "qid": "q048",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50262387#5",
+"blurb-64409728#0",
+"story-50116111#2",
+"blurb-64184528#0",
+"blurb-64182328#0",
+"blurb-64161228#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -332,13 +705,29 @@
 "qid": "q049",
 "hit": true,
 "newest": false,
+"ids": [
+"feed-8af360ed3f2d0f1c#0",
+"feed-8af360ed3f2d0f1c#1",
+"blurb-64189328#0",
+"blurb-64179728#0",
+"blurb-64160828#0",
+"blurb-63918428#0"
+],
 "ranked": true,
 "fallback": null
 },
 {
 "qid": "q050",
-"hit": true,
-"newest": true,
+"hit": false,
+"newest": false,
+"ids": [
+"story-50229729#8",
+"blurb-64433928#0",
+"blurb-64432828#0",
+"feed-c8a4438ef24a1735#0",
+"feed-c8a4438ef24a1735#3",
+"feed-c8a4438ef24a1735#4"
+],
 "ranked": true,
 "fallback": null
 },
@@ -346,6 +735,14 @@
 "qid": "q051",
 "hit": true,
 "newest": null,
+"ids": [
+"feed-df9b9deb8b895577#0",
+"feed-df9b9deb8b895577#1",
+"blurb-64436628#0",
+"feed-da41c97a4f7a2f17#1",
+"feed-d5f84d94682cd34e#1",
+"story-50280223#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -353,6 +750,14 @@
 "qid": "q052",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50229729#10",
+"feed-25d753ec6fd23081#1",
+"blurb-64431628#0",
+"story-40699880#5",
+"story-50127290#23",
+"blurb-64077628#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -360,6 +765,14 @@
 "qid": "q053",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50252261#1",
+"story-50275344#0",
+"story-50214605#2",
+"story-50214605#1",
+"story-50214605#0",
+"story-50201828#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -367,6 +780,14 @@
 "qid": "q054",
 "hit": true,
 "newest": null,
+"ids": [
+"story-50229729#2",
+"story-50272352#4",
+"story-50251708#3",
+"story-50220645#3",
+"blurb-64322628#0",
+"story-50188997#8"
+],
 "ranked": true,
 "fallback": null
 },
@@ -374,6 +795,14 @@
 "qid": "q055",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50229729#8",
+"story-50272352#3",
+"blurb-64188928#0",
+"blurb-64185228#0",
+"story-50126170#3",
+"blurb-64182628#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -381,6 +810,14 @@
 "qid": "q056",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-7071c71b51992d6d#7",
+"feed-aa2efc7be768d93d#1",
+"feed-85949fb1983b75bb#2",
+"blurb-64128128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -388,6 +825,14 @@
 "qid": "q057",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64403128#0",
+"story-50238049#26",
+"blurb-64231028#0",
+"blurb-64219428#0",
+"story-50110299#1",
+"blurb-64101728#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -395,6 +840,14 @@
 "qid": "q058",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50164378#0",
+"story-50141743#2",
+"story-50141743#1",
+"story-50141743#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -402,6 +855,14 @@
 "qid": "q059",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"blurb-64109928#0",
+"story-50115183#1",
+"story-50114045#0",
+"story-50114045#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -409,6 +870,14 @@
 "qid": "q060",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64423128#0",
+"feed-19009122dd8208bc#0",
+"blurb-64303928#0",
+"blurb-64292828#0",
+"story-50202634#1",
+"feed-9355478f9e4162ed#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -416,6 +885,14 @@
 "qid": "q061",
 "hit": true,
 "newest": true,
+"ids": [
+"story-49309401#4",
+"blurb-64352928#0",
+"blurb-64332628#0",
+"blurb-64326828#0",
+"story-50214763#3",
+"blurb-64315828#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -423,6 +900,14 @@
 "qid": "q062",
 "hit": true,
 "newest": true,
+"ids": [
+"story-49803708#11",
+"story-49803708#6",
+"feed-7f8919828f1aae36#1",
+"blurb-64279128#0",
+"story-50192352#5",
+"blurb-64238428#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -430,6 +915,14 @@
 "qid": "q063",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50262387#4",
+"blurb-40699880#1",
+"story-50188691#2",
+"blurb-64277828#0",
+"blurb-64271428#0",
+"blurb-64243828#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -437,6 +930,14 @@
 "qid": "q064",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-64410828#0",
+"feed-2a6d184bd39d54a5#0",
+"blurb-64290828#0",
+"feed-de409708277565ad#20",
+"feed-9db82a33ac53bcdf#2",
+"blurb-64176028#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -444,6 +945,14 @@
 "qid": "q065",
 "hit": true,
 "newest": true,
+"ids": [
+"feed-25d753ec6fd23081#0",
+"blurb-64431828#0",
+"story-40699880#18",
+"blurb-64327828#0",
+"story-50213364#4",
+"blurb-50188691#3"
+],
 "ranked": true,
 "fallback": null
 },
@@ -451,6 +960,14 @@
 "qid": "q066",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50229729#8",
+"story-50229729#9",
+"blurb-64279228#0",
+"blurb-64238828#0",
+"blurb-64100928#0",
+"blurb-63989928#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -458,6 +975,14 @@
 "qid": "q067",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"blurb-64185028#0",
+"blurb-64184828#0",
+"feed-5e06cb170cd5d2c9#0",
+"blurb-64184028#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -465,6 +990,14 @@
 "qid": "q068",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-64437228#0",
+"feed-31fb72af0dcf5351#1",
+"feed-b6502bcc20373cbe#5",
+"story-50197497#0",
+"blurb-64270728#0",
+"blurb-64244228#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -472,6 +1005,14 @@
 "qid": "q069",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"blurb-64431028#0",
+"blurb-64400428#0",
+"blurb-64391328#0",
+"blurb-64375128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -479,6 +1020,14 @@
 "qid": "q070",
 "hit": true,
 "newest": null,
+"ids": [
+"story-50229729#1",
+"story-49803708#6",
+"blurb-64234528#0",
+"feed-60139d3047951b86#5",
+"feed-60139d3047951b86#2",
+"feed-19fcf48a206d231f#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -486,6 +1035,14 @@
 "qid": "q071",
 "hit": true,
 "newest": null,
+"ids": [
+"story-50229729#1",
+"blurb-50280475#0",
+"feed-2f4b2ad48d3d7811#1",
+"feed-9db82a33ac53bcdf#3",
+"story-50127290#0",
+"story-50127290#17"
+],
 "ranked": true,
 "fallback": null
 },
@@ -493,6 +1050,14 @@
 "qid": "q072",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50281161#1",
+"story-50229729#0",
+"blurb-50188691#3",
+"blurb-64309428#0",
+"blurb-64300728#0",
+"feed-bcbacbbfc0876d76#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -500,6 +1065,14 @@
 "qid": "q073",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50229729#1",
+"story-50229729#8",
+"blurb-64273628#0",
+"story-50197342#0",
+"story-50197342#1",
+"feed-ecbde844a8c73b0e#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -507,6 +1080,14 @@
 "qid": "q074",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50229729#4",
+"blurb-64438628#0",
+"blurb-64421428#0",
+"blurb-64396728#0",
+"blurb-50188691#5",
+"blurb-64243028#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -514,6 +1095,14 @@
 "qid": "q075",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64415228#0",
+"feed-6874cca925aa0192#0",
+"feed-6874cca925aa0192#2",
+"blurb-64387428#0",
+"blurb-64283028#0",
+"blurb-64252128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -521,6 +1110,14 @@
 "qid": "q076",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50229729#8",
+"blurb-64433828#0",
+"blurb-64258528#0",
+"feed-93fe4caa5cbc633e#0",
+"blurb-64243328#0",
+"feed-1c5ee2695666aa4d#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -528,6 +1125,14 @@
 "qid": "q077",
 "hit": true,
 "newest": null,
+"ids": [
+"feed-2df56b22f46e4bd7#0",
+"feed-2df56b22f46e4bd7#1",
+"feed-afffb12466413a85#1",
+"feed-bcf721dce6f82052#23",
+"feed-bcf721dce6f82052#8",
+"blurb-64434228#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -535,6 +1140,14 @@
 "qid": "q078",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"blurb-64395128#0",
+"feed-7fedb131e2246f98#2",
+"feed-7fedb131e2246f98#3",
+"blurb-64380128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -542,6 +1155,14 @@
 "qid": "q079",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"blurb-64413628#0",
+"feed-6874cca925aa0192#1",
+"story-50229521#34",
+"feed-2a5c97fef4ac0498#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -549,6 +1170,14 @@
 "qid": "q080",
 "hit": false,
 "newest": false,
+"ids": [
+"feed-cc35c793f04efed8#0",
+"feed-cc35c793f04efed8#1",
+"blurb-64258028#0",
+"blurb-64242628#0",
+"feed-5ecc1748e731e570#6",
+"blurb-64085628#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -556,6 +1185,14 @@
 "qid": "q081",
 "hit": true,
 "newest": true,
+"ids": [
+"feed-bfbf99cf7e6bd864#0",
+"feed-bfbf99cf7e6bd864#1",
+"blurb-64353228#0",
+"feed-f3b37fc4e4ccbbdc#0",
+"feed-a61b116c4ff2c43e#0",
+"feed-1738ceeb3f6c7772#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -563,6 +1200,14 @@
 "qid": "q082",
 "hit": true,
 "newest": false,
+"ids": [
+"feed-77dc7b470af239cf#1",
+"feed-39819b1e3a40d19a#2",
+"blurb-64392728#0",
+"feed-7ed9f93eb5396027#0",
+"blurb-64380328#0",
+"feed-12a1ce14c3952707#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -570,6 +1215,14 @@
 "qid": "q083",
 "hit": true,
 "newest": true,
+"ids": [
+"feed-df9b9deb8b895577#0",
+"feed-df9b9deb8b895577#1",
+"blurb-64378128#0",
+"blurb-64329428#0",
+"blurb-50188691#1",
+"story-50197266#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -577,6 +1230,14 @@
 "qid": "q084",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64374028#0",
+"feed-6124ea9dc780a9c4#1",
+"feed-1bd6daad8050e14a#0",
+"feed-552f515619c5ed61#0",
+"blurb-64242128#0",
+"blurb-64233628#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -584,6 +1245,14 @@
 "qid": "q085",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"blurb-64411928#0",
+"blurb-64411628#0",
+"blurb-64013628#0",
+"blurb-63753828#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -591,6 +1260,14 @@
 "qid": "q086",
 "hit": true,
 "newest": null,
+"ids": [
+"story-49803708#3",
+"blurb-40699880#15",
+"story-40699880#8",
+"story-50231812#0",
+"story-50231812#1",
+"story-50222471#5"
+],
 "ranked": true,
 "fallback": null
 },
@@ -598,6 +1275,14 @@
 "qid": "q087",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64395428#0",
+"blurb-64391328#0",
+"feed-6f7c8a7596d7210c#5",
+"blurb-64358828#0",
+"blurb-64341028#0",
+"feed-46509ba7574bf9f5#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -605,6 +1290,14 @@
 "qid": "q088",
 "hit": true,
 "newest": null,
+"ids": [
+"story-50282634#0",
+"blurb-50280480#0",
+"story-50234206#1",
+"blurb-64324628#0",
+"story-50172991#14",
+"story-50173775#13"
+],
 "ranked": true,
 "fallback": null
 },
@@ -612,6 +1305,14 @@
 "qid": "q089",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-49951327#0",
+"story-49957149#25",
+"story-49957149#0",
+"story-49957149#27"
+],
 "ranked": true,
 "fallback": null
 },
@@ -619,6 +1320,14 @@
 "qid": "q090",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-11ce69b07cef1986#1",
+"feed-57a7b54d0ebd61e1#0",
+"story-50077998#0",
+"story-49972586#4"
+],
 "ranked": true,
 "fallback": null
 },
@@ -626,6 +1335,14 @@
 "qid": "q091",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"blurb-64319628#0",
+"story-50110488#8",
+"story-49956804#18",
+"story-49956804#19"
+],
 "ranked": true,
 "fallback": null
 },
@@ -633,6 +1350,14 @@
 "qid": "q092",
 "hit": true,
 "newest": null,
+"ids": [
+"story-50281597#1",
+"blurb-64435628#0",
+"story-50229578#6",
+"blurb-64201328#0",
+"story-50077823#1",
+"story-50012795#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -640,6 +1365,14 @@
 "qid": "q093",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-6124ea9dc780a9c4#2",
+"feed-6124ea9dc780a9c4#3",
+"story-50218886#20",
+"feed-b86885e905e88696#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -647,6 +1380,14 @@
 "qid": "q094",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50218886#0",
+"story-50127159#2",
+"story-50107443#0",
+"story-50107443#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -654,6 +1395,14 @@
 "qid": "q095",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-64437228#0",
+"feed-31fb72af0dcf5351#1",
+"blurb-64215228#0",
+"story-50013349#0",
+"story-50000410#0",
+"blurb-63846728#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -661,6 +1410,14 @@
 "qid": "q096",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-64439428#0",
+"blurb-64439228#0",
+"story-50219771#1",
+"story-50219771#2",
+"blurb-64357928#0",
+"feed-d4aabf52464879c4#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -668,6 +1425,14 @@
 "qid": "q097",
 "hit": true,
 "newest": null,
+"ids": [
+"story-50229729#8",
+"feed-bfbf99cf7e6bd864#1",
+"blurb-64272928#0",
+"feed-7f156b074258ea2a#1",
+"story-50077553#7",
+"blurb-64059528#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -675,6 +1440,14 @@
 "qid": "q098",
 "hit": false,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50240051#4",
+"story-50240051#1",
+"story-50184062#1",
+"story-50184062#4"
+],
 "ranked": true,
 "fallback": null
 },
@@ -682,6 +1455,14 @@
 "qid": "q099",
 "hit": true,
 "newest": true,
+"ids": [
+"feed-f38937d29112cc7f#1",
+"feed-f38937d29112cc7f#0",
+"story-50219895#3",
+"story-50217496#8",
+"story-50043976#3",
+"story-50043976#4"
+],
 "ranked": true,
 "fallback": null
 },
@@ -689,6 +1470,14 @@
 "qid": "q100",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50220836#4",
+"story-50077145#12",
+"story-50058901#8",
+"story-50058901#9"
+],
 "ranked": true,
 "fallback": null
 },
@@ -696,6 +1485,14 @@
 "qid": "q101",
 "hit": true,
 "newest": null,
+"ids": [
+"feed-2df56b22f46e4bd7#1",
+"feed-2df56b22f46e4bd7#0",
+"story-50230871#1",
+"story-50077206#1",
+"story-50077206#0",
+"story-50077206#3"
+],
 "ranked": true,
 "fallback": null
 },
@@ -703,6 +1500,14 @@
 "qid": "q102",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50282547#3",
+"blurb-64427528#0",
+"story-50166233#28",
+"story-50086531#6",
+"story-50086531#9",
+"story-50059971#16"
+],
 "ranked": true,
 "fallback": null
 },
@@ -710,6 +1515,14 @@
 "qid": "q103",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50218886#16",
+"story-50127290#29",
+"story-50126700#1",
+"story-50114045#3"
+],
 "ranked": true,
 "fallback": null
 },
@@ -717,6 +1530,14 @@
 "qid": "q104",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50260609#3",
+"story-50260609#0",
+"feed-751cae5313dc4df5#3",
+"story-50218886#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -724,6 +1545,14 @@
 "qid": "q105",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50260368#3",
+"story-50181469#18",
+"story-50213735#3",
+"story-50212867#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -731,6 +1560,14 @@
 "qid": "q106",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-72b2880d20944444#0",
+"feed-dccee28a178cc618#2",
+"feed-5c4c29cdb1f07a5f#2",
+"story-50043471#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -738,6 +1575,14 @@
 "qid": "q107",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-64433428#0",
+"blurb-50278742#0",
+"story-50249407#2",
+"story-50228657#4",
+"story-50184544#0",
+"story-50184544#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -745,6 +1590,14 @@
 "qid": "q108",
 "hit": true,
 "newest": false,
+"ids": [
+"feed-d24b89d5e1bfdff9#1",
+"feed-d24b89d5e1bfdff9#0",
+"story-50200910#0",
+"blurb-64291428#0",
+"blurb-64289228#0",
+"blurb-64269328#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -752,6 +1605,14 @@
 "qid": "q109",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50110612#3",
+"story-50110612#4",
+"story-50110612#2",
+"story-50110612#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -759,13 +1620,29 @@
 "qid": "q110",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-2d910f5b99c76df7#0",
+"story-50220836#26",
+"story-50220836#28",
+"story-50220836#27"
+],
 "ranked": true,
 "fallback": null
 },
 {
 "qid": "q111",
-"hit": true,
+"hit": false,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50260535#1",
+"feed-76b9a80b9fd9a7a0#1",
+"feed-260434cb7e11a7a8#3",
+"feed-260434cb7e11a7a8#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -773,6 +1650,14 @@
 "qid": "q112",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50281597#0",
+"story-50279977#0",
+"story-50251544#4",
+"story-50251544#3"
+],
 "ranked": true,
 "fallback": null
 },
@@ -780,6 +1665,14 @@
 "qid": "q113",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-64410828#0",
+"feed-2a6d184bd39d54a5#0",
+"story-50116111#10",
+"story-50132721#3",
+"story-50133939#1",
+"story-50108832#6"
+],
 "ranked": true,
 "fallback": null
 },
@@ -787,6 +1680,14 @@
 "qid": "q114",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-64433228#0",
+"blurb-64431028#0",
+"blurb-64260928#0",
+"story-50176029#4",
+"blurb-64230428#0",
+"blurb-64218428#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -794,6 +1695,14 @@
 "qid": "q116",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50215436#6",
+"story-50215436#7",
+"story-50215436#1",
+"story-50215436#8"
+],
 "ranked": true,
 "fallback": null
 },
@@ -801,6 +1710,14 @@
 "qid": "q117",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50229729#7",
+"feed-8da80a899c59e4ff#0",
+"story-50238049#9",
+"story-50238049#5",
+"story-50238049#6",
+"story-50228657#23"
+],
 "ranked": true,
 "fallback": null
 },
@@ -808,6 +1725,14 @@
 "qid": "q118",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50228155#8",
+"story-50249972#7",
+"story-50229521#21",
+"story-50179319#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -815,6 +1740,14 @@
 "qid": "q119",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50229729#1",
+"blurb-50280475#0",
+"blurb-64426228#0",
+"blurb-64425628#0",
+"story-50229578#10",
+"blurb-64322128#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -822,13 +1755,29 @@
 "qid": "q120",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-6e874955597e4ce5#0",
+"story-50253430#0",
+"story-50220836#26",
+"story-50211303#1"
+],
 "ranked": true,
 "fallback": null
 },
 {
 "qid": "q121",
-"hit": true,
+"hit": false,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-09571117ff5d8aed#3",
+"feed-339c8d27a3aaf0a0#0",
+"feed-8e78f81cd4e5e09e#2",
+"story-50158326#22"
+],
 "ranked": true,
 "fallback": null
 },
@@ -836,6 +1785,14 @@
 "qid": "q122",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50260609#1",
+"story-50229578#7",
+"story-50223535#3",
+"story-50124795#2",
+"story-50109845#2",
+"story-50046696#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -843,6 +1800,14 @@
 "qid": "q123",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50281597#1",
+"blurb-64435728#0",
+"story-49974401#0",
+"blurb-63761828#0",
+"story-49930940#10",
+"story-49932635#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -850,6 +1815,14 @@
 "qid": "q124",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50252261#1",
+"blurb-64437828#0",
+"story-50215969#2",
+"story-50191066#1",
+"story-50100701#7",
+"story-50078089#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -857,6 +1830,14 @@
 "qid": "q125",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64437328#0",
+"blurb-64437128#0",
+"story-50197704#0",
+"story-50197704#2",
+"story-50164049#1",
+"story-50127290#5"
+],
 "ranked": true,
 "fallback": null
 },
@@ -864,6 +1845,14 @@
 "qid": "q126",
 "hit": true,
 "newest": true,
+"ids": [
+"feed-27b2dcf31e7971b7#1",
+"story-50250199#0",
+"story-50230606#2",
+"feed-64a3b9d28463e4aa#1",
+"story-50221426#1",
+"feed-5c1aca2b6831ff98#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -871,6 +1860,14 @@
 "qid": "q127",
 "hit": true,
 "newest": true,
+"ids": [
+"feed-cc35c793f04efed8#0",
+"feed-cc35c793f04efed8#1",
+"blurb-64049628#0",
+"story-50021286#1",
+"blurb-63936028#0",
+"blurb-63934028#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -878,13 +1875,29 @@
 "qid": "q128",
 "hit": true,
 "newest": true,
+"ids": [
+"feed-bfbf99cf7e6bd864#1",
+"feed-bfbf99cf7e6bd864#0",
+"blurb-64330828#0",
+"story-50090624#0",
+"story-50021286#9",
+"story-50034054#1"
+],
 "ranked": true,
 "fallback": null
 },
 {
 "qid": "q129",
 "hit": true,
-"newest": true,
+"newest": false,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-6ef6684ada44fb45#0",
+"feed-6ef6684ada44fb45#6",
+"feed-6ef6684ada44fb45#9",
+"story-50044058#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -892,6 +1905,14 @@
 "qid": "q130",
 "hit": true,
 "newest": false,
+"ids": [
+"story-49803708#3",
+"blurb-40699880#15",
+"story-50084552#3",
+"feed-58a9f8f1ab196528#0",
+"blurb-64027828#0",
+"blurb-64014328#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -899,6 +1920,14 @@
 "qid": "q131",
 "hit": true,
 "newest": null,
+"ids": [
+"feed-7fedb131e2246f98#1",
+"feed-7fedb131e2246f98#0",
+"story-50077998#0",
+"feed-30fc03276e82dfd2#0",
+"feed-240dbbd19ec35504#0",
+"feed-dfc9bd9933169ca2#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -906,6 +1935,14 @@
 "qid": "q133",
 "hit": true,
 "newest": true,
+"ids": [
+"feed-25d753ec6fd23081#0",
+"feed-25d753ec6fd23081#1",
+"blurb-64159928#0",
+"story-50140789#1",
+"story-50127154#3",
+"blurb-64117828#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -913,6 +1950,14 @@
 "qid": "q134",
 "hit": true,
 "newest": null,
+"ids": [
+"story-50228155#2",
+"blurb-64409428#0",
+"story-50135427#2",
+"story-50135427#1",
+"story-50135427#0",
+"feed-b47fa889a42fd787#4"
+],
 "ranked": true,
 "fallback": null
 },
@@ -920,6 +1965,14 @@
 "qid": "q135",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50272352#4",
+"story-49803708#6",
+"feed-f0fe21f473cdba5b#0",
+"story-50173775#8",
+"story-50116787#21",
+"story-50077145#6"
+],
 "ranked": true,
 "fallback": null
 },
@@ -927,6 +1980,14 @@
 "qid": "q136",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50282634#1",
+"feed-e384e79ba26c798b#0",
+"story-50258967#1",
+"story-50258967#2",
+"story-50253068#3",
+"story-50240100#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -934,6 +1995,14 @@
 "qid": "q137",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-64439628#0",
+"blurb-64432728#0",
+"story-40699880#4",
+"story-50259856#0",
+"blurb-50249570#2",
+"blurb-50229520#7"
+],
 "ranked": true,
 "fallback": null
 },
@@ -941,6 +2010,14 @@
 "qid": "q138",
 "hit": true,
 "newest": true,
+"ids": [
+"feed-8da80a899c59e4ff#0",
+"feed-8da80a899c59e4ff#1",
+"story-50276432#1",
+"story-50276432#0",
+"story-50230816#1",
+"story-50230816#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -948,6 +2025,14 @@
 "qid": "q139",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50268018#0",
+"blurb-64418628#0",
+"story-50228657#12",
+"story-50228752#0",
+"story-50228752#1",
+"feed-e0818ed131c9e7a6#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -955,6 +2040,14 @@
 "qid": "q140",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50013943#7",
+"story-49993378#1",
+"story-49994418#2",
+"story-49992451#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -962,6 +2055,14 @@
 "qid": "q141",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-2df56b22f46e4bd7#1",
+"story-49990341#11",
+"story-49991957#4",
+"story-49991957#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -969,6 +2070,14 @@
 "qid": "q142",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-64431628#0",
+"blurb-64390828#0",
+"feed-060dd789bf2bc86b#1",
+"story-50052064#0",
+"story-50052064#3",
+"story-50052064#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -976,6 +2085,14 @@
 "qid": "q143",
 "hit": true,
 "newest": null,
+"ids": [
+"feed-bfbf99cf7e6bd864#0",
+"feed-bfbf99cf7e6bd864#1",
+"story-50043253#21",
+"story-50043815#1",
+"blurb-63948328#0",
+"story-50045718#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -983,6 +2100,14 @@
 "qid": "q144",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50281597#1",
+"blurb-64435628#0",
+"blurb-64380528#0",
+"blurb-64185128#0",
+"blurb-64184928#0",
+"blurb-64182828#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -990,6 +2115,14 @@
 "qid": "q145",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50100800#1",
+"story-50100800#2",
+"story-50105860#0",
+"story-50105860#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -997,6 +2130,14 @@
 "qid": "q146",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"feed-5fc8c67ad469ece0#1",
+"story-50221426#1",
+"blurb-64021728#0",
+"story-50058901#25"
+],
 "ranked": true,
 "fallback": null
 },
@@ -1004,6 +2145,10 @@
 "qid": "q147",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50105539#3",
+"story-50049468#3"
+],
 "ranked": true,
 "fallback": null
 },
@@ -1011,6 +2156,14 @@
 "qid": "q148",
 "hit": true,
 "newest": true,
+"ids": [
+"story-50281597#1",
+"blurb-64435628#0",
+"blurb-64362428#0",
+"blurb-64199628#0",
+"story-50160523#0",
+"blurb-64125728#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -1018,6 +2171,14 @@
 "qid": "q150",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50023183#1",
+"story-50023183#3",
+"story-50023183#0",
+"story-50023183#2"
+],
 "ranked": true,
 "fallback": null
 },
@@ -1025,6 +2186,14 @@
 "qid": "q151",
 "hit": true,
 "newest": null,
+"ids": [
+"blurb-50282626#0",
+"story-50280836#1",
+"story-50238049#28",
+"feed-15a1e836f3e90bdd#1",
+"story-50218886#6",
+"story-50175463#1"
+],
 "ranked": true,
 "fallback": null
 },
@@ -1032,6 +2201,14 @@
 "qid": "q152",
 "hit": true,
 "newest": true,
+"ids": [
+"blurb-64433928#0",
+"blurb-64432828#0",
+"story-50133296#9",
+"feed-480ac1c83cb08722#0",
+"feed-c535cadf75a2075b#0",
+"story-50129471#8"
+],
 "ranked": true,
 "fallback": null
 },
@@ -1039,6 +2216,14 @@
 "qid": "q153",
 "hit": true,
 "newest": false,
+"ids": [
+"story-50229729#1",
+"story-50229729#8",
+"blurb-64183428#0",
+"feed-aa2efc7be768d93d#0",
+"story-50141743#2",
+"blurb-64153328#0"
+],
 "ranked": true,
 "fallback": null
 },
@@ -1046,6 +2231,14 @@
 "qid": "q154",
 "hit": true,
 "newest": false,
+"ids": [
+"blurb-64437028#0",
+"feed-65a8552b452960c9#0",
+"story-49803708#9",
+"blurb-64191728#0",
+"story-50116012#13",
+"story-50135472#1"
+],
 "ranked": true,
 "fallback": null
 }
