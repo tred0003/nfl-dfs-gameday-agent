@@ -35,6 +35,7 @@ PROCESSOR = os.environ.get(
     "DOCAI_PROCESSOR",
     "projects/advisor-agent-2026/locations/us/processors/6502beabda51e08f")
 MAX_BYTES = 5 * 1024 * 1024     # a phone screenshot is well under 1 MB
+MAX_IMAGES = 2                  # a DK lineup is taller than one phone screen
 LINEUP_SIZE = 9                 # DK Classic: QB, 2 RB, 3 WR, TE, FLEX, DST
 # Magic bytes, so a file is the type it claims before it leaves the app.
 SIGNATURES = {

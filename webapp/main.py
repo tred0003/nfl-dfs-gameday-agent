@@ -9,7 +9,7 @@ Firestore the 12:30 job writes to (src/user_store.py):
     GET  /             the page (static/index.html)
     GET  /api/me         your name, lineup, and latest report
     PUT  /api/lineup     replace your lineup  {"lineup": ["name", ...]}
-    POST /api/lineup/import  a DK screenshot (raw image body) -> the slate players in it;
+    POST /api/lineup/import  1-2 DK screenshots (multipart "image") -> the slate players in them;
                             saves nothing (webapp/lineup_import.py, Document AI OCR)
     GET  /api/slate      this week's player pool, to click players from
     GET  /api/suggested  the optimizer's top lineups for this week
@@ -62,7 +62,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ask import ArchiveAgent, AskError  # noqa: E402
 from news import McpNews, NewsError  # noqa: E402
-from lineup_import import MAX_BYTES as MAX_UPLOAD  # noqa: E402
+from lineup_import import MAX_BYTES as MAX_UPLOAD, MAX_IMAGES  # noqa: E402
 from lineup_import import DocAiReader, LineupImportError, check_upload, match_lineup  # noqa: E402
 from slate import BigQuerySlate, SlateError  # noqa: E402
 from user_store import FirestoreStore  # noqa: E402
@@ -81,8 +81,8 @@ ASK_LIMIT = 20
 # Searches per user per day. One embedding call and two BigQuery queries, no
 # model -- far cheaper than a question, so a looser guard of the same kind.
 SEARCH_LIMIT = 100
-# Screenshot imports per user per day. One Document AI OCR page each (about
-# $0.0015), so this guards against a loop in the page, not against cost.
+# Screenshot imports per user per day. At most two Document AI OCR pages each
+# (about $0.0015 a page), so this guards against a loop in the page, not cost.
 IMPORT_LIMIT = 20
 
 
@@ -225,17 +225,26 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
         get_store().set_lineup(user.uid, names)
         return jsonify(uid=user.uid, lineup=names)
 
-    # The body is the image itself, Content-Type its media type. Checked
-    # (type, size, magic bytes) before it is sent anywhere, and the result is
-    # only a suggestion: the page fills the slots, the user saves.
+    # Up to MAX_IMAGES screenshots as multipart "image" fields -- a DK lineup
+    # is taller than a phone screen -- or one image as the raw body. Every
+    # file is checked (type, size, magic bytes) before any is sent anywhere.
+    # Their lines are read in upload order and matched as one screen, so a
+    # player in both shots counts once. The result is only a suggestion: the
+    # page fills the slots, the user saves.
     @app.post("/api/lineup/import")
     def import_lineup():
         user = current_user()
-        if (request.content_length or 0) > MAX_UPLOAD:
-            abort(413, f"the file is over {MAX_UPLOAD // (1024 * 1024)} MB")
-        data = request.get_data(cache=False)
+        if (request.content_length or 0) > MAX_IMAGES * MAX_UPLOAD + 64 * 1024:
+            abort(413, f"at most {MAX_IMAGES} files of {MAX_UPLOAD // (1024 * 1024)} MB each")
+        if request.mimetype == "multipart/form-data":
+            files = request.files.getlist("image")
+            if not 1 <= len(files) <= MAX_IMAGES:
+                abort(400, f"send 1 to {MAX_IMAGES} screenshots")
+            uploads = [(f.read(MAX_UPLOAD + 1), f.mimetype) for f in files]
+        else:
+            uploads = [(request.get_data(cache=False), request.content_type)]
         try:
-            mime = check_upload(data, request.content_type)
+            uploads = [(data, check_upload(data, mime)) for data, mime in uploads]
         except LineupImportError as e:
             abort(400, str(e))
         spend(user.uid, "import", IMPORT_LIMIT, "screenshot imports")
@@ -244,11 +253,12 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
         except SlateError as e:
             abort(503, f"this week's players could not be loaded ({e})")
         try:
-            lines = reader.lines(data, mime)
+            lines = [line for data, mime in uploads for line in reader.lines(data, mime)]
         except LineupImportError as e:
             abort(503, f"the screenshot could not be read ({e})")
         out = match_lineup(lines, pool["players"])
-        print(json.dumps({"event": "lineup_import", "uid": user.uid, "lines": len(lines),
+        print(json.dumps({"event": "lineup_import", "uid": user.uid, "images": len(uploads),
+                          "lines": len(lines),
                           "matched": len(out["players"]),
                           "not_recognised": len(out["not_recognised"]),
                           "warnings": len(out["warnings"])}), flush=True)

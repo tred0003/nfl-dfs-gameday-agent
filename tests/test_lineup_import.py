@@ -11,6 +11,7 @@ used, the upload is checked before it is sent anywhere, and nothing is saved.
 
 from __future__ import annotations
 
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -111,14 +112,16 @@ class FakeSlate:
 
 
 class FakeReader:
-    def __init__(self, lines=SCREEN, fail=False):
-        self.lines_out, self.fail, self.calls = lines, fail, 0
+    """Returns SCREEN for every image, or pages[i] for the i-th image read."""
+
+    def __init__(self, lines=SCREEN, fail=False, pages=None):
+        self.lines_out, self.fail, self.pages, self.calls = lines, fail, pages, 0
 
     def lines(self, data, mime):
         self.calls += 1
         if self.fail:
             raise LineupImportError("DeadlineExceeded: 30s")
-        return self.lines_out
+        return self.pages[self.calls - 1] if self.pages else self.lines_out
 
 
 def fake_verify(token: str) -> str:
@@ -166,6 +169,35 @@ class RouteTest(unittest.TestCase):
                                                  content_type="image/png", headers=bearer("u1"))
         self.assertEqual(r.status_code, 503)
         self.assertIn("could not be read", r.json["error"])
+
+    def multipart(self, n: int, client=None):
+        files = [(io.BytesIO(PNG), f"shot{i}.png", "image/png") for i in range(n)]
+        return (client or self.client).post("/api/lineup/import", data={"image": files},
+                                            content_type="multipart/form-data",
+                                            headers=bearer("u1"))
+
+    def test_two_screenshots_read_as_one_screen_and_overlap_counts_once(self):
+        # Top of the lineup in shot 1, bottom in shot 2, Jahmyr Gibbs in both.
+        cut = SCREEN.index(("Jahmyr Gibbs", 0.98)) + 1
+        reader = FakeReader(pages=[SCREEN[:cut], SCREEN[cut - 1:]])
+        r = self.multipart(2, self.app(reader))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(reader.calls, 2)
+        self.assertEqual(names(r.json), names(match_lineup(SCREEN, POOL)))
+
+    def test_one_screenshot_by_multipart_works_too(self):
+        self.assertEqual(len(self.multipart(1).json["players"]), 9)
+
+    def test_three_screenshots_is_400_and_none_are_read(self):
+        self.assertEqual(self.multipart(3).status_code, 400)
+        self.assertEqual(self.reader.calls, 0)
+
+    def test_one_bad_file_of_two_stops_both(self):
+        files = [(io.BytesIO(PNG), "a.png", "image/png"), (io.BytesIO(b"<html>"), "b.png", "image/png")]
+        r = self.client.post("/api/lineup/import", data={"image": files},
+                             content_type="multipart/form-data", headers=bearer("u1"))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.reader.calls, 0)
 
     def test_daily_limit(self):
         for _ in range(20):

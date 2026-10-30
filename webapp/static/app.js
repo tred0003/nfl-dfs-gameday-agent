@@ -264,21 +264,25 @@ function renderAll() {
 }
 
 // ---- import from a screenshot ------------------------------------------
-// The image goes to /api/lineup/import (Document AI OCR, then exact matching
-// against this week's slate). Nothing is saved until the user says yes here:
-// the server only suggests, and the normal save does the write.
-async function importScreenshot(file) {
-  if (!file) return;
-  if (file.size > 5 * 1024 * 1024) return say($("lineup-msg"), "That file is over 5 MB.", false);
-  say($("lineup-msg"), "Reading the screenshot…", true);
+// One or two screenshots (a DK lineup is taller than a phone screen) go to
+// /api/lineup/import in one request: Document AI OCR, then exact matching
+// against this week's slate, both shots read as one. Nothing is saved until
+// the user says yes here: the server only suggests, the normal save writes.
+const MAX_SHOTS = 2;
+async function importScreenshots(files) {
+  if (!files.length) return;
+  if (files.length > MAX_SHOTS) return say($("lineup-msg"), `Pick at most ${MAX_SHOTS} screenshots.`, false);
+  if (files.some((f) => f.size > 5 * 1024 * 1024)) return say($("lineup-msg"), "Each file must be under 5 MB.", false);
+  say($("lineup-msg"), files.length > 1 ? "Reading the screenshots…" : "Reading the screenshot…", true);
   $("import-btn").disabled = true;
   let data;
   try {
     const token = await auth.currentUser.getIdToken();
+    const form = new FormData();
+    for (const f of files) form.append("image", f);
+    // No Content-Type header: the browser sets multipart with its boundary.
     const r = await fetch("/api/lineup/import", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-      body: file,
+      method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form,
     });
     data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
@@ -304,7 +308,7 @@ async function importScreenshot(file) {
 }
 
 $("import-btn").addEventListener("click", () => $("import-file").click());
-$("import-file").addEventListener("change", (ev) => importScreenshot(ev.target.files[0]));
+$("import-file").addEventListener("change", (ev) => importScreenshots([...ev.target.files]));
 
 // ---- suggested lineups ---------------------------------------------------
 function renderSuggested(data) {

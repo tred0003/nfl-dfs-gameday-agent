@@ -56,7 +56,8 @@ on a PUT that named `uid: u1`; u1's lineup was unchanged.
 
 ## Lineup import from a screenshot (added 2026-10-30)
 
-"Import from screenshot" on the lineup card: a DK lineup screenshot goes to
+"Import from screenshot" on the lineup card: one or two DK lineup screenshots (a
+lineup is taller than a phone screen; both are read as one) go to
 `POST /api/lineup/import` (`webapp/lineup_import.py`). Document AI's **OCR
 processor** reads the lines; code matches them against this week's slate by
 exact name (case, punctuation and Jr./Sr./III ignored, never a first-initial
