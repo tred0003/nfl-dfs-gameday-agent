@@ -1,0 +1,47 @@
+{
+  "displayName": "Gameday agent: optional tool use",
+  "mosaicLayout": {
+    "columns": 12,
+    "tiles": [
+      {
+        "width": 12,
+        "height": 5,
+        "widget": {
+          "title": "Agent reports per day, by optional tools called ('none' = only the 8 core tools)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "plotType": "STACKED_BAR",
+                "targetAxis": "Y1",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"logging.googleapis.com/user/gameday/optional_tools\" resource.type=\"cloud_run_job\"",
+                    "aggregation": {
+                      "alignmentPeriod": "86400s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["metric.label.\"optional_tools\""]
+                    }
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "reports", "scale": "LINEAR"}
+          }
+        }
+      },
+      {
+        "yPos": 5,
+        "width": 12,
+        "height": 2,
+        "widget": {
+          "title": "How to read it",
+          "text": {
+            "format": "MARKDOWN",
+            "content": "The prompt lets the agent decide whether to call **find_replacements**, **search_news** and **search_news_archive**, so an all-'none' bar is often correct. To find reports where skipping one may have hurt, look at the Monday weekly review's *Maybe should have called* line: those are reports the judge scored 2 or under on the criterion the skipped tool answers. Before this chart (10/16-10/30): find_replacements 2/59, both searches 0/59."
+          }
+        }
+      }
+    ]
+  }
+}

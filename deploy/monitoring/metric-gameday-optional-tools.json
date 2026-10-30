@@ -1,0 +1,17 @@
+{
+  "name": "gameday/optional_tools",
+  "description": "One per fresh agent report, labelled by which optional tools it called ('none', 'find_replacements', 'search_news+find_replacements'...). A rate to chart, never an alert: zero is often right.",
+  "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"gameday-report\" AND jsonPayload.event=\"report\" AND jsonPayload.dry_run=false AND jsonPayload.source=\"agent\"",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "labels": [
+      {
+        "key": "optional_tools"
+      }
+    ]
+  },
+  "labelExtractors": {
+    "optional_tools": "EXTRACT(jsonPayload.optional_tools)"
+  }
+}

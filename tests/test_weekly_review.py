@@ -151,6 +151,26 @@ class GradeTest(unittest.TestCase):
         g = wr.grade(self.rows([agent_doc(tools=["get_lineup_status"])]), None)
         self.assertIn("get_vegas_context", g[0]["missing_core"])
 
+    def test_optional_tools_are_a_rate_and_low_scores_without_them_are_hints(self):
+        swap = wr.CORE_TOOLS + ["find_replacements"]
+        docs = [agent_doc(tools=swap), agent_doc(), agent_doc(), agent_doc(reused_from="u0", tools=swap)]
+        scores = [{"recommendations": 2, "grounded": 2},   # swap tool called: only grounded hints
+                  {"recommendations": 2, "grounded": 4},   # no swap tool: recommendations hints
+                  {"recommendations": 5, "grounded": 5}]   # fine: no hint
+        judge = lambda *a: FakeVerdict(scores=scores.pop(0))  # noqa: E731
+        s = wr.summarise(wr.grade(self.rows(docs), judge))
+        self.assertEqual(s["fresh_agent_reports"], 3)      # the reused copy made no choices
+        self.assertEqual(s["optional_use"],
+                         {"find_replacements": 1, "search_news": 0, "search_news_archive": 0})
+        self.assertEqual(s["should_have"],
+                         ["u0 2026-10-18 grounded 2 without search_news/search_news_archive",
+                          "u1 2026-10-18 recommendations 2 without find_replacements"])
+        self.assertEqual(wr.regressions({**RegressionTest.BASE, **s, "quality": 82.0},
+                                        [RegressionTest.BASE]), [])
+        msg = wr.render(2026, 6, s, [], {"detail": "x"}, [], [])
+        self.assertIn("Optional tools: find_replacements 1/3 · search_news 0/3", msg)
+        self.assertIn("Maybe should have called: u1", msg)
+
 
 class OutcomeTest(unittest.TestCase):
     PLAYERS = [
@@ -255,6 +275,10 @@ class CopiesMatchTest(unittest.TestCase):
     def test_query_matches_run_report(self):
         import run_report
         self.assertEqual(wr.QUERY, run_report.QUERY)
+
+    def test_optional_tools_match_run_report(self):
+        import run_report
+        self.assertEqual(wr.OPTIONAL_TOOLS, run_report.OPTIONAL_TOOLS)
 
     def test_core_tools_match_prefetch(self):
         try:

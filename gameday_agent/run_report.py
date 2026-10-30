@@ -133,6 +133,9 @@ def log(msg: str) -> None:
 CORE_TOOLS = ["get_lineup_status", "get_cb_matchups", "get_slate_weather",
               "get_vegas_context", "get_notable_scratches", "get_value_picks",
               "get_team_news", "get_player_history"]
+# The three the prompt leaves to the agent's judgment ("may call"). Counted,
+# never alerted on: zero is often the right number for a quiet lineup.
+OPTIONAL_TOOLS = ["find_replacements", "search_news", "search_news_archive"]
 
 
 def metric_event(uid: str, report_id: str, fields: dict | None, outcome: str | None = None,
@@ -158,13 +161,15 @@ def metric_event(uid: str, report_id: str, fields: dict | None, outcome: str | N
     source = outcome or ("reused" if fields.get("reused_from") else fields.get("source", "?"))
     tools = fields.get("tools") or []
     missing = [t for t in CORE_TOOLS if t not in tools] if source == "agent" else []
+    optional = [t for t in OPTIONAL_TOOLS if t in tools] if source == "agent" else []
     problems = list(fields.get("problems") or [])
     bad = source in ("fallback", "failed", "no_lineup") or bool(problems) or bool(missing)
     reused = source == "reused"
     return {
         "severity": "WARNING" if bad else "INFO",
         "message": (f"REPORT_METRICS [{uid}] source={source} check_failed={bool(problems)} "
-                    f"missing_core={len(missing)} cost={fields.get('total_cost_usd')} "
+                    f"missing_core={len(missing)} optional={len(optional)} "
+                    f"cost={fields.get('total_cost_usd')} "
                     f"elapsed_s={fields.get('elapsed_s')}"),
         "event": "report",
         "uid": uid,
@@ -174,6 +179,11 @@ def metric_event(uid: str, report_id: str, fields: dict | None, outcome: str | N
         "problems": len(problems),
         "missing_core": missing,
         "missing_core_n": len(missing),
+        # One string, not a list, so a log-based metric can use it as a
+        # label: "none", "find_replacements", "search_news+find_replacements".
+        # Null for anything but a fresh agent report (nothing was decided).
+        "optional_tools": ("+".join(optional) or "none") if source == "agent" else None,
+        "optional_n": len(optional),
         # A reused report cost nothing and took no time of its own; its
         # numbers belong to the first user's line, not counted twice.
         "total_cost_usd": None if reused else fields.get("total_cost_usd"),

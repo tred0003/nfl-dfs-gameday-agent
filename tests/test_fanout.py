@@ -196,6 +196,25 @@ class MetricEventTest(unittest.TestCase):
         self.assertEqual(e["missing_core"], ["get_player_history"])
         self.assertEqual(e["severity"], "WARNING")
 
+    def test_optional_tools_are_counted_but_never_a_warning(self):
+        e = rr.metric_event("u1", DAY, {"source": "agent", "problems": [], "tools": rr.CORE_TOOLS})
+        self.assertEqual((e["optional_tools"], e["optional_n"], e["severity"]), ("none", 0, "INFO"))
+        e = rr.metric_event("u1", DAY, {"source": "agent", "problems": [],
+                                         "tools": rr.CORE_TOOLS + ["search_news", "find_replacements",
+                                                                   "search_news"]})
+        self.assertEqual((e["optional_tools"], e["optional_n"], e["severity"]),
+                         ("find_replacements+search_news", 2, "INFO"))
+        e = rr.metric_event("u1", DAY, {"source": "fallback", "problems": [], "tools": []})
+        self.assertEqual((e["optional_tools"], e["optional_n"]), (None, 0))
+
+    def test_optional_tools_are_the_rest_of_the_agents_tools(self):
+        try:
+            from gameday_agent import tools
+        except ImportError:
+            self.skipTest("gameday_agent needs ADK")
+        names = {getattr(t, "__name__", getattr(t, "name", "")) for t in tools.TOOLS}
+        self.assertEqual(names, set(rr.CORE_TOOLS) | set(rr.OPTIONAL_TOOLS))
+
     def test_reused_report_carries_no_cost_or_time_of_its_own(self):
         e = rr.metric_event("u2", DAY, {"source": "agent", "reused_from": "u1", "tools": [],
                                          "total_cost_usd": 0.0, "elapsed_s": 40})

@@ -39,6 +39,7 @@ someone rewords a log message.
 | `source` | `agent`, `fallback`, `reused`, `no_lineup`, `failed` |
 | `check_failed`, `problems` | report_check found missed facts |
 | `missing_core`, `missing_core_n` | core tools the agent report did not call |
+| `optional_tools`, `optional_n` | which of the 3 optional tools a fresh agent report called, as one string (`none`, `find_replacements`, `search_news+find_replacements`); null for fallback/reused/failed (added 10/30) |
 | `total_cost_usd` | agent + in-tool Gemini calls (null when reused) |
 | `elapsed_s` | seconds for this user's report (null when reused) |
 | `dry_run` | true for manual dry runs; every alert excludes them |
@@ -74,6 +75,28 @@ execution, so there is no failed execution to alert on.
   served by the agent vs fallback, fact-check pass rate.
 - `gameday/report_cost_usd` — distribution of cost per agent report.
 - `gameday/report_elapsed_s` — distribution of time per report.
+- `gameday/optional_tools` — counter of fresh agent reports, label
+  `optional_tools`. Charted on the Cloud Monitoring dashboard **Gameday agent:
+  optional tool use** (`dashboard-agent-tools.json`).
+
+## Optional tools: a rate, not an alert (added 2026-10-30)
+
+8 of the agent's 11 tools are core: prefetch calls them, and skipping one
+pages. The other 3 (`find_replacements`, `search_news`,
+`search_news_archive`) are the agent's call -- the prompt says "may call" and
+only under conditions. So there is no right number and no alert. Zero is the
+correct answer on a quiet lineup.
+
+Before this was logged, Firestore showed 59 fresh agent reports (10/16-10/30):
+`find_replacements` 2 (3%), `search_news` 0, `search_news_archive` 0.
+
+Two places show it:
+- **Daily:** the dashboard chart above, from the report log line.
+- **Weekly:** the Monday review prints `Optional tools: find_replacements 1/7 ·
+  ...` and up to three **Maybe should have called** lines: a judged report that
+  scored 2 or under on `recommendations` without `find_replacements`, or on
+  `grounded` without either search. That pairing is the useful signal -- a
+  rate alone cannot tell "never needed" from "never bothers."
 
 ## Verified 2026-10-22
 
@@ -100,6 +123,8 @@ cd deploy/monitoring
 gcloud logging metrics create gameday/reports --project advisor-agent-2026 --config-from-file metric-gameday-reports.json
 gcloud logging metrics create gameday/report_cost_usd --project advisor-agent-2026 --config-from-file metric-gameday-report-cost.json
 gcloud logging metrics create gameday/report_elapsed_s --project advisor-agent-2026 --config-from-file metric-gameday-report-elapsed.json
+gcloud logging metrics create gameday/optional_tools --project advisor-agent-2026 --config-from-file metric-gameday-optional-tools.json
+gcloud monitoring dashboards create --project advisor-agent-2026 --config-from-file dashboard-agent-tools.json
 for p in report-fallback report-check-failed report-missing-core report-cost report-slow scheduler-error-agent; do
   gcloud alpha monitoring policies create --project advisor-agent-2026 --policy-from-file $p.json; done
 gcloud alpha monitoring policies create --project fantasy-football-ml-503718 --policy-from-file scheduler-error-ml.json

@@ -90,6 +90,15 @@ CORE_TOOLS = ["get_lineup_status", "get_cb_matchups", "get_slate_weather",
 # A core tool added mid-season is required only of reports made on or after
 # the day it shipped; the old agent cannot have called it.
 CORE_SINCE = {"get_player_history": "2026-10-22"}
+# The three the agent may call or not (run_report.OPTIONAL_TOOLS). A rate,
+# never a regression: zero is often right. What is worth a look is a report
+# the judge marked down on the very thing a skipped tool would have fixed.
+OPTIONAL_TOOLS = ["find_replacements", "search_news", "search_news_archive"]
+# judge criterion -> the optional tools that answer it. A score at or under
+# SHOULD_HAVE_SCORE with none of them called is listed as a "maybe".
+SHOULD_HAVE = {"recommendations": ["find_replacements"],
+               "grounded": ["search_news", "search_news_archive"]}
+SHOULD_HAVE_SCORE = 2
 
 RULED_OUT = {"O", "OUT", "IR", "D", "DOUBTFUL"}
 QUESTIONABLE = {"Q", "QUESTIONABLE"}
@@ -248,6 +257,8 @@ def grade(rows: list[dict], judge_fn: Callable | None, max_judged: int = MAX_JUD
                "missing_core": ([t for t in CORE_TOOLS if t not in tools
                                  and r["date"][:10] >= CORE_SINCE.get(t, "")]
                                 if source == "agent" else []),
+               "optional": ([t for t in OPTIONAL_TOOLS if t in tools]
+                            if source == "agent" else []),
                # total_cost_usd (agent + in-tool calls) since 10/19; before
                # that only the agent's own cost_usd was stored.
                "cost_usd": (None if doc.get("reused_from") else
@@ -388,9 +399,25 @@ def _mean(xs) -> float | None:
     return round(statistics.mean(xs), 4) if xs else None
 
 
+def should_have(graded: list[dict]) -> list[str]:
+    """Judged reports marked down on a criterion an uncalled optional tool answers.
+
+    A hint for a person to read, not a verdict: a low "grounded" score with no
+    search might be a claim the agent could have checked, or might not.
+    """
+    out = []
+    for g in graded:
+        for crit, tools in SHOULD_HAVE.items():
+            score = g["scores"].get(crit)
+            if score is not None and score <= SHOULD_HAVE_SCORE and not set(tools) & set(g["optional"]):
+                out.append(f"{g['uid']} {g['date']} {crit} {score} without {'/'.join(tools)}")
+    return out
+
+
 def summarise(graded: list[dict]) -> dict:
     n = len(graded)
     agent = [g for g in graded if g["source"] == "agent"]
+    fresh = [g for g in agent if not g["reused_from"]]
     judged = [g for g in graded if g["quality"] is not None]
     attempted = judged + [g for g in graded if g["judge_error"]
                           and "predates" not in g["judge_error"]
@@ -407,6 +434,10 @@ def summarise(graded: list[dict]) -> dict:
         "missing_core": sorted({t for g in agent for t in g["missing_core"]}),
         "missing_core_reports": sum(1 for g in agent if g["missing_core"]),
         "cost_per_report": _mean(g["cost_usd"] for g in agent),
+        # Fresh agent reports only: a reused report made no choices.
+        "fresh_agent_reports": len(fresh),
+        "optional_use": {t: sum(t in g["optional"] for g in fresh) for t in OPTIONAL_TOOLS},
+        "should_have": should_have(graded),
         "judged": len(judged),
         "judge_attempted": len(attempted),
         "quality": _mean(g["quality"] for g in judged),
@@ -470,6 +501,12 @@ def render(season: int, week: int, now: dict, history: list[tuple[str, dict]],
         + (f" · prior {len(prior)} wk {_fmt(pq)}" if pq is not None else " · no prior weeks yet"))
     if now["criteria"]:
         lines.append("  " + " · ".join(f"{k} {v:.1f}" for k, v in now["criteria"].items()))
+    if now.get("fresh_agent_reports"):
+        use = now["optional_use"]
+        lines.append("Optional tools: " + " · ".join(
+            f"{t} {use[t]}/{now['fresh_agent_reports']}" for t in OPTIONAL_TOOLS))
+        for hint in now["should_have"][:3]:
+            lines.append(f"  Maybe should have called: {hint}")
     if history:
         trend = [f"W{h_id.rsplit('w', 1)[-1]} {_fmt(h.get('summary', {}).get('quality'))}"
                  for h_id, h in history]
