@@ -51,7 +51,8 @@ fired for the 10/9 fallback. `source = "fallback"` now pages.
 
 | Policy | Project | Fires on | Normal |
 |---|---|---|---|
-| Gameday report FELL BACK to rule-based | agent | `source="fallback"` | never |
+| Gameday report FELL BACK or FAILED | agent | `source="fallback"` or `"failed"` (widened 10/30: a failed attempt the retry then delivered paged nothing on 10/29) | never |
+| Weekly review: agent report quality BELOW FLOOR | agent | `WEEKLY REVIEW BELOW FLOOR` from `gameday-weekly-review` (Mondays) | never |
 | Gameday report FAILED its fact-check | agent | `check_failed=true` | never (report posts with a correction) |
 | Gameday report SKIPPED core tools | agent | `missing_core_n>0` | never (prefetch) |
 | Gameday report cost over $0.04 | agent | `total_cost_usd>0.04` | $0.005-0.015 before 10/22; ~$0.020 after the history tool |

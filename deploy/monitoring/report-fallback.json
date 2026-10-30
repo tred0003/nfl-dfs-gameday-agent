@@ -1,15 +1,15 @@
 {
-  "displayName": "Gameday report FELL BACK to rule-based",
+  "displayName": "Gameday report FELL BACK or FAILED",
   "documentation": {
-    "content": "The agent failed and the user got the rule-based report. The job still exits 0, so this is the ONLY alert that sees it. Look at the `agent failed:` line just above in the gameday-report logs. Happened once before alerts existed (10/9, Gemini 429).",
+    "content": "The agent failed and the user got the rule-based report (`source=fallback`), or the user got no report at all (`source=failed`: an exception, the run exits 1). Neither is always a failed execution: a fallback exits 0, and a failed attempt that the job's retry then delivers leaves the execution Completed (10/29: u1's agent returned MALFORMED_RESPONSE, the rule-based fallback then crashed with a KeyError, the retry delivered, and nothing paged). Look at the `agent failed:` / `FAILED:` lines in the gameday-report logs.",
     "mimeType": "text/markdown"
   },
   "combiner": "OR",
   "conditions": [
     {
-      "displayName": "Gameday report FELL BACK to rule-based",
+      "displayName": "Gameday report FELL BACK or FAILED",
       "conditionMatchedLog": {
-        "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"gameday-report\" AND jsonPayload.event=\"report\" AND jsonPayload.dry_run=false AND jsonPayload.source=\"fallback\"",
+        "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"gameday-report\" AND jsonPayload.event=\"report\" AND jsonPayload.dry_run=false AND (jsonPayload.source=\"fallback\" OR jsonPayload.source=\"failed\")",
         "labelExtractors": {
           "uid": "EXTRACT(jsonPayload.uid)"
         }

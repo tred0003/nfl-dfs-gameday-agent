@@ -9,7 +9,7 @@ made-up scenarios:
 
 None of them ever goes back to what was actually sent and asks whether it was
 any good, or whether this week was worse than last. This does, once a week,
-after Monday night, on the reports already saved in Firestore
+every Monday morning, on the reports already saved in Firestore
 (users/{uid}/reports/{date}, which carry tool calls and results since 10/16):
 
   1. JUDGE. Each distinct agent report of the week goes to the same LLM judge
@@ -35,6 +35,9 @@ after Monday night, on the reports already saved in Firestore
 WHAT IS A REGRESSION. Thresholds are deliberately loose: one week is a handful
 of reports, and the eval measured identical runs swinging ~±5 quality points.
 
+  floor      judge mean below QUALITY_FLOOR (65, env QUALITY_FLOOR), any week,
+             first week included; it also logs WEEKLY REVIEW BELOW FLOOR for
+             its own email alert
   quality    judge mean more than QUALITY_TOLERANCE (10) below the prior weeks' mean
   fallback   more than a quarter of the week's reports were the rule-based fallback
   core tools any agent report skipped a core tool (prefetch requests all of them)
@@ -92,6 +95,9 @@ RULED_OUT = {"O", "OUT", "IR", "D", "DOUBTFUL"}
 QUESTIONABLE = {"Q", "QUESTIONABLE"}
 
 QUALITY_TOLERANCE = 10.0      # same number as eval/scoring.py
+# An absolute floor beside the relative rule: a slow slide never trips
+# "10 below the prior weeks", and the first week has no prior weeks at all.
+QUALITY_FLOOR = float(os.environ.get("QUALITY_FLOOR", "65"))
 FALLBACK_LIMIT = 0.25
 CHECK_FAIL_RISE = 0.20
 COST_RATIO = 1.5
@@ -127,6 +133,26 @@ def week_days(season: int, week: int, schedule: pd.DataFrame | None = None) -> t
     sundays = sorted(d for d in days if d.weekday() == 6)
     sunday = sundays[0] if sundays else spans.loc[week, "min"]
     return pd.Timestamp(first).date(), pd.Timestamp(last).date(), sunday
+
+
+def last_sunday_week(season: int, today: date | None = None,
+                     schedule: pd.DataFrame | None = None) -> int:
+    """The latest week whose main Sunday is before today: the job's default.
+
+    It runs Monday morning, so the week it grades is the one whose Sunday was
+    yesterday -- its reports are all in (the Monday 12:30 report is not, and
+    is never graded). Monday night's snap counts are not, so that week's
+    outcomes come back "not known yet" for the MNF teams; they are reported,
+    never gated.
+    """
+    from nfl_week import _schedule
+
+    s = _schedule(season) if schedule is None else schedule
+    today = today or datetime.now(ET).date()
+    weeks = [w for w in sorted(s["week"].unique()) if week_days(season, int(w), s)[2] < today]
+    if not weeks:
+        raise ValueError(f"no {season} week has had its Sunday before {today}")
+    return int(weeks[-1])
 
 
 def last_completed_week(season: int, today: date | None = None,
@@ -406,6 +432,8 @@ def regressions(now: dict, history: list[dict]) -> list[str]:
     if now["judge_attempted"] and not now["judged"]:
         flags.append(f"all {now['judge_attempted']} judge calls failed -- no quality score this week")
 
+    if now["quality"] is not None and now["quality"] < QUALITY_FLOOR:
+        flags.append(f"judge quality {now['quality']:.1f} is below the floor of {QUALITY_FLOOR:g}")
     pq = prior("quality")
     if now["quality"] is not None and pq is not None and now["quality"] < pq - QUALITY_TOLERANCE:
         flags.append(f"judge quality {now['quality']:.1f}, down from {pq:.1f} "
@@ -511,7 +539,7 @@ def review(store, season: int, week: int, judge_fn: Callable | None,
 def main() -> int:
     p = argparse.ArgumentParser(description="Grade and compare last week's real reports")
     p.add_argument("--season", type=int, default=int(os.environ.get("SEASON", "2026")))
-    p.add_argument("--week", type=int, help="default: the last completed week")
+    p.add_argument("--week", type=int, help="default: the week whose Sunday was the latest before today")
     p.add_argument("--dry-run", action="store_true", help="print; save and post nothing")
     p.add_argument("--no-judge", action="store_true", help="skip the LLM judge (free)")
     p.add_argument("--no-discord", action="store_true", help="save, but post nothing")
@@ -521,7 +549,7 @@ def main() -> int:
     from watch_slate import load_env, send_discord
     load_env()
 
-    week = a.week or last_completed_week(a.season)
+    week = a.week or last_sunday_week(a.season)
     judge_fn = None
     if not a.no_judge:
         # Lazy: the judge pulls in the agent package (and ADK) through its
@@ -555,6 +583,10 @@ def main() -> int:
 
     for f in result["flags"]:
         log(f"WEEKLY REVIEW REGRESSION: {f}")
+    q = result["summary"]["quality"]
+    if q is not None and q < QUALITY_FLOOR:
+        # Its own line, for its own alert (deploy/monitoring/review-quality-floor.json).
+        log(f"WEEKLY REVIEW BELOW FLOOR: week {week} quality {q:.1f} < {QUALITY_FLOOR:g}")
     return 1 if result["flags"] else 0
 
 

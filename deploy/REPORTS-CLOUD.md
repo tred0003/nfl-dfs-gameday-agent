@@ -254,10 +254,10 @@ gcloud run jobs execute gameday-report --project $P --region $R --wait \
 `src/lineup_sheet.py` stays in the repo only because `seed_users.py` reads
 u1 from it; nothing in the image uses it.
 
-## Weekly review (added 2026-10-20) -- NOT DEPLOYED YET
+## Weekly review (added 2026-10-20, deployed 2026-10-30, Mondays)
 
-`gameday-weekly-review` runs `gameday_agent/weekly_review.py` Wednesdays 08:00
-ET, on the week that ended Monday night. It is the only thing that goes back to
+`gameday-weekly-review` runs `gameday_agent/weekly_review.py` Mondays 08:00
+ET, on the week whose Sunday was yesterday. It is the only thing that goes back to
 the reports actually sent: the LLM judge grades each distinct agent report of
 the week against its stored tool results, nflverse snap counts score the Sunday
 report's OUT/Q/fine calls against who played, and the week's numbers go to
@@ -266,9 +266,18 @@ regression exits 1, so the existing "Scheduled agent report FAILED" alert
 fires; the summary posts to Discord either way. Rules and thresholds are in the
 module docstring.
 
-Wednesday, not Tuesday: nflverse snap counts for Monday night are not reliably
-published by Tuesday morning. Until every team's data is in, a player without a
-snap row is "not known yet", never "sat".
+**Score floor.** Besides the relative rule (10 below the prior weeks), a week
+whose judge mean is under `QUALITY_FLOOR` (default 65, 0-100: the agent eval suite averages 80 with single runs 55-93, and week 6, broken by a missing section, scored 52.9; the job can
+override it with `--update-env-vars QUALITY_FLOOR=..`) is a regression on its
+own, first week included. It also logs `WEEKLY REVIEW BELOW FLOOR`, which has
+its own email alert (`deploy/monitoring/review-quality-floor.json`).
+
+Monday, not Wednesday (changed 2026-10-30): the judge grades the reports, which
+are all in by Sunday, so there is no reason to wait. The cost is the outcome
+check: Sunday's snap counts may not be published by Monday 08:00, and Monday
+night's never are, so outcomes come back partly "not known yet" (a player with
+no snap row is never counted as "sat"). Outcomes are reported, not gated. The
+Monday 12:30 report falls after the run and is never graded.
 
 Own image (`deploy/Dockerfile.review`), because the judge imports ADK and the
 reports image deliberately has none. Same identity (`agent-reports@`: Vertex
@@ -297,7 +306,7 @@ gcloud run jobs create gameday-weekly-review --project $P --region $R --image $I
 gcloud run jobs add-iam-policy-binding gameday-weekly-review --project $P --region $R \
   --member serviceAccount:report-scheduler@$P.iam.gserviceaccount.com --role roles/run.invoker
 gcloud scheduler jobs create http gameday-weekly-review-schedule --project $P --location $R \
-  --schedule "0 8 * * 3" --time-zone America/New_York --http-method POST \
+  --schedule "0 8 * * 1" --time-zone America/New_York --http-method POST \
   --uri https://run.googleapis.com/v2/projects/$P/locations/$R/jobs/gameday-weekly-review:run \
   --oauth-service-account-email report-scheduler@$P.iam.gserviceaccount.com
 # test without saving or posting

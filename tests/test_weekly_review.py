@@ -83,6 +83,12 @@ class WeekTest(unittest.TestCase):
         # Monday night not over yet (the job never runs then, but be exact)
         self.assertEqual(wr.last_completed_week(2026, date(2026, 10, 19), SCHEDULE), 5)
 
+    def test_monday_morning_grades_the_week_just_played(self):
+        self.assertEqual(wr.last_sunday_week(2026, date(2026, 10, 19), SCHEDULE), 6)
+        self.assertEqual(wr.last_sunday_week(2026, date(2026, 10, 21), SCHEDULE), 6)
+        # Sunday itself: that week is not over, so the week before
+        self.assertEqual(wr.last_sunday_week(2026, date(2026, 10, 18), SCHEDULE), 5)
+
     def test_collect_keeps_only_the_window(self):
         st = store_with({("u1", "2026-10-12"): agent_doc(), ("u1", "2026-10-13"): agent_doc(),
                          ("u2", "2026-10-19"): agent_doc(), ("u2", "2026-10-20"): agent_doc()})
@@ -212,6 +218,14 @@ class RegressionTest(unittest.TestCase):
                 self.assertEqual(len(flags), 1, flags)
                 self.assertIn(word, flags[0])
 
+    def test_below_the_floor_flags_even_with_no_history(self):
+        low = {**self.BASE, "quality": wr.QUALITY_FLOOR - 0.1}
+        for history in ([], [low]):
+            flags = wr.regressions(low, history)
+            self.assertEqual(len(flags), 1, flags)
+            self.assertIn("below the floor", flags[0])
+        self.assertEqual(wr.regressions({**self.BASE, "quality": wr.QUALITY_FLOOR}, []), [])
+
     def test_small_quality_dip_is_noise(self):
         self.assertEqual(wr.regressions({**self.BASE, "quality": 75.0}, [self.BASE]), [])
 
@@ -228,8 +242,10 @@ class ReviewTest(unittest.TestCase):
         self.assertEqual(r["week_id"], "2026-w06")
         self.assertEqual(r["summary"]["reports"], 2)
         self.assertEqual(r["summary"]["judged"], 1)
-        self.assertEqual(len(r["flags"]), 1)
-        self.assertIn("quality", r["flags"][0])
+        # 50 is down 45 from the prior week, and under the floor too
+        self.assertEqual(len(r["flags"]), 2, r["flags"])
+        self.assertIn("below the floor", r["flags"][0])
+        self.assertIn("down from 95.0", r["flags"][1])
         msg = wr.render(2026, 6, r["summary"], r["history"], r["outcome"], r["graded"], r["flags"])
         self.assertTrue(msg.startswith("❌"))
         self.assertIn("W05 95.0 → W06 50.0", msg)
