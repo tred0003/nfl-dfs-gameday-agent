@@ -293,16 +293,9 @@ async function importScreenshot(file) {
   const notes = [...data.warnings];
   if (data.not_recognised.length) notes.push(`Not on this week's slate: ${data.not_recognised.join(", ")}.`);
   if (!names.length) return say($("lineup-msg"), notes.join(" "), false);
-  const list = data.players.map((p) => `  ${p.position}  ${p.name}`).join("
-");
-  if (!confirm(`Found ${names.length} player${names.length === 1 ? "" : "s"}:
-${list}
-
-` +
-               (notes.length ? notes.join("
-") + "
-
-" : "") + "Replace your lineup with these?")) {
+  const list = data.players.map((p) => `  ${p.position}  ${p.name}`).join("\n");
+  if (!confirm(`Found ${names.length} player${names.length === 1 ? "" : "s"}:\n${list}\n\n` +
+               (notes.length ? notes.join("\n") + "\n\n" : "") + "Replace your lineup with these?")) {
     return say($("lineup-msg"), "Import cancelled. Your lineup is unchanged.", true);
   }
   placeNames(names);
