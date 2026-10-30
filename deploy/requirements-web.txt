@@ -16,3 +16,5 @@ mcp==2.3.0
 google-auth>=2.30
 # The archive Q&A agent (webapp/ask.py): Gemini on Vertex with function calling.
 google-genai>=2.16
+# Lineup import from a DK screenshot (webapp/lineup_import.py): Document AI OCR.
+google-cloud-documentai>=3.0

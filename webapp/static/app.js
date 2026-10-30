@@ -263,6 +263,56 @@ function renderAll() {
   renderPool();
 }
 
+// ---- import from a screenshot ------------------------------------------
+// The image goes to /api/lineup/import (Document AI OCR, then exact matching
+// against this week's slate). Nothing is saved until the user says yes here:
+// the server only suggests, and the normal save does the write.
+async function importScreenshot(file) {
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) return say($("lineup-msg"), "That file is over 5 MB.", false);
+  say($("lineup-msg"), "Reading the screenshot…", true);
+  $("import-btn").disabled = true;
+  let data;
+  try {
+    const token = await auth.currentUser.getIdToken();
+    const r = await fetch("/api/lineup/import", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  } catch (e) {
+    return say($("lineup-msg"), `Not imported: ${e.message}`, false);
+  } finally {
+    $("import-btn").disabled = false;
+    $("import-file").value = "";
+  }
+
+  const names = data.players.map((p) => p.name);
+  const notes = [...data.warnings];
+  if (data.not_recognised.length) notes.push(`Not on this week's slate: ${data.not_recognised.join(", ")}.`);
+  if (!names.length) return say($("lineup-msg"), notes.join(" "), false);
+  const list = data.players.map((p) => `  ${p.position}  ${p.name}`).join("
+");
+  if (!confirm(`Found ${names.length} player${names.length === 1 ? "" : "s"}:
+${list}
+
+` +
+               (notes.length ? notes.join("
+") + "
+
+" : "") + "Replace your lineup with these?")) {
+    return say($("lineup-msg"), "Import cancelled. Your lineup is unchanged.", true);
+  }
+  placeNames(names);
+  active = nextEmpty();
+  changed();   // the normal save; its "Saved N players" is the confirmation
+}
+
+$("import-btn").addEventListener("click", () => $("import-file").click());
+$("import-file").addEventListener("change", (ev) => importScreenshot(ev.target.files[0]));
+
 // ---- suggested lineups ---------------------------------------------------
 function renderSuggested(data) {
   $("suggest-meta").textContent = `· week ${data.week}`;

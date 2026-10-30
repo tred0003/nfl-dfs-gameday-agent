@@ -9,6 +9,8 @@ Firestore the 12:30 job writes to (src/user_store.py):
     GET  /             the page (static/index.html)
     GET  /api/me         your name, lineup, and latest report
     PUT  /api/lineup     replace your lineup  {"lineup": ["name", ...]}
+    POST /api/lineup/import  a DK screenshot (raw image body) -> the slate players in it;
+                            saves nothing (webapp/lineup_import.py, Document AI OCR)
     GET  /api/slate      this week's player pool, to click players from
     GET  /api/suggested  the optimizer's top lineups for this week
     POST /api/news/history  four weeks of archived notes on named players
@@ -60,6 +62,8 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ask import ArchiveAgent, AskError  # noqa: E402
 from news import McpNews, NewsError  # noqa: E402
+from lineup_import import MAX_BYTES as MAX_UPLOAD  # noqa: E402
+from lineup_import import DocAiReader, LineupImportError, check_upload, match_lineup  # noqa: E402
 from slate import BigQuerySlate, SlateError  # noqa: E402
 from user_store import FirestoreStore  # noqa: E402
 
@@ -77,6 +81,9 @@ ASK_LIMIT = 20
 # Searches per user per day. One embedding call and two BigQuery queries, no
 # model -- far cheaper than a question, so a looser guard of the same kind.
 SEARCH_LIMIT = 100
+# Screenshot imports per user per day. One Document AI OCR page each (about
+# $0.0015), so this guards against a loop in the page, not against cost.
+IMPORT_LIMIT = 20
 
 
 def verify_firebase_token(token: str) -> str:
@@ -115,13 +122,14 @@ def ask_record(question: str, player: str, out: dict) -> dict:
 
 
 def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
-               agent=None) -> Flask:
+               agent=None, reader=None) -> Flask:
     """Build the app. Tests pass a MemoryStore, a fake verifier and fakes for the rest."""
     app = Flask(__name__, static_folder=None)
     app.config["store"] = store
     slate = slate if slate is not None else BigQuerySlate()
     news = news if news is not None else McpNews()
     agent = agent if agent is not None else ArchiveAgent(slate=slate)
+    reader = reader if reader is not None else DocAiReader()
     def spend(uid: str, route: str, limit: int, what: str) -> None:
         """Count one call against a user's daily limit for this route, or 429.
         In Firestore (users/{uid}/limits/{day}), in a transaction: the count
@@ -216,6 +224,35 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
             abort(400, f"at most {MAX_PLAYERS} players, {MAX_NAME} characters each")
         get_store().set_lineup(user.uid, names)
         return jsonify(uid=user.uid, lineup=names)
+
+    # The body is the image itself, Content-Type its media type. Checked
+    # (type, size, magic bytes) before it is sent anywhere, and the result is
+    # only a suggestion: the page fills the slots, the user saves.
+    @app.post("/api/lineup/import")
+    def import_lineup():
+        user = current_user()
+        if (request.content_length or 0) > MAX_UPLOAD:
+            abort(413, f"the file is over {MAX_UPLOAD // (1024 * 1024)} MB")
+        data = request.get_data(cache=False)
+        try:
+            mime = check_upload(data, request.content_type)
+        except LineupImportError as e:
+            abort(400, str(e))
+        spend(user.uid, "import", IMPORT_LIMIT, "screenshot imports")
+        try:
+            pool = slate.pool()
+        except SlateError as e:
+            abort(503, f"this week's players could not be loaded ({e})")
+        try:
+            lines = reader.lines(data, mime)
+        except LineupImportError as e:
+            abort(503, f"the screenshot could not be read ({e})")
+        out = match_lineup(lines, pool["players"])
+        print(json.dumps({"event": "lineup_import", "uid": user.uid, "lines": len(lines),
+                          "matched": len(out["players"]),
+                          "not_recognised": len(out["not_recognised"]),
+                          "warnings": len(out["warnings"])}), flush=True)
+        return jsonify(week=pool.get("week"), **out)
 
     # Signed-in only: the pool is not secret, but there is no reason to run
     # BigQuery for anonymous traffic. current_user(), not current_uid(), so an
@@ -320,6 +357,7 @@ def create_app(store=None, verify=verify_firebase_token, slate=None, news=None,
     @app.errorhandler(401)
     @app.errorhandler(403)
     @app.errorhandler(404)
+    @app.errorhandler(413)
     @app.errorhandler(429)
     @app.errorhandler(503)
     def json_error(e):

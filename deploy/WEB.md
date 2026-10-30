@@ -54,6 +54,23 @@ on a PUT that named `uid: u1`; u1's lineup was unchanged.
   answers 503; the rest of the site is unaffected.
 - Live: `gameday-web-00005-jdr`, image `web:4db1051`. See `deploy/MCP.md`.
 
+## Lineup import from a screenshot (added 2026-10-30)
+
+"Import from screenshot" on the lineup card: a DK lineup screenshot goes to
+`POST /api/lineup/import` (`webapp/lineup_import.py`). Document AI's **OCR
+processor** reads the lines; code matches them against this week's slate by
+exact name (case, punctuation and Jr./Sr./III ignored, never a first-initial
+guess). The page shows what was found and replaces the lineup only if the user
+says yes; the normal save does the write.
+
+- Processor: `lineup-screenshot-ocr`, `projects/advisor-agent-2026/locations/us/processors/6502beabda51e08f`
+  (env `DOCAI_PROCESSOR` overrides). Created by REST, `type: OCR_PROCESSOR`.
+- `web-app@` needs `roles/documentai.apiUser`:
+  `gcloud projects add-iam-policy-binding advisor-agent-2026 --member=serviceAccount:web-app@advisor-agent-2026.iam.gserviceaccount.com --role=roles/documentai.apiUser --condition=None`
+- Checked before sending: PNG/JPEG/WebP/PDF by magic bytes, 5 MB max, 20 imports per user per day.
+- One log line per import, `event=lineup_import` (lines, matched, not_recognised, warnings).
+- Cost: one OCR page each, about $0.0015.
+
 ## First sign-in (per user)
 
 Type the email, click **"Email me a link to set my password"**, open the mail
