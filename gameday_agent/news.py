@@ -50,6 +50,7 @@ from google.adk.tools import ToolContext
 
 from predict_slate import resolve_lineup
 
+from .confidence import label_claims
 from .metering import generate
 from .slate import my_lineup_names, slate
 
@@ -427,6 +428,10 @@ def verify(claims: list[dict], articles: list[dict], teams: list[str],
             "kind": c["kind"], "claim": c["claim"], "quote": c["quote"],
             "source": a["source"], "url": a["url"],
             "published": a["published"].astimezone(timezone.utc).strftime("%a %H:%M UTC"),
+            # For confidence.py; stripped before the agent sees the claim.
+            "placed_by_slate": known is not None,
+            "own_feed": a["source"] not in LEAGUE_FEEDS,
+            "age_h": round((datetime.now(timezone.utc) - a["published"]).total_seconds() / 3600, 1),
         })
     return kept, dropped
 
@@ -676,6 +681,7 @@ def get_team_news(tool_context: ToolContext = None) -> dict:
                .drop_duplicates("name").itertuples(index=False)}
     claims, dropped = verify(raw, articles, teams, team_of)
     claims, rewritten = check_claims(claims)
+    claims = label_claims(claims, norm=_norm)     # shadow mode: logged, not shown
     mine_names = {n.lower() for n in mine["name"]}
     for c in claims:
         c["is_my_player"] = c["player"].lower() in mine_names

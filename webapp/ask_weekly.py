@@ -184,6 +184,8 @@ def ask_all(questions: list[dict], agent, client) -> list[dict]:
         return row | {
             "answer": out["answer"], "pick": pick, "answer_type": out.get("answer_type"),
             "cited_share": out.get("cited_share"),
+            "confidence": out.get("confidence"),
+            "confidence_why": json.dumps(out.get("confidence_why", [])),
             "problems": json.dumps([p["kind"] for p in out.get("problems", [])]),
             "model_card_used": any(e["tool"] == "xgboost_projection" for e in out.get("evidence", [])),
             "versions": json.dumps(out.get("versions", {})),
@@ -284,7 +286,7 @@ def _schema(kind: str):
                     ("status_a", S), ("status_b", S), ("asked_at", T), ("answer", S),
                     ("answer_type", S), ("cited_share", F), ("problems", S),
                     ("model_card_used", B), ("versions", S), ("cost_usd", F),
-                    ("elapsed_s", F), ("error", S)],
+                    ("elapsed_s", F), ("error", S), ("confidence", S), ("confidence_why", S)],
         "grades": [("pts_a", F), ("pts_b", F), ("winner", S), ("ask_correct", B),
                    ("model_correct", B), ("note", S), ("graded_at", T)],
     }[kind]
@@ -401,6 +403,15 @@ def cmd_report() -> int:
     print(f"season to date: Ask {s['ask']}  model {s['model']}  coin 0.5  (n={s['graded']}); "
           f"when Ask overrode the model it was right {s['ask_when_disagree']} of "
           f"{s['disagree']} times")
+    # Calibration: the labels are worth showing only if high beats low here.
+    cal = _query(bq, f"""
+        SELECT a.confidence, COUNT(*) n, ROUND(AVG(IF(g.ask_correct, 1, 0)), 3) acc
+        FROM `{GRADES}` g JOIN `{ANSWERS}` a USING (qid)
+        WHERE g.ask_correct IS NOT NULL AND a.confidence IS NOT NULL
+        GROUP BY 1 ORDER BY 1""")
+    if cal:
+        print("confidence: " + "  ".join(f"{r['confidence']} {r['acc']} (n={r['n']})"
+                                         for r in cal))
     return 0
 
 

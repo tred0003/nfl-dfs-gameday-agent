@@ -69,6 +69,7 @@ import time
 from datetime import datetime, timezone
 
 import citations
+from confidence import answer_confidence
 from news import NEWS_MCP_URL, NewsError, session, unfence
 
 MODEL = os.environ.get("ASK_MODEL", "gemini-2.5-flash")
@@ -255,6 +256,8 @@ def _finish(answer: str, calls: int, evidence: list, totals: dict, design: str,
         checked = {"answer": "No answer came back. Try asking again.", "claims": [],
                    "problems": [], "answer_type": "empty", "abstained": False,
                    "cited_share": None}
+    # Shadow mode: in the response and the weekly exam rows, not on the page.
+    checked["confidence"], checked["confidence_why"] = answer_confidence(checked, evidence)
     model_usd = cost_usd(totals, MODEL)
     retrieval_usd = round(sum(e.get("cost_usd") or 0.0 for e in evidence), 6)
     return {**checked, "tool_calls": calls, "evidence": evidence,
