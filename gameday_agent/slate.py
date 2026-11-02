@@ -16,15 +16,19 @@ the process outlives the request.
 
 A short TTL keeps the within-turn saving and drops the across-turn staleness.
 
-Concurrency note: Agent Runtime can serve requests on several threads, and there
-is no lock here. The worst case is two threads fetching the same slate at once
-and one overwriting the other with equivalent data -- wasteful, not incorrect.
-A lock would be the fix if the fetch were expensive or the write non-atomic.
+Concurrency: the agent calls 5-6 tools in parallel, and with a cold cache every
+one of them used to resolve and fetch the slate itself. Resolving got more
+expensive on 2026-11-02 (a BigQuery read plus a draftables call for the saved
+slate, then the lobby walk), and the parallel burst -- ~25 DraftKings requests
+in a second from one Google IP -- came back 403 on half the tools while the
+same burst from a laptop got 200s. One lock now makes the first tool do the
+work and the rest wait for it: ~5 requests per cold start instead of ~25.
 """
 
 from __future__ import annotations
 
 import os
+import threading
 import time
 
 import pandas as pd
@@ -40,6 +44,7 @@ SLATE_TTL = float(os.environ.get("SLATE_TTL_SECONDS", "90"))
 _slates: dict[int, dict] = {}
 _draft_group_cache: dict = {}
 _espn: dict = {}
+_lock = threading.RLock()       # re-entrant: slate() holds it while calling _draft_group()
 
 
 def _draft_group() -> int:
@@ -52,28 +57,30 @@ def _draft_group() -> int:
     if pinned:
         return pinned
 
-    now = time.monotonic()
-    if _draft_group_cache and now - _draft_group_cache["at"] < SLATE_TTL:
-        return _draft_group_cache["dg"]
+    with _lock:
+        now = time.monotonic()
+        if _draft_group_cache and now - _draft_group_cache["at"] < SLATE_TTL:
+            return _draft_group_cache["dg"]
 
-    dg = pick_main_slate(list_slates())
-    _draft_group_cache.update(dg=dg, at=now)
-    return dg
+        dg = pick_main_slate(list_slates())
+        _draft_group_cache.update(dg=dg, at=time.monotonic())
+        return dg
 
 
 def slate() -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return (players, games) for the current slate, fetching if stale."""
-    dg = _draft_group()
-    now = time.monotonic()
+    with _lock:
+        dg = _draft_group()
+        now = time.monotonic()
 
-    cached = _slates.get(dg)
-    if cached is not None and now - cached["at"] < SLATE_TTL:
-        return cached["players"], cached["games"]
+        cached = _slates.get(dg)
+        if cached is not None and now - cached["at"] < SLATE_TTL:
+            return cached["players"], cached["games"]
 
-    players, games = fetch_draftables(dg)
-    players["jn"] = normalize_name(players["name"])
-    _slates[dg] = {"players": players, "games": games, "at": now}
-    return players, games
+        players, games = fetch_draftables(dg)
+        players["jn"] = normalize_name(players["name"])
+        _slates[dg] = {"players": players, "games": games, "at": time.monotonic()}
+        return players, games
 
 
 def espn_injuries() -> pd.DataFrame:
