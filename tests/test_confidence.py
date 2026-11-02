@@ -7,6 +7,7 @@ from the team's own feed must come out high.
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import sys
 import unittest
@@ -16,8 +17,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "webapp"))
-from gameday_agent import confidence as gc  # noqa: E402
 import confidence as ac  # noqa: E402  (webapp/confidence.py)
+
+# By file, not `from gameday_agent import`: the package __init__ pulls in ADK,
+# which CI does not install. confidence.py itself needs only the stdlib.
+_spec = importlib.util.spec_from_file_location("gameday_confidence",
+                                               ROOT / "gameday_agent" / "confidence.py")
+gc = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(gc)
 
 
 def claim(**kw):
