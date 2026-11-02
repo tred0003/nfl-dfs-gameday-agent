@@ -67,10 +67,9 @@ class PickMainSlateTest(unittest.TestCase):
 
 
 class SavedMainSlateTest(unittest.TestCase):
-    def saved(self, now, comps, rows=({"draft_group_id": 153728},)):
-        client = mock.MagicMock()
-        client.query.return_value.result.return_value = list(rows)
-        with mock.patch("google.cloud.bigquery.Client", return_value=client), \
+    # The BigQuery read itself is patched out: CI has no google-cloud-bigquery.
+    def saved(self, now, comps, dg=153728):
+        with mock.patch.object(dk_client, "_latest_projected_dg", return_value=dg), \
              mock.patch.object(dk_client, "_get_json", return_value=comps):
             return dk_client.saved_main_slate(now=now)
 
@@ -83,10 +82,11 @@ class SavedMainSlateTest(unittest.TestCase):
         self.assertIsNone(self.saved(monday, draftables(11, kickoff=NOW - timedelta(minutes=30))))
 
     def test_no_recent_run(self):
-        self.assertIsNone(self.saved(NOW, draftables(11), rows=()))
+        self.assertIsNone(self.saved(NOW, draftables(11), dg=None))
 
     def test_any_failure_falls_back_quietly(self):
-        with mock.patch("google.cloud.bigquery.Client", side_effect=RuntimeError("no creds")):
+        with mock.patch.object(dk_client, "_latest_projected_dg",
+                               side_effect=RuntimeError("no creds")):
             self.assertIsNone(dk_client.saved_main_slate(now=NOW))
 
 

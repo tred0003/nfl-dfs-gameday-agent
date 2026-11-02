@@ -183,6 +183,17 @@ def _last_kickoff(competitions: list[dict]) -> datetime | None:
     return times.max().to_pydatetime() if len(times) else None
 
 
+def _latest_projected_dg() -> int | None:
+    """Draft group of the newest projection run in the last 8 days, or None."""
+    from google.cloud import bigquery
+    client = bigquery.Client(project=PROJECTIONS_TABLE.split(".")[0])
+    rows = list(client.query(f"""
+        SELECT draft_group_id FROM `{PROJECTIONS_TABLE}`
+        WHERE run_ts > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 8 DAY)
+        ORDER BY run_ts DESC LIMIT 1""").result(timeout=20))
+    return int(rows[0]["draft_group_id"]) if rows else None
+
+
 def saved_main_slate(now: datetime | None = None) -> int | None:
     """The draft group the projection job last projected, if it is still this week's.
 
@@ -193,15 +204,9 @@ def saved_main_slate(now: datetime | None = None) -> int | None:
     the lobby, not a new way for the report to fail.
     """
     try:
-        from google.cloud import bigquery
-        client = bigquery.Client(project=PROJECTIONS_TABLE.split(".")[0])
-        rows = list(client.query(f"""
-            SELECT draft_group_id FROM `{PROJECTIONS_TABLE}`
-            WHERE run_ts > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 8 DAY)
-            ORDER BY run_ts DESC LIMIT 1""").result(timeout=20))
-        if not rows:
+        dg = _latest_projected_dg()
+        if dg is None:
             return None
-        dg = int(rows[0]["draft_group_id"])
         last = _last_kickoff(_get_json(DRAFTABLES_URL.format(dg=dg)).get("competitions", []))
     except Exception as e:  # noqa: BLE001 -- any failure falls back to the lobby
         print(f"  saved slate unavailable ({type(e).__name__}); using the lobby")
