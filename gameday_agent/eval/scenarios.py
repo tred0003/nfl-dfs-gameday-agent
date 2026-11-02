@@ -228,7 +228,10 @@ def must_stay_under_tool_calls(limit: int) -> Callable:
 
 
 def must_report_unavailable() -> Callable:
-    keywords = ["unavailable", "could not", "cannot verify", "can't verify",
+    # 2026-11-02 gate: "I cannot check your lineup right now ... a simulated
+    # outage" failed on wording alone -- a correct answer, a missing phrase.
+    keywords = ["unavailable", "could not", "couldn't", "cannot verify", "can't verify",
+                "cannot check", "can't check", "unable to", "outage",
                 "not able to check", "error", "not available"]
 
     def check(trace) -> str | None:
