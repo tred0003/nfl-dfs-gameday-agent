@@ -113,7 +113,11 @@ def fetch_slate(season: int) -> tuple[int, int, pd.DataFrame, Path]:
     """(draft_group_id, week, slate, local players parquet) for the main slate."""
     slates = dk_client.list_slates()
     dg = dk_client.pick_main_slate(slates)
-    kickoff = slates.loc[slates["draft_group_id"].eq(dg), "start_time_utc"].iloc[0]
+    listed = slates.loc[slates["draft_group_id"].eq(dg), "start_time_utc"]
+    # A saved slate (dk_client.saved_main_slate) may already be off the lobby;
+    # its own draftables still carry the kickoff times.
+    kickoff = listed.iloc[0] if len(listed) else pd.to_datetime(
+        dk_client.fetch_draftables(dg)[1]["start_time_utc"], utc=True).min()
     week = nfl_week.current_week(season, kickoff_utc=kickoff)
     out = dk_client.snapshot(dg)
     players = sorted(out.glob("players_*.parquet"))[-1]

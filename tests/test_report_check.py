@@ -2,7 +2,7 @@
 
 report_check.py is the one thing between the model and Discord that asks
 "is it true?". Each test feeds it a report plus the tool results that report
-was written from, and asserts which of the five rules fires. Also pins
+was written from, and asserts which of the six rules fires. Also pins
 pair_tool_calls, which is how a stored report keeps each call's JSON.
 """
 
@@ -36,9 +36,9 @@ def failed(rows):
 
 
 class AuditTest(unittest.TestCase):
-    def test_a_clean_report_on_a_clean_lineup_passes_all_five(self):
+    def test_a_clean_report_on_a_clean_lineup_passes_all_six(self):
         rows = rc.audit("Drake Maye and Garrett Wilson are fine.", [lineup_ok(HEALTHY)])
-        self.assertEqual(len(rows), 5)
+        self.assertEqual(len(rows), 6)
         self.assertEqual(failed(rows), [])
         self.assertEqual(rc.check("x", [lineup_ok(HEALTHY)]), [])
 
@@ -72,6 +72,27 @@ class AuditTest(unittest.TestCase):
         self.assertEqual(failed(rc.audit("Fine.", [lineup_ok(HEALTHY, warnings=[w])])),
                          ["warnings_copied"])
         self.assertEqual(failed(rc.audit(w + " Fine.", [lineup_ok(HEALTHY, warnings=[w])])), [])
+
+    def test_most_of_the_lineup_missing_means_the_wrong_slate(self):
+        # 2026-11-01: a 3-game afternoon slate, 6 of 9 named as missing, and
+        # every other rule passed because the report named all six.
+        three = [{"name": "Broncos", "injury_status": None, "game": "KC @ DEN"},
+                 {"name": "Puka Nacua", "injury_status": None, "game": "LAC @ LAR"},
+                 {"name": "Corey Kiner", "injury_status": None, "game": "NE @ MIA"}]
+        gone = ["Geno Smith", "Derrick Henry", "Garrett Wilson", "Denzel Boston",
+                "Justin Jefferson", "Brenton Strange"]
+        report = "Not found on the slate: " + ", ".join(gone) + "."
+        rows = rc.audit(report, [lineup_ok(three, not_found=gone)])
+        self.assertEqual(failed(rows), ["slate_plausible"])
+        problem = rc.check(report, [lineup_ok(three, not_found=gone)])[0]
+        self.assertIn("6 of your 9", problem)
+        self.assertIn("KC @ DEN", problem)
+        self.assertIn("WRONG DraftKings slate", problem)
+
+    def test_one_or_two_typos_are_not_a_wrong_slate(self):
+        eight = [{"name": f"P{i}", "injury_status": None} for i in range(7)]
+        rows = rc.audit("P0 Typo1 Typo2", [lineup_ok(eight, not_found=["Typo1", "Typo2"])])
+        self.assertEqual(failed(rows), [])
 
     def test_check_is_the_failed_rows_problems_in_order(self):
         out = HEALTHY + [{"name": "Rashad Feeney", "injury_status": "OUT"}]

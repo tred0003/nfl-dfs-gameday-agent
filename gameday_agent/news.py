@@ -395,6 +395,13 @@ def verify(claims: list[dict], articles: list[dict], teams: list[str],
     site story mentioning Justin Jefferson came back as a Saints claim. A
     player the slate places on a team we did not ask about is dropped -- for
     a Vikings DST that is exactly the Vikings' own receivers.
+
+    A player the slate does NOT know is kept only from a team's own feed
+    (ESPN team news, the official site). League feeds are filed under a team
+    by a name match, so their team tag is a guess: a Yahoo Jets story that
+    said the Jets play "the Kansas City Chiefs" next week was filed under KC
+    on 2026-11-01, and Breece Hall -- out, so not on DK's slate -- came back
+    as a Chiefs injury that "helps" a Broncos DST.
     """
     team_of = team_of or {}
     kept, dropped = [], 0
@@ -413,6 +420,8 @@ def verify(claims: list[dict], articles: list[dict], teams: list[str],
             if known not in teams:
                 continue                      # real, but about a team we were not asked about
             team = known
+        elif a["source"] in LEAGUE_FEEDS:
+            continue                          # unplaceable, and the article's team is a guess
         kept.append({
             "player": c["player"], "team": team if team in teams else a["team"],
             "kind": c["kind"], "claim": c["claim"], "quote": c["quote"],

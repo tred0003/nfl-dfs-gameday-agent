@@ -28,6 +28,21 @@ DRAFTABLES_URL = "https://api.draftkings.com/draftgroups/v1/draftgroups/{dg}/dra
 
 TIMEOUT = 30
 
+# A Sunday main slate is the whole 1 PM + 4 PM window: 9-13 games, ~10 even on
+# a heavy bye week. Side slates (afternoon only, early only) carry 2-5. On
+# 2026-11-01 at 12:31 ET the main slate's contests had left the lobby and the
+# richest one left was a 3-game "Afternoon Only" slate -- every report checked
+# 9-player lineups against 3 games and called 6 players "not on the slate".
+MIN_MAIN_GAMES = int(os.environ.get("MIN_MAIN_GAMES", "6"))
+
+# Where the project-slate job writes the slate it projected. It runs Thu 09:00,
+# Fri 19:00 and Sun 11:00 ET -- before lock, while the lobby still lists the
+# main slate -- so its pick is the most trustworthy one available on Sunday.
+PROJECTIONS_TABLE = os.environ.get(
+    "PROJECTIONS_TABLE", "fantasy-football-ml-503718.dfs.projections")
+# A saved slate counts as current until this long after its last kickoff.
+SAVED_GRACE_HOURS = 5
+
 # No custom headers, on purpose -- especially no User-Agent.
 #
 # This endpoint 403s a request carrying a hand-set User-Agent and serves one
@@ -109,12 +124,24 @@ def pick_main_slate(slates: pd.DataFrame) -> int:
     players wins. That costs one extra request per empty candidate, which is
     cheap next to silently returning a slate with nobody on it.
 
+    Prize money also depends on WHEN you ask. The lobby lists open contests,
+    and on Sunday the main slate's big ones fill and drop out before 1 PM. So
+    the slate the projection job saved this week wins while it is current,
+    and the lobby candidate must carry at least MIN_MAIN_GAMES games. A side
+    slate that sneaks through is a report about the wrong games that still
+    looks well formed -- raising is better than that.
+
     Still a heuristic. Pin PIN_DRAFT_GROUP or pass --dg for anything that
     matters, and check the printed slate before trusting it.
     """
     pinned = os.environ.get("PIN_DRAFT_GROUP")
     if pinned:
         return int(pinned)
+
+    saved = saved_main_slate()
+    if saved is not None:
+        print(f"  main slate -> dg{saved} (saved by the projection job)")
+        return saved
 
     m = slates[
         (slates["game_type"] == "Classic")
@@ -126,21 +153,63 @@ def pick_main_slate(slates: pd.DataFrame) -> int:
     skipped = []
     for _, c in m.sort_values("top_prize", ascending=False).iterrows():
         dg = int(c["draft_group_id"])
-        n = len(_get_json(DRAFTABLES_URL.format(dg=dg)).get("draftables", []))
+        raw = _get_json(DRAFTABLES_URL.format(dg=dg))
+        n = len(raw.get("draftables", []))
+        games = len(raw.get("competitions", []))
         if n == 0:
             skipped.append(f"dg{dg} (${c['top_prize']:,.0f}, no players yet)")
+            continue
+        if games < MIN_MAIN_GAMES:
+            skipped.append(f"dg{dg} (${c['top_prize']:,.0f}, only {games} games: "
+                           f"{c['example_contest']})")
             continue
         if skipped:
             print(f"  skipped {', '.join(skipped)}")
         print(f"  main slate -> dg{dg} "
               f"({c['slate_label']}, top prize ${c['top_prize']:,.0f}, "
-              f"{n} draftables): {c['example_contest']}")
+              f"{n} draftables, {games} games): {c['example_contest']}")
         return dg
 
     raise RuntimeError(
-        f"every Sunday Classic slate came back empty ({', '.join(skipped)}); "
-        "salaries are probably not released yet -- inspect list_slates()"
+        f"no Sunday Classic slate with players and {MIN_MAIN_GAMES}+ games "
+        f"({', '.join(skipped)}); salaries may not be released yet, or the main "
+        "slate has left the lobby -- inspect list_slates() or set PIN_DRAFT_GROUP"
     )
+
+
+def _last_kickoff(competitions: list[dict]) -> datetime | None:
+    times = pd.to_datetime([c.get("startTime") for c in competitions],
+                           utc=True, errors="coerce").dropna()
+    return times.max().to_pydatetime() if len(times) else None
+
+
+def saved_main_slate(now: datetime | None = None) -> int | None:
+    """The draft group the projection job last projected, if it is still this week's.
+
+    None whenever it cannot say -- no BigQuery library or permission (laptop,
+    CI), no run in the last 8 days, or a slate whose last game kicked off more
+    than SAVED_GRACE_HOURS ago (Monday to Thursday morning: last week's slate,
+    and the lobby is right again). Never raises: this is a hint in front of
+    the lobby, not a new way for the report to fail.
+    """
+    try:
+        from google.cloud import bigquery
+        client = bigquery.Client(project=PROJECTIONS_TABLE.split(".")[0])
+        rows = list(client.query(f"""
+            SELECT draft_group_id FROM `{PROJECTIONS_TABLE}`
+            WHERE run_ts > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 8 DAY)
+            ORDER BY run_ts DESC LIMIT 1""").result(timeout=20))
+        if not rows:
+            return None
+        dg = int(rows[0]["draft_group_id"])
+        last = _last_kickoff(_get_json(DRAFTABLES_URL.format(dg=dg)).get("competitions", []))
+    except Exception as e:  # noqa: BLE001 -- any failure falls back to the lobby
+        print(f"  saved slate unavailable ({type(e).__name__}); using the lobby")
+        return None
+    now = now or datetime.now(timezone.utc)
+    if last is None or (now - last).total_seconds() > SAVED_GRACE_HOURS * 3600:
+        return None
+    return dg
 
 
 def fetch_draftables(draft_group_id: int) -> tuple[pd.DataFrame, pd.DataFrame]:

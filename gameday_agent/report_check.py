@@ -15,6 +15,10 @@ checks are ones the tools already computed, so there is nothing to judge:
   4. Every `source_warnings` entry is copied verbatim.
   5. No "all clear" language while any of 1-3 is true, or while the lineup
      tool returned an error.
+  6. Most of the lineup is on the slate. Rule 2 only asks that missing
+     names be NAMED; on 2026-11-01 the agent read a 3-game side slate, named
+     all 6 "missing" players dutifully, called the lineup invalid -- and
+     every rule passed. 6 of 9 missing is a wrong slate, not a bad lineup.
 
 What it does NOT check: tone, emphasis, whether a CB verdict was worded well,
 whether a backup QB was called a backup. Those are judgment calls -- the LLM
@@ -34,6 +38,10 @@ import re
 # Statuses that mean "cannot play / almost certainly will not". Q is left out:
 # whether a Questionable tag deserves a line is a judgment call.
 RULED_OUT = {"O", "OUT", "IR", "D", "DOUBTFUL"}
+
+# Rule 6. One or two typos in a 9-man lineup are normal; past a third, the
+# slate is the suspect.
+WRONG_SLATE_SHARE = 1 / 3
 
 # Phrases that tell the reader nothing needs doing. Matched case-insensitively.
 CLEAR = re.compile(
@@ -135,6 +143,23 @@ def audit(report: str, responses: list[dict]) -> list[dict]:
                  # report still says "all clear". Both read as "nothing to do".
                  "problems": (["Ignore the \"all clear\" below -- the lineup is NOT clear."]
                               if bad else [])})
+
+    # 6. A lineup mostly missing from the slate means the slate is wrong.
+    on_slate = lineup.get("lineup") or []
+    total = len(on_slate) + len(not_found)
+    games = sorted({str(p.get("game")) for p in on_slate if p.get("game")})
+    wrong_slate = total >= 4 and len(not_found) / total > WRONG_SLATE_SHARE
+    rows.append({"check": "slate_plausible", "rule": "no more than a third of the "
+                 "lineup is missing from the slate the agent read",
+                 "passed": not wrong_slate,
+                 "detail": (f"{len(not_found)} of {total} missing; slate games seen: "
+                            f"{', '.join(games) or 'none'}" if total else "no lineup"),
+                 "problems": ([f"{len(not_found)} of your {total} players are not on the "
+                               f"slate this report read ({', '.join(games) or 'no games'}). "
+                               "That usually means the report checked the WRONG DraftKings "
+                               "slate, not that your lineup is wrong -- don't change your "
+                               "lineup because of this report."]
+                              if wrong_slate else [])})
     return rows
 
 
