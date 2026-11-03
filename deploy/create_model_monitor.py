@@ -41,6 +41,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -74,7 +75,8 @@ def main() -> None:
                      default="gs://fantasy-football-ml-503718-nfl-dfs/monitoring/baseline/model_table_v3_baseline_noroutes.jsonl")
     ap.add_argument("--output-prefix",
                      default="gs://fantasy-football-ml-503718-nfl-dfs/monitoring/results")
-    ap.add_argument("--email", default="you@example.com")
+    ap.add_argument("--email", default=os.environ.get("ALERT_EMAIL"), required="ALERT_EMAIL" not in os.environ,
+                    help="where drift alerts go (or set ALERT_EMAIL)")
     # models/current is the WITH-routes card (83 features) -- champion is the
     # no-routes model (77 features, models/no-routes), chosen deliberately
     # because route-share participation data doesn't exist for the 2026

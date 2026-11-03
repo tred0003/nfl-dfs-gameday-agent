@@ -203,7 +203,7 @@ let M = null;  // /api/meta
 
 function card(title, body, opts = {}) {
   return `<div class="card">${title ? `<div class="card-h"><h2>${title}</h2>${opts.right || ""}</div>` : ""}
-    ${opts.raw ? body : `<div class="card-b">${body}</div>`}${opts.say ? `<div class="say"><b>Say it like this:</b> ${opts.say}</div>` : ""}</div>`;
+    ${opts.raw ? body : `<div class="card-b">${body}</div>`}${opts.say ? `<div class="say"><b>In short:</b> ${opts.say}</div>` : ""}</div>`;
 }
 const tile = (v, l) => `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div></div>`;
 const statusPill = (s) => s === "ok" ? `<span class="pill ok">ok</span>` : s == null ? `<span class="pill neutral">–</span>` : `<span class="pill bad">${esc(s)}</span>`;
