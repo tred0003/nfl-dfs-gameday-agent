@@ -2,10 +2,10 @@
 # Stage 0 (run LOCALLY, once): project, bucket, dataset, upload the parquet.
 # Everything after this runs inside the Workbench instance.
 set -euo pipefail
-export CLOUDSDK_PYTHON=/c/Users/tred0/miniconda3/envs/ffml/python.exe   # bq looks for python3.14 otherwise
+# If bq picks the wrong Python, point it at yours:  export CLOUDSDK_PYTHON=/path/to/python
 PROJECT=fantasy-football-ml-503718 REGION=us-central1
 BUCKET=gs://${PROJECT}-gcp-lab
-PARQUET="$(dirname "$0")/../data/processed/model_table_v3.parquet"
+PARQUET="$(dirname "$0")/../../data/processed/model_table_v3.parquet"
 
 gcloud config set project $PROJECT
 gcloud services list --enabled | grep -Ei "aiplatform|bigquery|notebooks|storage"   # confirm APIs

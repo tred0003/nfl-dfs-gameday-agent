@@ -40,8 +40,8 @@ TWO HONEST CAVEATS, STATED BEFORE THE NUMBERS
    for the same cores. On a real accelerator the gap between naive and tuned
    is wider, because there the CPU idling is a GPU idling.
 
-Run:  .venv-tf/Scripts/python tf_sequence/benchmark.py
-      .venv-tf/Scripts/python tf_sequence/benchmark.py --aug-cost 40
+Run:  .venv-tf/Scripts/python learning/tf_sequence/benchmark.py
+      .venv-tf/Scripts/python learning/tf_sequence/benchmark.py --aug-cost 40
 """
 
 from __future__ import annotations

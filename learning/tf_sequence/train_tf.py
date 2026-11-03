@@ -30,7 +30,7 @@ Pass 1 only ever decides a number: how long to train. Pass 2 is the model that
 gets graded, and it saw precisely the data XGBoost saw. Season S is untouched
 by both passes.
 
-Run:  .venv-tf/Scripts/python tf_sequence/train_tf.py
+Run:  .venv-tf/Scripts/python learning/tf_sequence/train_tf.py
 """
 
 from __future__ import annotations

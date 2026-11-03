@@ -197,17 +197,17 @@ imply it.**
 
 ```bash
 # one-time: build the TFRecords (deterministic, ~1 min)
-.venv-tf/Scripts/python tf_sequence/build_sequences.py
+.venv-tf/Scripts/python learning/tf_sequence/build_sequences.py
 
 # the lab
-.venv-tf/Scripts/python tf_sequence/benchmark.py
-.venv-tf/Scripts/python tf_sequence/benchmark.py --sweep 0 20 80 240
+.venv-tf/Scripts/python learning/tf_sequence/benchmark.py
+.venv-tf/Scripts/python learning/tf_sequence/benchmark.py --sweep 0 20 80 240
 
 # XGBoost's number on the SAME table -- this is the bar (~5 min, ffml env)
 python src/train.py --table model_table_v3 --no-save
 
 # walk-forward training (~2.5 min), with that number passed in explicitly
-.venv-tf/Scripts/python tf_sequence/train_tf.py \
+.venv-tf/Scripts/python learning/tf_sequence/train_tf.py \
     --xgb-spearman 0.6423 --xgb-rmse 6.619
 ```
 

@@ -15,7 +15,7 @@ browser ── Authorization: Bearer <token> ──► gameday-web (Cloud Run, F
                        gameday-report job (12:30) writes the reports
 ```
 
-## Isolation: the interview point
+## Isolation: one user can never see another's data
 
 - The uid comes **only** from the verified token (`webapp/main.py`
   `current_uid()`). No route reads a uid from the URL, query or body; a body

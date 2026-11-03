@@ -92,6 +92,8 @@ def merge(src: Path) -> None:
     for f in sorted(src.glob("addverdict*.json")):      # one file per round; a qid can recur
         for qid, v in json.loads(f.read_text(encoding="utf-8")).items():
             verdicts.setdefault(qid, {"not_answer": []})["not_answer"] += v.get("not_answer", [])
+    if not TO_CHECK.exists():   # holds archive text, so it is not in the public copy
+        raise SystemExit(f"{TO_CHECK} is missing: run `pool_add.py <files>` first to rebuild it")
     checks = [json.loads(line) for line in TO_CHECK.open(encoding="utf-8")]
     out = {}
     rejected = 0

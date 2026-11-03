@@ -2,12 +2,13 @@
 
 Every week this system predicts how many DraftKings points each NFL player will score,
 builds the best legal lineup under the $50,000 salary cap, and then, before kickoff, runs an
-AI agent that checks each user's real lineup against injuries, weather, Vegas lines and the
-news. It has run in production since September 2026 for several signed-in users.
+AI agent that checks the lineup against injuries, weather, Vegas lines and the news. Scheduled
+reports have run in Google Cloud since October 2026. It is multi-user (sign-in, per-user lineups
+and reports), tested with four seeded accounts.
 
-The model is deliberately simple. **The system around it is deliberately production-grade**:
-evals that gate every deploy, an LLM judge checked against human grades, cost metering,
-prompt-injection defense, monitoring against a service-level objective, and CI/CD.
+The model is deliberately simple. **The system around it is built like production**: evals that
+gate every agent deploy, an LLM judge tested with seeded defects, cost metering, prompt-injection
+screening, monitoring, and CI/CD.
 
 ```mermaid
 flowchart LR
@@ -15,13 +16,13 @@ flowchart LR
         NV[nflverse history<br/>2016-2026] --> XGB[XGBoost model<br/>Vertex AI Model Registry]
         DK[DraftKings slate] --> PS[Cloud Run job<br/>project-slate]
         XGB --> PS --> BQ[(BigQuery<br/>projections)]
-        NEWS[News feeds + podcasts] --> NA[Cloud Run job<br/>news-archive] --> VEC[(BigQuery<br/>vector search)]
+        NEWS[News feeds] --> NA[Cloud Run job<br/>news-archive] --> VEC[(BigQuery<br/>vector search)]
         VEC --> MCP[MCP server<br/>news-mcp]
     end
     subgraph AG["Agent project"]
         SCH[Cloud Scheduler] --> RPT[Cloud Run job<br/>gameday-report]
         RPT --> AE[ADK agent on<br/>Vertex AI Agent Engine<br/>Gemini 2.5 Flash]
-        AE --> FS[(Firestore<br/>users, lineups, reports)]
+        FS[(Firestore<br/>users, lineups, reports)] <--> RPT
         RPT --> DISC[Discord]
         WEB[Web app on Cloud Run<br/>lineup picker, Search, Ask] --> FS
     end
@@ -51,7 +52,7 @@ synthetic scenarios (DK outage, prompt injection, an emergency scratch, a clean 
 reports three numbers that are never averaged together:
 
 - **Checks:** deterministic assertions on the report and the tool trace. Any failure blocks the deploy.
-- **Quality:** an LLM judge (Gemini 2.5 Pro) scoring a six-criterion rubric, compared against my own hand grades.
+- **Quality:** an LLM judge (Gemini 2.5 Pro) scoring a six-criterion rubric. The judge is tested by seeding known defects into reports and checking it catches them; a hand-grading harness exists, with one report graded so far.
 - **Trajectory:** what the agent did: which tools, how many calls, how long.
 
 *"A run can score 100 on quality and be broken."* That's why checks and trajectory gate independently.
@@ -60,37 +61,51 @@ reports three numbers that are never averaged together:
 cost meter had been missing 63-87% of the real bill (thinking tokens bill as output, at ~8x the
 input price). One lever per commit, each verified on the eval suite and a live dry run: the
 daily report went from about $0.035 to $0.011, with every check still passing and the
-injection screen still catching 28 of 28 attacks.
+injection screen still catching 28 of 28 attacks. (News-archive tools added on 10/22
+raised it to about $0.020.)
 
 **Agent vs pipeline, measured.** For the archive's "Ask" feature I built both designs and
 scored 680 answers against an answer key. The fixed pipeline beat the agent by +0.33 on a 0-2
 correctness scale (95% CI +0.23 to +0.43). The agent's main failure: it skipped retrieval on
 61 of 340 answers. Write-up: [`ask_eval/README.md`](ask_eval/README.md).
 
-**Search quality.** I built a 154-question test set for the news-archive search, graded by
-an LLM judge and cross-checked by a second model (85% agreement). I then tried fine-tuning
-embeddings vs adding a re-ranker. The re-ranker won (+0.15 nDCG@10) and is in production.
-Write-up: [`embed_tune/README.md`](embed_tune/README.md).
+**Search quality.** I built a 150-question test set for the news-archive search, graded by
+an LLM judge and cross-checked by a second model (85% agreement on the first key). I then
+compared fine-tuning embeddings against adding a re-ranker. The re-ranker won (+0.15 nDCG@10
+offline), and a date-aware version of it (+0.12 offline, better on fresh news) is in
+production. Write-up: [`embed_tune/README.md`](embed_tune/README.md).
 
-**The model itself, honestly.** It doesn't beat FantasyData's paid projections (Spearman
-0.644 vs 0.671 on dev; a statistical tie on lineup outcomes). The point was the lifecycle, not
-the leaderboard.
+**The model itself, honestly.** It doesn't beat FantasyData's paid projections (within-week
+Spearman 0.64 vs 0.67 on dev; a statistical tie on lineup outcomes). The point was the
+lifecycle, not the leaderboard.
 
 ## Production
 
 | Piece | Where it runs |
 |---|---|
 | Weekly projections | Cloud Run job + Cloud Scheduler, results in BigQuery |
-| Gameday reports, per user | Cloud Run job calling the agent on Agent Engine; stored in Firestore, owner's copy to Discord |
+| Gameday reports, per user | Cloud Run job calling the agent on Agent Engine; lineups read from and reports stored in Firestore, owner's copy to Discord |
 | Lineup web app (Search + Ask over the news archive) | Cloud Run service, Firebase Auth sign-in |
 | News archive | Daily Cloud Run job, embedded with `text-embedding-005`, searched with BigQuery `VECTOR_SEARCH` + Vertex ranking |
 | MCP server | Private Cloud Run service exposing the archive to the web app and to AI clients like Claude Code |
-| CI/CD | Cloud Build: unit tests on every push, the eval gate before every agent deploy, then a post-deploy canary |
-| Monitoring | Log-based metrics, alert policies, an SLO-based dashboard, and a weekly job that has the LLM judge review real production reports |
+| CI/CD | Cloud Build: unit tests on every push; agent deploys pass the eval gate first, then a post-deploy verification; a weekly canary exercises the live path |
+| Monitoring | Log-based metrics, alert policies, an SLO tracked on a dashboard (not yet alerting), and a weekly job that has the LLM judge review real production reports |
 
-**Security:** tool results are screened for prompt injection before the agent sees them (tested
-against a labeled attack set), each job has its own least-privilege service account, and the two
-Google Cloud projects connect through a handful of narrow, documented grants.
+**Security:** untrusted text that reaches the agent (news, comments, search answers) is screened
+for prompt injection, tested against a labeled attack set. Jobs run as dedicated, narrowly
+scoped service accounts rather than the default one, and the two Google Cloud projects connect
+through a handful of documented grants.
+
+## Tradeoffs and what's next
+
+- **Pipeline over agent where the path is known.** The Ask experiment above is why: a fixed
+  fetch-then-answer pipeline was more accurate and more consistent than letting the model
+  choose its tools.
+- **Two Google Cloud projects.** The ML side and the agent side are separated so the agent can
+  only read the model's output, through narrow grants.
+- **Not built yet:** a Vertex AI (Kubeflow) pipeline with a gated model-register step (training
+  and promotion are manual commands today), infrastructure as code for the two projects, a
+  defense (DST) model, and grading stored projections against actual points.
 
 ## Repo map
 
@@ -100,36 +115,47 @@ gameday_agent/    the ADK agent, its tools, injection screen, canary, weekly rev
   eval/           eval harness: scenarios, rubric, LLM judge, baseline gate
 webapp/           Cloud Run web app: lineup picker, Search, Ask (with citation checks)
 mcp_server/       news archive as an MCP server
-news_rag/  podcast_rag/   news and podcast ingestion into the archive
+news_rag/         news ingestion into the archive (podcast_rag/: podcasts, run locally)
 embed_tune/       search-quality experiments (embeddings, fine-tuning, re-ranking)
 ask_eval/         agent-vs-pipeline experiment for Ask
-deploy/           Dockerfiles, Cloud Build configs, runbooks (DEPLOY, WEB, MCP, MONITORING...)
+research/         backtests of common DFS heuristics (see FEATURES.md section 9)
+deploy/           Dockerfiles, Cloud Build configs, runbooks
 tests/            unit tests (run in CI without cloud access)
-FEATURES.md       the feature spec and backtests of common DFS heuristics
+docs/             program-reference: the full system reference
+learning/         side experiments (BigQuery ML / AutoML lab, a TensorFlow sequence model)
+FEATURES.md       the feature spec and heuristic backtests
 ```
 
 ## Data and terms
 
 All sources are free. Historical stats come from [nflverse](https://github.com/nflverse).
 DraftKings salaries come from an unofficial, undocumented endpoint, isolated in
-`src/dk_client.py` so that when it changes, exactly one file breaks. Pulled data is never
-committed or redistributed. This is a personal learning project; no real money is wagered on it.
+`src/dk_client.py` so that when it changes, exactly one file breaks. Pulled data and archived
+news text are never committed or redistributed. This is a personal learning project; no real
+money is wagered on it.
 
 ## Run it locally
 
+Python 3.11.
+
 ```
 pip install -r requirements.txt
-python src/fetch_nflverse.py          # one-time history pull
-python src/features.py                # build the model table
-python src/train.py                   # walk-forward validation
-python src/dk_client.py               # snapshot the Sunday main slate
+pip install --no-deps nfl_data_py appdirs fastparquet   # its metadata pins pandas<2; it runs on 2.x
+python src/fetch_nflverse.py                     # one-time history pull
+python src/features.py                           # base model table
+python src/features_extra.py                     # injuries, routes, red-zone usage
+python src/features_carry.py                     # -> model_table_v3
+python src/train.py --table model_table_v3 --export   # walk-forward validation + model artifact
+python src/dk_client.py                          # snapshot the Sunday main slate
+python src/predict_slate.py --slate <players_*.parquet> --season 2026 --week <N> --source model
 python src/optimize.py --slate <projections_*.parquet> --n 3
-python -m unittest discover -s tests  # the CI test suite
+python -m unittest discover -s tests             # the CI test suite
 ```
 
-The cloud setup is in [`deploy/`](deploy/); start with `deploy/DEPLOY.md`.
+The cloud setup is in [`deploy/`](deploy/); start with
+[`deploy/REPORTS-CLOUD.md`](deploy/REPORTS-CLOUD.md) for the agent and
+[`deploy/PROJECTIONS-CLOUD.md`](deploy/PROJECTIONS-CLOUD.md) for the model.
 
 ---
 
-Built with [Claude Code](https://claude.com/claude-code) as a coding partner, alongside
-Google's Professional Machine Learning Engineer certification.
+Built with [Claude Code](https://claude.com/claude-code) as a coding partner. MIT licensed.

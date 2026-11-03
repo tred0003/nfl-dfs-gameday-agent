@@ -20,7 +20,7 @@ fl-dfs
 
 **What this touches:** Cloud Storage, Artifact Registry, Cloud Build, Agent
 Platform custom training jobs, and service-account IAM. That is most of the
-training half of the PMLE exam, on something you actually want to exist.
+Vertex AI training surface, on something that actually needs to run.
 
 **Cost:** a few cents. One build, one `n1-standard-4` running for under two
 minutes, and about 3 MB of storage.

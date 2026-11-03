@@ -93,7 +93,7 @@ Then in Claude Code: "what has the archive said about Justin Jefferson's ankle?"
 Without the cloud (laptop only, your own gcloud credentials):
 
 ```bash
-claude mcp add nfl-news -- python C:/new_career2026/nfl-dfs/mcp_server/server.py --stdio
+claude mcp add nfl-news -- python mcp_server/server.py --stdio
 ```
 
 ## Redeploy

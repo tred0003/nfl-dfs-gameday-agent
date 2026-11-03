@@ -3,7 +3,7 @@
 This is data plumbing, not modeling. It runs once. Everything expensive and
 DETERMINISTIC happens here -- parsing parquet, joining, windowing, serialising.
 Nothing random happens here, and that distinction is the whole point of the
-file (see tf_sequence/README.md).
+file (see learning/tf_sequence/README.md).
 
 WHAT ONE RECORD IS
 ------------------
@@ -35,7 +35,7 @@ and tf.data can interleave reads across the training shards in parallel.
 Sharding for the access pattern you actually have is the normal reason to
 shard, and it lines up here with the way the model has to be graded.
 
-Run:  .venv-tf/Scripts/python tf_sequence/build_sequences.py
+Run:  .venv-tf/Scripts/python learning/tf_sequence/build_sequences.py
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 import scoring  # noqa: E402  -- the project's DK scoring, not nflverse's generic column
 
 from common import (  # noqa: E402

@@ -10,8 +10,9 @@ REM      no google-adk installed and would fail at import.
 REM
 REM Any arguments are passed through:  run_report.bat --dry-run
 
-set "PY=C:\Users\tred0\miniconda3\envs\ffml\python.exe"
-set "PROJ=C:\new_career2026\nfl-dfs"
+if not defined NFL_DFS_PYTHON set "NFL_DFS_PYTHON=python"
+set "PY=%NFL_DFS_PYTHON%"
+set "PROJ=%~dp0.."
 set "LOG=%PROJ%\data\gameday_report.log"
 
 cd /d "%PROJ%"

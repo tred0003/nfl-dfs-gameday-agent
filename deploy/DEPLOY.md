@@ -10,8 +10,8 @@ Run these yourself — the point is the GCP reps. Each block says what it does a
 why, not just what to type.
 
 **What this touches:** Artifact Registry, Cloud Build, Secret Manager, Cloud Run
-jobs, Cloud Scheduler, and service-account IAM. That is most of the deployment
-surface PMLE asks about, on something you actually want to exist.
+jobs, Cloud Scheduler, and service-account IAM. That is most of the Google Cloud
+deployment surface, on something that actually needs to run.
 
 **Cost:** effectively zero. One tiny build a week, one container execution a week
 measured in seconds, a few MB of image storage. All comfortably inside free tiers.

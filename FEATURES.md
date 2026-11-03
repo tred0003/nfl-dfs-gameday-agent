@@ -24,7 +24,7 @@ are the only ones that matter in a tournament.
 for cash games, where you want a safe floor. Tournaments pay the tail, so what
 you actually want there is the *ceiling* — the 80th/90th percentile outcome.
 Start with the mean because it is simpler; add quantile prediction later. This
-distinction is worth raising unprompted in an interview.
+distinction matters more than it looks.
 
 ---
 
@@ -263,8 +263,8 @@ Confirming it requires historical salary data (see README — `nfldfs` or RotoGu
 which is now a priority rather than a nice-to-have. Until that lands this is an
 open question, not a dead rule.
 
-That is the general lesson, and the best interview line in the project: measure
-the quantity the contest actually pays.
+That is the general lesson of the project: measure the quantity the contest
+actually pays.
 
 ### 9.7 Buy low, tested properly — the rule is right, the position is wrong
 

@@ -29,7 +29,7 @@ tf.data ops are graph ops. Two arguments turn that around:
     .prefetch(tf.data.AUTOTUNE)                     overlap CPU batch N+1
                                                     with GPU batch N
 
-Run tf_sequence/benchmark.py to watch the difference in steps/sec instead of
+Run learning/tf_sequence/benchmark.py to watch the difference in steps/sec instead of
 taking that on faith.
 
 MAP BEFORE BATCH vs MAP AFTER BATCH
