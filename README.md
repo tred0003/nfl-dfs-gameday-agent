@@ -1,121 +1,135 @@
-# NFL DFS — Weekly Points Model + Lineup Optimizer
+# NFL DFS: projection model, lineup optimizer and a gameday AI agent on Google Cloud
 
-Predict DraftKings fantasy points for every player on the Sunday main slate, then
-build the optimal lineup under the $50,000 salary cap.
+Every week this system predicts how many DraftKings points each NFL player will score,
+builds the best legal lineup under the $50,000 salary cap, and then, before kickoff, runs an
+AI agent that checks each user's real lineup against injuries, weather, Vegas lines and the
+news. It has run in production since September 2026 for several signed-in users.
 
-Built as an AI/ML engineering portfolio project alongside PMLE cert prep. The
-model is deliberately simple; the **pipeline around it is deliberately overbuilt**,
-because the lifecycle is the skill being practiced.
+The model is deliberately simple. **The system around it is deliberately production-grade**:
+evals that gate every deploy, an LLM judge checked against human grades, cost metering,
+prompt-injection defense, monitoring against a service-level objective, and CI/CD.
 
-## Architecture
+```mermaid
+flowchart LR
+    subgraph ML["ML project"]
+        NV[nflverse history<br/>2016-2026] --> XGB[XGBoost model<br/>Vertex AI Model Registry]
+        DK[DraftKings slate] --> PS[Cloud Run job<br/>project-slate]
+        XGB --> PS --> BQ[(BigQuery<br/>projections)]
+        NEWS[News feeds + podcasts] --> NA[Cloud Run job<br/>news-archive] --> VEC[(BigQuery<br/>vector search)]
+        VEC --> MCP[MCP server<br/>news-mcp]
+    end
+    subgraph AG["Agent project"]
+        SCH[Cloud Scheduler] --> RPT[Cloud Run job<br/>gameday-report]
+        RPT --> AE[ADK agent on<br/>Vertex AI Agent Engine<br/>Gemini 2.5 Flash]
+        AE --> FS[(Firestore<br/>users, lineups, reports)]
+        RPT --> DISC[Discord]
+        WEB[Web app on Cloud Run<br/>lineup picker, Search, Ask] --> FS
+    end
+    BQ --> AE
+    VEC --> AE
+    BQ --> WEB
+    MCP --> WEB
+```
 
-Three layers, kept separate on purpose:
+## Three layers, kept separate on purpose
 
-1. **Projection model (ML).** Predicts points per player. Gradient-boosted trees.
-2. **Optimizer (deterministic).** Integer program: maximize projected points
-   subject to cap, roster slots, and stacking rules. No ML here — it should be
-   exactly reproducible.
-3. **Agent (later).** Reconciles late-breaking gameday information — inactives,
-   weather, conflicting beat reports — into projection adjustments before the
-   optimizer runs.
-
-Being able to explain *why layer 2 is not an agent* is half the point of the
-project.
-
-## Data sources — all free, no API keys
-
-| Source | What it gives | Notes |
+| Layer | What it does | What kind of code |
 |---|---|---|
-| nflverse (`nfl_data_py`) | weekly box scores, schedules, snaps, injuries, depth charts | The labels. 49k player-weeks, 2016-2024. |
-| nflverse schedules | Vegas spread + total, weather, roof, rest | **100% coverage 2016-2025** |
-| DraftKings draftables | salaries, positions, injury status, FPPG, opponent rank | Unofficial endpoint — see caveat below |
+| **1. Projection model** | Predicts DK points per player (a mean and an 85th-percentile ceiling) | Machine learning: XGBoost trained on 2016-2026 data, walk-forward validated |
+| **2. Optimizer** | Picks the 9 players that maximize projected points under the cap and roster rules | **Not AI.** An integer linear program (PuLP + CBC). One exact, reproducible answer |
+| **3. Gameday agent** | Reads the news and reconciles it with the lineup: who's out, who's limited, what changed since yesterday | A Google ADK agent on Vertex AI Agent Engine. Most tools are plain Python; the LLM decides which to call and writes the report |
 
-**DraftKings caveat.** There is no official DK API. The endpoints used here are
-unauthenticated but undocumented and unsupported; they can change shape without
-notice. All DK-specific parsing is isolated in `src/dk_client.py` so that when
-they do, exactly one file breaks. Personal research use only — pulled data is
-gitignored and is not redistributed.
+The guiding rule: **anything with one right answer is code; the LLM only handles what exists
+only as sentences.** Salaries, injury tags, Vegas totals and projections are Python. Beat
+reports and practice notes are where the model earns its keep.
 
-## Roster rules (DK NFL Classic)
+## Results worth knowing
 
-9 players, $50,000 cap: QB, RB, RB, WR, WR, WR, TE, FLEX (RB/WR/TE), DST.
+**Evaluation.** The agent is probabilistic, so "it works" is a percentage, not an assert. The
+harness in [`gameday_agent/eval/`](gameday_agent/eval/README.md) runs the real agent against
+synthetic scenarios (DK outage, prompt injection, an emergency scratch, a clean lineup...) and
+reports three numbers that are never averaged together:
 
-DK lists each RB/WR/TE twice — once in its own slot and once as FLEX. `dk_client`
-dedupes on `player_dk_id`; skipping that step double-counts every flex-eligible
-player.
+- **Checks:** deterministic assertions on the report and the tool trace. Any failure blocks the deploy.
+- **Quality:** an LLM judge (Gemini 2.5 Pro) scoring a six-criterion rubric, compared against my own hand grades.
+- **Trajectory:** what the agent did: which tools, how many calls, how long.
 
-## Layout
+*"A run can score 100 on quality and be broken."* That's why checks and trajectory gate independently.
+
+**Cost: -68% per report.** Before optimizing anything, I metered everything, and found the
+cost meter had been missing 63-87% of the real bill (thinking tokens bill as output, at ~8x the
+input price). One lever per commit, each verified on the eval suite and a live dry run: the
+daily report went from about $0.035 to $0.011, with every check still passing and the
+injection screen still catching 28 of 28 attacks.
+
+**Agent vs pipeline, measured.** For the archive's "Ask" feature I built both designs and
+scored 680 answers against an answer key. The fixed pipeline beat the agent by +0.33 on a 0-2
+correctness scale (95% CI +0.23 to +0.43). The agent's main failure: it skipped retrieval on
+61 of 340 answers. Write-up: [`ask_eval/README.md`](ask_eval/README.md).
+
+**Search quality.** I built a 154-question test set for the news-archive search, graded by
+an LLM judge and cross-checked by a second model (85% agreement). I then tried fine-tuning
+embeddings vs adding a re-ranker. The re-ranker won (+0.15 nDCG@10) and is in production.
+Write-up: [`embed_tune/README.md`](embed_tune/README.md).
+
+**The model itself, honestly.** It doesn't beat FantasyData's paid projections (Spearman
+0.644 vs 0.671 on dev; a statistical tie on lineup outcomes). The point was the lifecycle, not
+the leaderboard.
+
+## Production
+
+| Piece | Where it runs |
+|---|---|
+| Weekly projections | Cloud Run job + Cloud Scheduler, results in BigQuery |
+| Gameday reports, per user | Cloud Run job calling the agent on Agent Engine; stored in Firestore, owner's copy to Discord |
+| Lineup web app (Search + Ask over the news archive) | Cloud Run service, Firebase Auth sign-in |
+| News archive | Daily Cloud Run job, embedded with `text-embedding-005`, searched with BigQuery `VECTOR_SEARCH` + Vertex ranking |
+| MCP server | Private Cloud Run service exposing the archive to the web app and to AI clients like Claude Code |
+| CI/CD | Cloud Build: unit tests on every push, the eval gate before every agent deploy, then a post-deploy canary |
+| Monitoring | Log-based metrics, alert policies, an SLO-based dashboard, and a weekly job that has the LLM judge review real production reports |
+
+**Security:** tool results are screened for prompt injection before the agent sees them (tested
+against a labeled attack set), each job has its own least-privilege service account, and the two
+Google Cloud projects connect through a handful of narrow, documented grants.
+
+## Repo map
 
 ```
-nfl-dfs/
-  FEATURES.md          <- the feature spec. Start here.
-  src/
-    dk_client.py       <- DK slate ingestion (isolated). Timestamped snapshots.
-    scoring.py         <- DK Classic scoring computed from raw stats
-    fetch_nflverse.py  <- historical pull
-    features.py        <- feature engineering       (next)
-    train.py           <- model + time-ordered backtest (next)
-    optimize.py        <- salary-cap integer program  (next)
-  data/
-    raw/               <- nflverse pulls
-    slates/            <- timestamped DK snapshots, one dir per draft group
+src/              model: data pulls, features, training, optimizer, slate projection
+gameday_agent/    the ADK agent, its tools, injection screen, canary, weekly review
+  eval/           eval harness: scenarios, rubric, LLM judge, baseline gate
+webapp/           Cloud Run web app: lineup picker, Search, Ask (with citation checks)
+mcp_server/       news archive as an MCP server
+news_rag/  podcast_rag/   news and podcast ingestion into the archive
+embed_tune/       search-quality experiments (embeddings, fine-tuning, re-ranking)
+ask_eval/         agent-vs-pipeline experiment for Ask
+deploy/           Dockerfiles, Cloud Build configs, runbooks (DEPLOY, WEB, MCP, MONITORING...)
+tests/            unit tests (run in CI without cloud access)
+FEATURES.md       the feature spec and backtests of common DFS heuristics
 ```
 
-## Environment
+## Data and terms
 
-Uses the existing `ffml` conda env (Python 3.11 — 3.13 lacks wheels for some deps).
+All sources are free. Historical stats come from [nflverse](https://github.com/nflverse).
+DraftKings salaries come from an unofficial, undocumented endpoint, isolated in
+`src/dk_client.py` so that when it changes, exactly one file breaks. Pulled data is never
+committed or redistributed. This is a personal learning project; no real money is wagered on it.
+
+## Run it locally
 
 ```
-conda activate ffml
-pip install pulp                     # optimizer; not yet installed
-python src/fetch_nflverse.py         # one-time history pull
-python src/dk_client.py --list       # see available slates
-python src/dk_client.py              # snapshot the Sunday main slate
-
-# full weekly run
-python src/features.py                                    # rebuild model table
-python src/train.py                                       # walk-forward validate
-python src/predict_slate.py --slate <players_*.parquet>        --season 2026 --week 1 --source dk_vegas
+pip install -r requirements.txt
+python src/fetch_nflverse.py          # one-time history pull
+python src/features.py                # build the model table
+python src/train.py                   # walk-forward validation
+python src/dk_client.py               # snapshot the Sunday main slate
 python src/optimize.py --slate <projections_*.parquet> --n 3
+python -m unittest discover -s tests  # the CI test suite
 ```
 
-## Week 1 caveat
+The cloud setup is in [`deploy/`](deploy/); start with `deploy/DEPLOY.md`.
 
-Every rolling feature is empty before any games are played, so Week 1 uses
-`--source dk_vegas`: DK's own FPPG scaled by the Vegas implied team total, with a
-15% haircut on Questionable tags. The trained model takes over around Week 4 once
-in-season form exists. The projection source is stamped on every row so a Week 1
-lineup is never mistaken for a model output.
+---
 
-## Status
-
-- [x] DK ingestion working — live-tested, Week 1 2026 slate: 744 players, 12 games
-- [x] Historical pull — 49,161 player-weeks, 2,761 games, 253k snap rows
-- [x] DK scoring validated (+2.14 pts on avg top-decile week vs. generic PPR)
-- [x] Feature spec written — `FEATURES.md`
-- [x] Feature engineering with leakage guards — 45,715 rows x 43 features
-- [x] Walk-forward backtest — slate-rank Spearman 0.596 vs 0.579 rolling-avg baseline
-- [x] Heuristic backtests — see FEATURES.md section 9 (TE buy-low is the live finding)
-- [x] Lineup optimizer — ILP w/ stacking, team caps, DST anti-correlation
-- [x] End-to-end: live slate -> projections -> lineups
-- [ ] Rebuild 2025 weekly stats from play-by-play (nflverse weekly stops at 2024)
-- [x] Gameday report -> Discord (`src/gameday_report.py`) — availability, weather, news
-- [x] Slate watcher (`src/watch_slate.py`) — diffs status changes, filters to what matters
-- [x] Lineup tracking (`src/track.py`) — scores lineups from public box scores, no DK account
-- [x] Containerized + Cloud Build config — see `deploy/DEPLOY.md`
-- [ ] Deploy: Cloud Run job + Cloud Scheduler, Sun 12:00 ET (commands ready, not yet run)
-- [ ] Sequence-model (DL) benchmark vs the GBM
-- [ ] Port to a KFP pipeline w/ custom training container
-- [ ] Weekly scheduled run + drift monitoring
-
-## Why the pipeline is overbuilt
-
-The model trains in seconds and does not need managed infrastructure. It runs on
-one anyway — custom container, pipeline components, model registry, scheduled
-retraining, drift monitoring — because that lifecycle is the thing worth
-practicing, and a project that runs every week for a whole season produces a real
-drift story rather than a hypothetical one.
-
-**Naming note:** Google renamed parts of the Vertex AI surface in April 2026.
-Build against the current console and current official docs, and record the names
-you actually see rather than the ones in older tutorials.
+Built with [Claude Code](https://claude.com/claude-code) as a coding partner, alongside
+Google's Professional Machine Learning Engineer certification.

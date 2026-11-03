@@ -42,3 +42,10 @@ deploy/batchjob.predict.json
 embed_tune/review-packet.html
 embed_tune/review-packet.pdf
 embed_tune/review.html
+
+# Personal interview/study material: kept on this laptop, never committed.
+docs/interview-stories.*
+docs/gameday-agent-cheatsheet.pdf
+docs/Gameday Agent Cheat Sheet.pdf
+docs/ci-briefing.*
+docs/search-tuning-eli14.*
