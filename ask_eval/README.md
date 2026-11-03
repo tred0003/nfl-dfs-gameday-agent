@@ -179,3 +179,5 @@ no status taken from a podcast alone, held. The cost is about $1.10 per
 - Latency was measured with 6 questions in parallel on a laptop, in-process,
   with no MCP network hop (the hop is the same for both designs).
 - One judge row came back with no score and is excluded.
+
+> Not in this public copy: `answers.jsonl` and `calibration_sample.jsonl` quote licensed news text. Scores and summaries are in `results.json` and the `graded_*.jsonl` files.

@@ -145,3 +145,5 @@ were re-scored on that one final key. Open mode, 150 questions:
    one Ranking API call per search, ~$1 per 1,000.
 2. Optional: tune `text-embedding-005` on Vertex AI -- needs GPU quota (0 on
    demand); with the ranker in place, the embedding model matters less.
+
+> Not in this public copy: `key/seed_pool.txt` and `key/add_to_check.jsonl` hold archived news text (licensed). The questions, grades and scores are all here; those two files are rebuilt by `write_questions.py` and `pool_add.py` from a fresh archive snapshot.
