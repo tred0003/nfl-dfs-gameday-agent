@@ -6,9 +6,9 @@ AI agent that checks the lineup against injuries, weather, Vegas lines and the n
 reports have run in Google Cloud since October 2026. It is multi-user (sign-in, per-user lineups
 and reports), tested with four seeded accounts.
 
-The model is deliberately simple. **The system around it is built like production**: evals that
-gate every agent deploy, an LLM judge tested with seeded defects, cost metering, prompt-injection
-screening, monitoring, and CI/CD.
+The model is fairly simple. Most of the work went into what's around it: evals that gate every
+agent deploy, an LLM judge tested with seeded defects, cost metering, prompt-injection screening,
+monitoring, and CI/CD.
 
 ```mermaid
 flowchart LR
@@ -32,7 +32,7 @@ flowchart LR
     MCP --> WEB
 ```
 
-## Three layers, kept separate on purpose
+## Three layers
 
 | Layer | What it does | What kind of code |
 |---|---|---|
@@ -40,13 +40,13 @@ flowchart LR
 | **2. Optimizer** | Picks the 9 players that maximize projected points under the cap and roster rules | **Not AI.** An integer linear program (PuLP + CBC). One exact, reproducible answer |
 | **3. Gameday agent** | Reads the news and reconciles it with the lineup: who's out, who's limited, what changed since yesterday | A Google ADK agent on Vertex AI Agent Engine. Most tools are plain Python; the LLM decides which to call and writes the report |
 
-The guiding rule: **anything with one right answer is code; the LLM only handles what exists
-only as sentences.** Salaries, injury tags, Vegas totals and projections are Python. Beat
-reports and practice notes are where the model earns its keep.
+Rule of thumb: if something has one right answer, it's code, and the LLM only handles what exists
+only as sentences. Salaries, injury tags, Vegas totals and projections are Python. The LLM reads
+the beat reports and practice notes.
 
-## Results worth knowing
+## Results
 
-**Evaluation.** The agent is probabilistic, so "it works" is a percentage, not an assert. The
+**Evaluation.** The agent doesn't give the same answer every run, so "it works" has to be measured as a rate. The
 harness in [`gameday_agent/eval/`](gameday_agent/eval/README.md) runs the real agent against
 synthetic scenarios (DK outage, prompt injection, an emergency scratch, a clean lineup...) and
 reports three numbers that are never averaged together:
@@ -55,7 +55,7 @@ reports three numbers that are never averaged together:
 - **Quality:** an LLM judge (Gemini 2.5 Pro) scoring a six-criterion rubric. The judge is tested by seeding known defects into reports and checking it catches them; a hand-grading harness exists, with one report graded so far.
 - **Trajectory:** what the agent did: which tools, how many calls, how long.
 
-*"A run can score 100 on quality and be broken."* That's why checks and trajectory gate independently.
+A run can score 100 on quality and still be broken, so checks and trajectory gate separately.
 
 **Cost: -68% per report.** Before optimizing anything, I metered everything, and found the
 cost meter had been missing 63-87% of the real bill (thinking tokens bill as output, at ~8x the
@@ -75,9 +75,9 @@ compared fine-tuning embeddings against adding a re-ranker. The re-ranker won (+
 offline), and a date-aware version of it (+0.12 offline, better on fresh news) is in
 production. Write-up: [`embed_tune/README.md`](embed_tune/README.md).
 
-**The model itself, honestly.** It doesn't beat FantasyData's paid projections (within-week
-Spearman 0.64 vs 0.67 on dev; a statistical tie on lineup outcomes). The point was the
-lifecycle, not the leaderboard.
+**How good is the model?** It doesn't beat FantasyData's paid projections (within-week
+Spearman 0.64 vs 0.67 on dev; a statistical tie on 2021-24 backtested lineups). I wasn't
+trying to win on the model.
 
 ## Production
 
@@ -158,4 +158,5 @@ The cloud setup is in [`deploy/`](deploy/); start with
 
 ---
 
-Built with [Claude Code](https://claude.com/claude-code) as a coding partner. MIT licensed.
+Claude Code wrote most of the code. I wrote the specs, designed the evals and gates, and reviewed the
+changes. MIT licensed.
